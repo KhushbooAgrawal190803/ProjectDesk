@@ -34,7 +34,9 @@ export interface Booking {
   // Project & Unit
   project_name: string
   project_location: string
+  project_address?: string
   rera_regn_no?: string
+  building_permit_no?: string
   unit_category: UnitCategory
   unit_type: UnitType
   unit_type_other_text?: string

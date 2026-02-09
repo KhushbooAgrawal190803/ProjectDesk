@@ -20,7 +20,9 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
     const fieldMappings: { [key: string]: boolean } = {
       project_name: true,
       project_location: true,
+      project_address: true,
       rera_regn_no: true,
+      building_permit_no: true,
       unit_category: true,
       unit_type: true,
       unit_type_other_text: true,
@@ -162,7 +164,9 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
       // Project & Unit
       project_name: baseData.project_name,
       project_location: baseData.project_location || 'Ranchi, Jharkhand',
+      project_address: baseData.project_address || null,
       rera_regn_no: baseData.rera_regn_no || null,
+      building_permit_no: baseData.building_permit_no || null,
       unit_category: baseData.unit_category,
       unit_type: baseData.unit_type,
       unit_type_other_text: baseData.unit_type === 'Other' ? baseData.unit_type_other_text : null,

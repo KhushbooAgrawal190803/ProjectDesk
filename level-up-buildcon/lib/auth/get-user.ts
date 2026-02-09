@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import { Profile } from '@/lib/types/database'
 
 export async function getCurrentUser() {
@@ -52,7 +53,7 @@ export async function requireAuth() {
 export async function requireProfile() {
   const profile = await getCurrentProfile()
   if (!profile || profile.status !== 'ACTIVE') {
-    throw new Error('Unauthorized or account not active')
+    redirect('/login')
   }
   return profile
 }
@@ -60,7 +61,7 @@ export async function requireProfile() {
 export async function requireRole(roles: string[]) {
   const profile = await requireProfile()
   if (!roles.includes(profile.role)) {
-    throw new Error('Insufficient permissions')
+    redirect('/login')
   }
   return profile
 }

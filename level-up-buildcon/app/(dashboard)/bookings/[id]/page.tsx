@@ -143,7 +143,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <div className="space-y-1">
             <Field label="Project Name" value={booking.project_name} />
             <Field label="Location" value={booking.project_location} />
+            {booking.project_address && <Field label="Address" value={booking.project_address} />}
             {booking.rera_regn_no && <Field label="RERA Registration" value={booking.rera_regn_no} />}
+            {booking.building_permit_no && <Field label="Building Permit" value={booking.building_permit_no} />}
             <Separator className="my-3" />
             <Field label="Unit Category" value={booking.unit_category} />
             <Field label="Unit Type" value={booking.unit_type === 'Other' ? booking.unit_type_other_text : booking.unit_type} />

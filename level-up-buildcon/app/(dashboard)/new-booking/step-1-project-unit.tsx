@@ -28,7 +28,14 @@ export function Step1ProjectUnit({ data, onUpdate, onNext }: Step1ProjectUnitPro
     formState: { errors },
   } = useForm<Step1Data>({
     resolver: zodResolver(step1Schema),
-    defaultValues: data,
+    defaultValues: {
+      project_name: 'Anandam',
+      project_location: 'Ranchi, Jharkhand',
+      project_address: 'PLOT NO 1089 KHATA NO 74, GUTUWA NAGRI RANCHI JHARKHAND',
+      rera_regn_no: 'JHARERA/PROJECT/15/2026',
+      building_permit_no: 'RRDA/GH/0369/2025',
+      ...data,
+    },
   })
 
   const unitType = watch('unit_type')
@@ -78,6 +85,24 @@ export function Step1ProjectUnit({ data, onUpdate, onNext }: Step1ProjectUnitPro
               id="rera_regn_no"
               {...register('rera_regn_no')}
               placeholder="Optional"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="building_permit_no">Building Permit No.</Label>
+            <Input
+              id="building_permit_no"
+              {...register('building_permit_no')}
+              placeholder="Optional"
+            />
+          </div>
+
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="project_address">Project Address</Label>
+            <Input
+              id="project_address"
+              {...register('project_address')}
+              placeholder="Full project address"
             />
           </div>
         </div>

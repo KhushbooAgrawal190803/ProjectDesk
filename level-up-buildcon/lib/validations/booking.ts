@@ -3,7 +3,9 @@ import { z } from 'zod'
 export const step1Schema = z.object({
   project_name: z.string().min(1, 'Project name is required'),
   project_location: z.string().min(1, 'Project location is required'),
+  project_address: z.string().optional(),
   rera_regn_no: z.string().optional(),
+  building_permit_no: z.string().optional(),
   unit_category: z.enum(['Residential', 'Commercial']),
   unit_type: z.enum(['Flat', 'Villa', 'Plot', 'Shop', 'Office', 'Other']),
   unit_type_other_text: z.string().optional(),

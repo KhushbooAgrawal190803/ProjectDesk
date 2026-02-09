@@ -116,7 +116,9 @@ export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Pr
       addSection('PROJECT INFORMATION')
       addRow('Project Name', booking.project_name || 'N/A')
       addRow('Location', booking.project_location || 'N/A')
+      if (booking.project_address) addRow('Address', booking.project_address)
       addRow('RERA Registration', booking.rera_regn_no || 'N/A')
+      if (booking.building_permit_no) addRow('Building Permit', booking.building_permit_no)
       yPos += 3
 
       // BOOKING DETAILS
@@ -349,6 +351,9 @@ export function generateCustomerPDF(booking: Booking & { creator?: Profile }): P
       addSection('PROJECT DETAILS')
       addRow('Project', booking.project_name || 'N/A')
       addRow('Location', booking.project_location || 'N/A')
+      if (booking.project_address) addRow('Address', booking.project_address)
+      if (booking.rera_regn_no) addRow('RERA Registration', booking.rera_regn_no)
+      if (booking.building_permit_no) addRow('Building Permit', booking.building_permit_no)
       yPos += 4
 
       // UNIT INFORMATION
@@ -368,11 +373,24 @@ export function generateCustomerPDF(booking: Booking & { creator?: Profile }): P
       yPos += 4
 
       // CONTACT INFORMATION
-      addSection('CONTACT INFORMATION')
+      addSection('APPLICANT INFORMATION')
       addRow('Name', booking.applicant_name || 'N/A')
       addRow('Mobile', booking.applicant_mobile || 'N/A')
       addRow('Email', booking.applicant_email || 'N/A')
+      if (booking.applicant_pan) addRow('PAN', booking.applicant_pan)
+      if (booking.applicant_aadhaar) addRow('Aadhaar', booking.applicant_aadhaar)
       yPos += 4
+
+      // CO-APPLICANT (if exists)
+      if (booking.coapplicant_name) {
+        addSection('CO-APPLICANT INFORMATION')
+        addRow('Name', booking.coapplicant_name)
+        addRow('Relationship', booking.coapplicant_relationship || 'N/A')
+        if (booking.coapplicant_mobile) addRow('Mobile', booking.coapplicant_mobile)
+        if (booking.coapplicant_pan) addRow('PAN', booking.coapplicant_pan)
+        if (booking.coapplicant_aadhaar) addRow('Aadhaar', booking.coapplicant_aadhaar)
+        yPos += 4
+      }
 
       // Important note
       doc.setTextColor(75, 105, 145)
@@ -387,20 +405,6 @@ export function generateCustomerPDF(booking: Booking & { creator?: Profile }): P
       const importantText = 'Keep this document safely for your records. Further payment details and transaction updates will be communicated separately. For any queries, please contact us with your booking serial number.'
       const splitImportant = doc.splitTextToSize(importantText, pageWidth - 40)
       doc.text(splitImportant, 20, yPos)
-      yPos += 12
-
-      // NOTE
-      doc.setTextColor(75, 105, 145)
-      doc.setFontSize(9)
-      doc.setFont('helvetica', 'bold')
-      doc.text('Note:', 20, yPos)
-      
-      doc.setTextColor(60, 70, 85)
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8.5)
-      const noteText = 'Reciept of booking amount only. Subject to approvals and RERA compliance.'
-      const splitNote = doc.splitTextToSize(noteText, pageWidth - 40)
-      doc.text(splitNote, 26, yPos)
       yPos += 12
 
       // Check if we need a new page for signatures

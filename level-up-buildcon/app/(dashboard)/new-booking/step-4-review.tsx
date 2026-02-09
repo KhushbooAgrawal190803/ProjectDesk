@@ -58,7 +58,9 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting }: Ste
       <Section title="Project & Unit Information">
         <Field label="Project Name" value={data.project_name as string} />
         <Field label="Location" value={data.project_location as string} />
+        {(data.project_address as string) && <Field label="Address" value={data.project_address as string} />}
         {(data.rera_regn_no as string) && <Field label="RERA Registration" value={data.rera_regn_no as string} />}
+        {(data.building_permit_no as string) && <Field label="Building Permit" value={data.building_permit_no as string} />}
         <Separator />
         <Field label="Unit Category" value={data.unit_category as string} />
         <Field label="Unit Type" value={(data.unit_type as string) === 'Other' ? (data.unit_type_other_text as string) : (data.unit_type as string)} />
