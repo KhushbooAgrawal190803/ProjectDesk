@@ -1,18 +1,15 @@
 import { redirect } from 'next/navigation'
 import { requireProfile } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { RecentBookings } from './recent-bookings'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  FileText, 
-  Users, 
-  IndianRupee, 
-  TrendingUp
-} from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { FileText, Users, IndianRupee, TrendingUp, ParkingSquare } from 'lucide-react'
+import { getTowerAllocations } from '@/app/(dashboard)/lookup/tower-actions'
+import { TowerView } from '@/app/(dashboard)/lookup/tower-view'
 
 async function getDashboardStats() {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   // Get total bookings
   const { count: totalBookings } = await supabase
@@ -59,12 +56,23 @@ async function getDashboardStats() {
     .order('submitted_at', { ascending: false })
     .limit(10)
 
+  // Parking availability
+  const { data: parkingData } = await supabase
+    .from('bookings')
+    .select('additional_parking')
+    .neq('status', 'DRAFT')
+    .is('deleted_at', null)
+  const bookedParking = (parkingData || []).reduce((s, b) => s + (Number(b.additional_parking) || 0), 0)
+  const availableParking = Math.max(0, 27 - bookedParking)
+
   return {
     totalBookings: totalBookings || 0,
     weekBookings: weekBookings || 0,
     totalAmount,
     activeUsers: activeUsers || 0,
     recentBookings: recentBookings || [],
+    availableParking,
+    bookedParking,
   }
 }
 
@@ -74,7 +82,10 @@ export default async function DashboardPage() {
     redirect('/login')
   }
 
-  const stats = await getDashboardStats()
+  const [stats, towerAllocations] = await Promise.all([
+    getDashboardStats(),
+    getTowerAllocations(),
+  ])
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -94,7 +105,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <Card className="border-zinc-200 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-sm font-medium text-zinc-600">
@@ -146,7 +157,30 @@ export default async function DashboardPage() {
               <p className="text-xs text-zinc-500 mt-1">Team members</p>
             </CardContent>
           </Card>
+
+          <Card className="border-zinc-200 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-sm font-medium text-zinc-600">
+                Parking Available
+              </CardTitle>
+              <ParkingSquare className="w-4 h-4 text-zinc-400" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">{stats.availableParking} <span className="text-base font-normal text-zinc-400">/ 27</span></div>
+              <p className="text-xs text-zinc-500 mt-1">{stats.bookedParking} spaces booked</p>
+            </CardContent>
+          </Card>
         </div>
+
+        {/* Tower View */}
+        <Card className="border-zinc-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg">Anandam — Tower View</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TowerView initialAllocations={towerAllocations} showHeader={false} />
+          </CardContent>
+        </Card>
 
         {/* Recent Activity */}
         <RecentBookings bookings={stats.recentBookings} />

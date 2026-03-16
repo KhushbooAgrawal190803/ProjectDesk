@@ -14,7 +14,7 @@ export const step1Schema = z.object({
   rera_regn_no: optionalString,
   building_permit_no: optionalString,
   unit_category: z.enum(['Residential', 'Commercial']).optional(),
-  unit_type: z.enum(['Flat', 'Villa', 'Plot', 'Shop', 'Office', 'Other']).optional(),
+  unit_type: z.enum(['Residential', 'Commercial']).optional(),
   unit_type_other_text: optionalString,
   unit_no: optionalString,
   floor_no: optionalString,
@@ -48,8 +48,10 @@ export const step3Schema = z.object({
   payment_mode_detail: optionalString,
   txn_or_cheque_no: optionalString,
   txn_date: optionalString,
+  // kept for backward compat with existing bookings — not shown in form
   payment_plan_type: z.enum(['ConstructionLinked', 'DownPayment', 'PossessionLinked', 'Custom']).optional(),
   payment_plan_custom_text: optionalString,
+  additional_parking: z.coerce.number().min(0).max(5).optional().default(0),
 }) as any
 
 export const bookingSchema = z.object({

@@ -1,11 +1,11 @@
 'use server'
 
 import { requireRole } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 export async function getPaymentSlabs() {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
   const { data, error } = await supabase
     .from('payment_slabs')
     .select('*')
@@ -15,8 +15,8 @@ export async function getPaymentSlabs() {
 }
 
 export async function getBookingsForSlab(slabId: number) {
-  const profile = await requireRole(['ACCOUNTS', 'ADMIN'])
-  const supabase = await createClient()
+  await requireRole(['ACCOUNTS', 'ADMIN'])
+  const supabase = await createServiceClient()
 
   const { data: slab } = await supabase
     .from('payment_slabs')
@@ -69,7 +69,7 @@ export async function setSlabPayment(
   notes?: string
 ) {
   const profile = await requireRole(['ACCOUNTS', 'ADMIN'])
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   const { data: booking } = await supabase
     .from('bookings')

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { requireProfile } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { BookingsTable } from './bookings-table'
 import { Booking, Profile } from '@/lib/types/database'
@@ -19,7 +19,7 @@ async function getBookings(searchParams: {
   from_date?: string
   to_date?: string
 }) {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   let query = supabase
     .from('bookings')
@@ -76,7 +76,7 @@ async function getBookings(searchParams: {
 }
 
 async function getFilterOptions() {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   // Get unique projects
   const { data: projects } = await supabase

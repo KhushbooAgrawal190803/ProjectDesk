@@ -6,7 +6,7 @@ import { step3Schema, Step3Data } from '@/lib/validations/booking'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+
 import { ChevronRight, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { useEffect } from 'react'
@@ -21,9 +21,10 @@ interface Step3PricingPaymentProps {
   onUpdate: (data: Partial<Step3Data>) => void
   onNext: () => void
   onBack: () => void
+  availableParking?: number
 }
 
-export function Step3PricingPayment({ data, onUpdate, onNext, onBack }: Step3PricingPaymentProps) {
+export function Step3PricingPayment({ data, onUpdate, onNext, onBack, availableParking = 27 }: Step3PricingPaymentProps) {
   const superBuiltupArea = Number(data.super_builtup_area) || 0
 
   const {
@@ -39,7 +40,6 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack }: Step3Pri
 
   const ratePerSqft = watch('rate_per_sqft')
   const bookingAmountPaid = watch('booking_amount_paid')
-  const paymentPlanType = watch('payment_plan_type')
 
   // Auto-calculate total cost from rate × area
   useEffect(() => {
@@ -195,45 +195,25 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack }: Step3Pri
         </div>
       </div>
 
-      {/* Payment Plan */}
+      {/* Additional Parking */}
       <div>
-        <h3 className="text-lg font-semibold mb-4">Payment Plan</h3>
+        <h3 className="text-lg font-semibold mb-4">Additional Parking</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2 md:col-span-2">
-            <Label>Payment Plan Type</Label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {['ConstructionLinked', 'DownPayment', 'PossessionLinked', 'Custom'].map((type) => (
-                <label key={type}>
-                  <input
-                    type="radio"
-                    value={type}
-                    {...register('payment_plan_type')}
-                    className="peer sr-only"
-                  />
-                  <div className="flex items-center justify-center h-11 px-3 border-2 border-zinc-200 rounded-lg cursor-pointer peer-checked:border-zinc-900 peer-checked:bg-zinc-50 transition-all text-center">
-                    <span className="text-sm font-medium">
-                      {type.replace(/([A-Z])/g, ' $1').trim()}
-                    </span>
-                  </div>
-                </label>
+          <div className="space-y-2">
+            <Label htmlFor="additional_parking">Additional Parking Spaces</Label>
+            <select
+              id="additional_parking"
+              {...register('additional_parking')}
+              className="flex h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+            >
+              {[0, 1, 2, 3, 4, 5].map((n) => (
+                <option key={n} value={n}>{n === 0 ? 'None' : `${n} space${n > 1 ? 's' : ''}`}</option>
               ))}
-            </div>
+            </select>
+            <p className="text-xs text-zinc-500">
+              {availableParking} of 27 parking spaces still available in this project
+            </p>
           </div>
-
-          {paymentPlanType === 'Custom' && (
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="payment_plan_custom_text">Custom Payment Plan Details</Label>
-              <Textarea
-                id="payment_plan_custom_text"
-                {...register('payment_plan_custom_text')}
-                placeholder="Describe the custom payment plan"
-                rows={3}
-              />
-              {errors.payment_plan_custom_text && (
-                <p className="text-sm text-red-600">{getErrorMessage(errors.payment_plan_custom_text)}</p>
-              )}
-            </div>
-          )}
         </div>
       </div>
 

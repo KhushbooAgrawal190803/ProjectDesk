@@ -169,16 +169,6 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
               className="mt-1"
             />
           </div>
-          <div>
-            <Label>Carpet Area (sq.ft.)</Label>
-            <Input
-              name="carpet_area"
-              type="number"
-              value={formData.carpet_area}
-              onChange={handleInputChange}
-              className="mt-1"
-            />
-          </div>
         </div>
       </div>
 

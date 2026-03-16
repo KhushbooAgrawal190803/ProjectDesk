@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,13 +15,13 @@ import {
 } from '@/components/ui/table'
 import { IndianRupee, FileText, TrendingUp, Receipt } from 'lucide-react'
 import { format } from 'date-fns'
-import { getDispatchDocuments, getBookingsForDispatch, getPendingDispatches } from './dispatch-actions'
-import { DispatchDocumentsClient } from './dispatch-documents-client'
+import { getBookingsForDispatch } from './dispatch-actions'
 import { PendingDispatchesClient } from './pending-dispatches-client'
-import { PaymentScheduleClient } from './payment-schedule-client'
+import { PaymentReminderClient } from './payment-reminder-client'
+// import { PaymentScheduleClient } from './payment-schedule-client'  // temporarily disabled
 
 async function getAccountsData() {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   // Get all non-draft, non-deleted bookings
   const { data: bookings } = await supabase
@@ -72,16 +72,10 @@ export default async function AccountsPage() {
 
   const { bookings, stats } = await getAccountsData()
 
-  const [dispatchDocs, bookingsForDispatch] = await Promise.all([
-    getDispatchDocuments(),
-    getBookingsForDispatch(),
-  ])
+  const bookingsForDispatch = await getBookingsForDispatch()
 
-  // Admin also sees pending dispatches
+  // Admin also sees pending dispatches (from old dispatch system — kept for now)
   let pendingDispatches: any[] = []
-  if (profile.role === 'ADMIN') {
-    pendingDispatches = await getPendingDispatches()
-  }
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -164,15 +158,8 @@ export default async function AccountsPage() {
         <Tabs defaultValue="financials" className="space-y-4">
           <TabsList>
             <TabsTrigger value="financials">Booking Financials</TabsTrigger>
-            <TabsTrigger value="payment-schedule">Payment Schedule (Slabs)</TabsTrigger>
-            <TabsTrigger value="dispatch" className="gap-2">
-              Document Dispatch
-              {dispatchDocs.filter((d: any) => d.status === 'PENDING').length > 0 && (
-                <Badge variant="secondary" className="ml-1 bg-amber-100 text-amber-800 text-xs px-1.5 py-0">
-                  {dispatchDocs.filter((d: any) => d.status === 'PENDING').length}
-                </Badge>
-              )}
-            </TabsTrigger>
+            {/* <TabsTrigger value="payment-schedule">Payment Schedule (Slabs)</TabsTrigger> */}
+            <TabsTrigger value="dispatch">Payment Reminders</TabsTrigger>
           </TabsList>
 
           {/* Financials Tab */}
@@ -244,18 +231,9 @@ export default async function AccountsPage() {
             </Card>
           </TabsContent>
 
-          {/* Payment Schedule by Slab */}
-          <TabsContent value="payment-schedule">
-            <PaymentScheduleClient />
-          </TabsContent>
-
-          {/* Document Dispatch Tab */}
+          {/* Payment Reminders Tab */}
           <TabsContent value="dispatch">
-            <DispatchDocumentsClient
-              bookings={bookingsForDispatch}
-              dispatches={dispatchDocs as any}
-              isAdmin={profile.role === 'ADMIN'}
-            />
+            <PaymentReminderClient />
           </TabsContent>
         </Tabs>
       </div>

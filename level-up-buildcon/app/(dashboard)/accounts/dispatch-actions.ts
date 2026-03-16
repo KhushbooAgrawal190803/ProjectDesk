@@ -1,24 +1,49 @@
 'use server'
 
 import { requireRole } from '@/lib/auth/get-user'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { DispatchStatus } from '@/lib/types/database'
 import { sendEmail, buildDispatchEmailHtml, isEmailConfigured } from '@/lib/email'
 import { sendWhatsApp, buildDispatchWhatsAppMessage, isWhatsAppConfigured } from '@/lib/whatsapp'
 
+async function enrichDocs(supabase: Awaited<ReturnType<typeof createServiceClient>>, docs: any[]) {
+  if (!docs.length) return docs
+
+  // Fetch related bookings
+  const bookingIds = [...new Set(docs.map((d: any) => d.booking_id).filter(Boolean))]
+  const { data: bookings } = await supabase
+    .from('bookings')
+    .select('id, serial_display, applicant_name, applicant_mobile, applicant_email')
+    .in('id', bookingIds)
+  const bookingMap = new Map((bookings || []).map((b: any) => [b.id, b]))
+
+  // Fetch related profiles (uploader + approver)
+  const profileIds = [...new Set([
+    ...docs.map((d: any) => d.uploaded_by).filter(Boolean),
+    ...docs.map((d: any) => d.approved_by).filter(Boolean),
+  ])]
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('id', profileIds)
+  const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]))
+
+  return docs.map((d: any) => ({
+    ...d,
+    booking: bookingMap.get(d.booking_id) ?? null,
+    uploader: profileMap.get(d.uploaded_by) ?? null,
+    approver: profileMap.get(d.approved_by) ?? null,
+  }))
+}
+
 export async function getDispatchDocuments(bookingId?: string) {
-  const profile = await requireRole(['ACCOUNTS', 'ADMIN'])
-  const supabase = await createClient()
+  await requireRole(['ACCOUNTS', 'ADMIN'])
+  const supabase = await createServiceClient()
 
   let query = supabase
     .from('booking_dispatch_documents')
-    .select(`
-      *,
-      uploader:profiles!uploaded_by(full_name, email),
-      approver:profiles!approved_by(full_name, email),
-      booking:bookings!booking_id(serial_display, applicant_name, applicant_mobile, applicant_email)
-    `)
+    .select('*')
     .order('created_at', { ascending: false })
 
   if (bookingId) {
@@ -31,20 +56,16 @@ export async function getDispatchDocuments(bookingId?: string) {
     throw new Error(`Failed to fetch dispatch documents: ${error.message}`)
   }
 
-  return data || []
+  return enrichDocs(supabase, data || [])
 }
 
 export async function getPendingDispatches() {
-  const profile = await requireRole(['ADMIN'])
-  const supabase = await createClient()
+  await requireRole(['ADMIN'])
+  const supabase = await createServiceClient()
 
   const { data, error } = await supabase
     .from('booking_dispatch_documents')
-    .select(`
-      *,
-      uploader:profiles!uploaded_by(full_name, email),
-      booking:bookings!booking_id(serial_display, applicant_name, applicant_mobile, applicant_email)
-    `)
+    .select('*')
     .eq('status', 'PENDING')
     .order('created_at', { ascending: false })
 
@@ -52,12 +73,12 @@ export async function getPendingDispatches() {
     throw new Error(`Failed to fetch pending dispatches: ${error.message}`)
   }
 
-  return data || []
+  return enrichDocs(supabase, data || [])
 }
 
 export async function uploadDispatchDocument(formData: FormData) {
   const profile = await requireRole(['ACCOUNTS', 'ADMIN'])
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   const bookingId = formData.get('bookingId') as string
   const copyType = formData.get('copyType') as 'customer' | 'company'
@@ -112,7 +133,7 @@ export async function uploadDispatchDocument(formData: FormData) {
 
 export async function approveDispatchDocument(documentId: string) {
   const profile = await requireRole(['ADMIN'])
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   // Get the document details
   const { data: doc, error: getError } = await supabase
@@ -230,7 +251,7 @@ export async function approveDispatchDocument(documentId: string) {
 
 export async function rejectDispatchDocument(documentId: string, reason: string) {
   const profile = await requireRole(['ADMIN'])
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   const { data: doc, error: getError } = await supabase
     .from('booking_dispatch_documents')
@@ -300,7 +321,7 @@ export async function deleteDispatchDocument(documentId: string) {
 
 export async function getBookingsForDispatch() {
   const profile = await requireRole(['ACCOUNTS', 'ADMIN'])
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   const { data, error } = await supabase
     .from('bookings')

@@ -48,6 +48,11 @@ const OVERRIDES: Record<string, FlatArea> = {
   '1007': { built_up_area_sqft: 1274.5, super_built_up_area_sqft: 1657 },
 }
 
+// Commercial units — not available for residential booking
+const COMMERCIAL_FLATS = new Set(['101', '102', '103', '104', '201', '202', '203', '204'])
+
+export const COMMERCIAL_FLAT_AREA: FlatArea = { built_up_area_sqft: 2500, super_built_up_area_sqft: 2500 }
+
 const PROJECT_NAME_FOR_LOOKUP = 'Anandam'
 
 /**
@@ -79,4 +84,30 @@ export function getFlatAreas(projectName: string, unitNo: string): FlatArea | nu
 /** Whether this project uses the flat-area lookup (e.g. Anandam). */
 export function isFlatAreaLookupProject(projectName: string): boolean {
   return projectName?.trim() === PROJECT_NAME_FOR_LOOKUP
+}
+
+/**
+ * All valid flat numbers for a project, ordered floor-descending (top of tower first).
+ * Returns empty array for unknown projects.
+ */
+export function getAllKnownFlats(projectName: string): string[] {
+  if (projectName?.trim() !== PROJECT_NAME_FOR_LOOKUP) return []
+  const flats: string[] = []
+  for (let floor = 10; floor >= 1; floor--) {
+    for (let unit = 1; unit <= 8; unit++) {
+      flats.push(`${floor}${String(unit).padStart(2, '0')}`)
+    }
+  }
+  return flats
+}
+
+/** Returns true if the flat is an amenity unit (no residential area). */
+export function isAmenityFlat(unitNo: string): boolean {
+  const area = getFlatAreas(PROJECT_NAME_FOR_LOOKUP, unitNo)
+  return area !== null && area.built_up_area_sqft === null
+}
+
+/** Returns true if the flat is a commercial unit (not for residential booking). */
+export function isCommercialFlat(unitNo: string): boolean {
+  return COMMERCIAL_FLATS.has(String(unitNo).trim())
 }

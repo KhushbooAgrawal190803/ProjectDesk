@@ -110,6 +110,8 @@ CREATE TABLE bookings (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   submitted_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ,
+  deleted_by UUID REFERENCES profiles(id),
   CONSTRAINT check_unit_type_other CHECK (
     (unit_type != 'Other' AND unit_type_other_text IS NULL) OR
     (unit_type = 'Other' AND unit_type_other_text IS NOT NULL)

@@ -27,17 +27,24 @@ const STEPS = [
 
 interface BookingWizardProps {
   drafts: Booking[]
+  prefilledUnit?: string | null
+  availableParking?: number
 }
 
-export function BookingWizard({ drafts }: BookingWizardProps) {
+export function BookingWizard({ drafts, prefilledUnit, availableParking = 27 }: BookingWizardProps) {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState(1)
   const [formData, setFormData] = useState<Partial<BookingFormData>>({
+    project_name: 'Anandam',
     project_location: 'Ranchi, Jharkhand',
+    project_address: 'PLOT NO 1089 KHATA NO 74, GUTUWA NAGRI RANCHI JHARKHAND',
+    rera_regn_no: 'JHARERA/PROJECT/15/2026',
+    building_permit_no: 'RRDA/GH/0369/2025',
     unit_category: 'Residential',
-    unit_type: 'Flat',
+    unit_type: 'Residential',
     payment_mode: 'UPI',
-    payment_plan_type: 'ConstructionLinked',
+    additional_parking: 0,
+    ...(prefilledUnit ? { unit_no: prefilledUnit } : {}),
   })
   const [draftId, setDraftId] = useState<string | undefined>()
   const [saving, setSaving] = useState(false)
@@ -83,8 +90,7 @@ export function BookingWizard({ drafts }: BookingWizardProps) {
         'coapplicant_pan', 'coapplicant_aadhaar',
         'rate_per_sqft', 'total_cost', 'gst_amount',
         'booking_amount_paid', 'payment_mode', 'payment_mode_detail',
-        'txn_or_cheque_no', 'txn_date',
-        'payment_plan_type', 'payment_plan_custom_text',
+        'txn_or_cheque_no', 'txn_date', 'additional_parking',
       ]
       const sanitized: Record<string, any> = {}
       for (const key of formFields) {
@@ -273,6 +279,7 @@ export function BookingWizard({ drafts }: BookingWizardProps) {
                 onUpdate={updateFormData}
                 onNext={() => goToStep(4)}
                 onBack={() => goToStep(2)}
+                availableParking={availableParking}
               />
             )}
             {currentStep === 4 && (
@@ -380,9 +387,9 @@ export function BookingWizard({ drafts }: BookingWizardProps) {
                   setFormData({
                     project_location: 'Ranchi, Jharkhand',
                     unit_category: 'Residential',
-                    unit_type: 'Flat',
+                    unit_type: 'Residential',
                     payment_mode: 'UPI',
-                    payment_plan_type: 'ConstructionLinked',
+                    additional_parking: 0,
                   })
                   setDraftId(undefined)
                   setCurrentStep(1)

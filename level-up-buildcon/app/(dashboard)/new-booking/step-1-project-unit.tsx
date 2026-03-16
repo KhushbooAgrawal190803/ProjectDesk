@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { step1Schema, Step1Data } from '@/lib/validations/booking'
-import { getFlatAreas } from '@/lib/data/flat-areas'
+import { getFlatAreas, isFlatAreaLookupProject, isCommercialFlat, isAmenityFlat, COMMERCIAL_FLAT_AREA } from '@/lib/data/flat-areas'
 import { checkUnitAvailability } from './actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,6 +26,7 @@ interface Step1ProjectUnitProps {
 
 export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1ProjectUnitProps) {
   const [unitWarning, setUnitWarning] = useState<string | null>(null)
+  const [flatError, setFlatError] = useState<string | null>(null)
   const [checkingUnit, setCheckingUnit] = useState(false)
 
   const {
@@ -46,19 +47,69 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
     },
   })
 
-  const unitType = watch('unit_type')
+  const unitCategory = watch('unit_category')
   const projectName = watch('project_name')
   const unitNo = watch('unit_no')
 
-  // Auto-fill built-up and super built-up area when flat number is picked (Anandam)
+  // Keep unit_type in sync with unit_category (they mirror each other)
+  useEffect(() => {
+    if (unitCategory) setValue('unit_type', unitCategory as 'Residential' | 'Commercial')
+  }, [unitCategory, setValue])
+
+  // Auto-fill built-up and super built-up area when flat number changes
   useEffect(() => {
     if (!projectName || !unitNo) return
-    const areas = getFlatAreas(projectName, unitNo)
+    const trimmed = unitNo.trim()
+    if (unitCategory === 'Commercial' && isCommercialFlat(trimmed)) {
+      setValue('builtup_area', COMMERCIAL_FLAT_AREA.built_up_area_sqft!)
+      setValue('super_builtup_area', COMMERCIAL_FLAT_AREA.super_built_up_area_sqft!)
+      return
+    }
+    const areas = getFlatAreas(projectName, trimmed)
     if (areas) {
       if (areas.built_up_area_sqft != null) setValue('builtup_area', areas.built_up_area_sqft)
       if (areas.super_built_up_area_sqft != null) setValue('super_builtup_area', areas.super_built_up_area_sqft)
     }
-  }, [projectName, unitNo, setValue])
+  }, [projectName, unitNo, unitCategory, setValue])
+
+  // Auto-derive floor number from unit number (502 → 5, 203 → 2, 1001 → 10)
+  useEffect(() => {
+    if (!unitNo) return
+    const digits = unitNo.replace(/\D/g, '')
+    if (digits.length >= 3) {
+      setValue('floor_no', digits.slice(0, -2))
+    }
+  }, [unitNo, setValue])
+
+  // Validate flat number against the selected category
+  useEffect(() => {
+    if (!projectName || !unitNo) { setFlatError(null); return }
+    if (!isFlatAreaLookupProject(projectName)) { setFlatError(null); return }
+    const trimmed = unitNo.trim()
+
+    if (unitCategory === 'Commercial') {
+      // Only 101-104 and 201-204 are valid for commercial bookings
+      if (!isCommercialFlat(trimmed)) {
+        setFlatError(`Flat ${unitNo} is not a commercial unit. Only 101–104 and 201–204 can be booked under Commercial.`)
+      } else {
+        setFlatError(null)
+      }
+    } else {
+      // Residential: block commercial flats, amenity flats, and unknowns
+      if (isCommercialFlat(trimmed)) {
+        setFlatError(`Flat ${unitNo} is a commercial unit. Select "Commercial" to book it.`)
+      } else if (isAmenityFlat(trimmed)) {
+        setFlatError(`Flat ${unitNo} is an amenity unit and is not available for booking`)
+      } else {
+        const areas = getFlatAreas(projectName, trimmed)
+        if (areas === null) {
+          setFlatError(`Flat ${unitNo} is not in the Anandam schedule`)
+        } else {
+          setFlatError(null)
+        }
+      }
+    }
+  }, [projectName, unitNo, unitCategory])
 
   const checkUnit = useCallback(async () => {
     if (!projectName || !unitNo) {
@@ -81,6 +132,10 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
   }, [projectName, unitNo, draftId])
 
   const onSubmit = (formData: Step1Data) => {
+    if (flatError) {
+      toast.error('Invalid flat number', { description: flatError })
+      return
+    }
     if (unitWarning) {
       toast.error('Unit not available', { description: unitWarning })
       return
@@ -187,35 +242,8 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="unit_type">Unit Type</Label>
-            <select
-              id="unit_type"
-              {...register('unit_type')}
-              className="flex h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
-            >
-              <option value="Flat">Flat</option>
-              <option value="Villa">Villa</option>
-              <option value="Plot">Plot</option>
-              <option value="Shop">Shop</option>
-              <option value="Office">Office</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          {unitType === 'Other' && (
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="unit_type_other_text">Specify Unit Type</Label>
-              <Input
-                id="unit_type_other_text"
-                {...register('unit_type_other_text')}
-                placeholder="Enter unit type"
-              />
-              {errors.unit_type_other_text && (
-                <p className="text-sm text-red-600">{getErrorMessage(errors.unit_type_other_text)}</p>
-              )}
-            </div>
-          )}
+          {/* unit_type mirrors unit_category — stored for records but not shown separately */}
+          <input type="hidden" {...register('unit_type')} />
 
           <div className="space-y-2">
             <Label htmlFor="unit_no">Unit Number</Label>
@@ -229,10 +257,13 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
             {errors.unit_no && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.unit_no)}</p>
             )}
+            {flatError && !errors.unit_no && (
+              <p className="text-sm text-red-600 font-medium">{flatError}</p>
+            )}
             {checkingUnit && (
               <p className="text-sm text-zinc-500">Checking availability...</p>
             )}
-            {unitWarning && !errors.unit_no && (
+            {unitWarning && !errors.unit_no && !flatError && (
               <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 p-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
                 <p className="text-sm text-amber-700">{unitWarning}</p>
@@ -245,7 +276,8 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
             <Input
               id="floor_no"
               {...register('floor_no')}
-              placeholder="e.g., Ground, 1st, 2nd"
+              placeholder="Auto-filled from unit no."
+              className="bg-zinc-50"
             />
           </div>
 
@@ -274,20 +306,6 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
             />
             {errors.super_builtup_area && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.super_builtup_area)}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="carpet_area">Carpet Area (sq.ft.)</Label>
-            <Input
-              id="carpet_area"
-              type="number"
-              step="0.01"
-              {...register('carpet_area')}
-              placeholder="e.g., 1000"
-            />
-            {errors.carpet_area && (
-              <p className="text-sm text-red-600">{getErrorMessage(errors.carpet_area)}</p>
             )}
           </div>
         </div>

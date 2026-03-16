@@ -1,14 +1,14 @@
 'use server'
 
 import { requireProfile } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { BookingFormData } from '@/lib/validations/booking'
 
 export async function saveDraft(data: Partial<BookingFormData>, draftId?: string) {
   try {
     const profile = await requireProfile()
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     // Normalize and prepare booking data - same as submitBooking
     const bookingData: any = {
@@ -103,7 +103,7 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
 
 export async function getDraft(draftId: string) {
   const profile = await requireProfile()
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   const { data, error } = await supabase
     .from('bookings')
@@ -122,7 +122,7 @@ export async function getDraft(draftId: string) {
 
 export async function getUserDrafts() {
   const profile = await requireProfile()
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   const { data, error } = await supabase
     .from('bookings')
@@ -145,7 +145,7 @@ export async function checkUnitAvailability(
 ): Promise<{ available: boolean; message?: string }> {
   try {
     const profile = await requireProfile()
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     let query = supabase
       .from('bookings')
@@ -183,7 +183,7 @@ export async function checkUnitAvailability(
 export async function submitBooking(data: BookingFormData, draftId?: string) {
   try {
     const profile = await requireProfile()
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     // Remove UI-only fields
     const { has_coapplicant, ...baseData } = data as any
@@ -318,7 +318,7 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
 
 export async function deleteDraft(draftId: string) {
   const profile = await requireProfile()
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   const { error } = await supabase
     .from('bookings')

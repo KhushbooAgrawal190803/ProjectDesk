@@ -77,7 +77,6 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting, docum
         {(data.floor_no as string) && <Field label="Floor" value={data.floor_no as string} />}
         {data.builtup_area != null && <Field label="Built-up Area" value={`${data.builtup_area} sq.ft.`} />}
         {data.super_builtup_area && <Field label="Super Built-up Area" value={`${data.super_builtup_area} sq.ft.`} />}
-        {data.carpet_area && <Field label="Carpet Area" value={`${data.carpet_area} sq.ft.`} />}
       </Section>
 
       <Section title="Applicant Information">

@@ -35,10 +35,13 @@ function createTransporter() {
 
 interface SendEmailOptions {
   to: string
+  bcc?: string | string[]
   subject: string
   html: string
   attachmentUrl?: string
   attachmentName?: string
+  attachmentBuffer?: Buffer
+  attachmentBufferName?: string
 }
 
 export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
@@ -66,9 +69,14 @@ export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
       }
     }
 
+    if (options.attachmentBuffer && options.attachmentBufferName) {
+      attachments.push({ filename: options.attachmentBufferName, content: options.attachmentBuffer })
+    }
+
     await transporter.sendMail({
       from: SMTP_FROM,
       to: options.to,
+      bcc: options.bcc,
       subject: options.subject,
       html: options.html,
       attachments,

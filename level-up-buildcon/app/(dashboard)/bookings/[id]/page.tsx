@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { requireProfile } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -24,7 +24,7 @@ interface AuditWithUser extends BookingAuditLog {
 }
 
 async function getBooking(id: string) {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   const { data, error } = await supabase
     .from('bookings')
@@ -43,7 +43,7 @@ async function getBooking(id: string) {
 }
 
 async function getAuditLog(bookingId: string) {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   const { data } = await supabase
     .from('booking_audit_log')
@@ -58,7 +58,7 @@ async function getAuditLog(bookingId: string) {
 }
 
 async function getBookingDocuments(bookingId: string) {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
   const { data } = await supabase
     .from('booking_documents')

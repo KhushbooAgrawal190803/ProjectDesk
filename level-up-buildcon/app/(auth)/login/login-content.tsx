@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { Building2 } from 'lucide-react'
+// import { handlePostLoginLockdown } from '@/lib/auth/lockdown'
 
 export default function LoginContent() {
   const router = useRouter()
@@ -26,63 +27,36 @@ export default function LoginContent() {
 
     try {
       const supabase = createClient()
-      
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      if (error) {
+      if (error || !data.user) {
         toast.error('Login failed', {
-          description: error.message,
+          description: 'Invalid email or password.',
         })
         return
       }
 
-      // Check if user has an active profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('status')
-        .eq('id', data.user.id)
-        .single()
-
-      if (profileError || !profile) {
-        await supabase.auth.signOut()
-        toast.error('Account not found', {
-          description: 'Please contact your administrator.',
-        })
-        return
-      }
-
-      if (profile.status === 'PENDING') {
-        await supabase.auth.signOut()
-        toast.error('Account pending approval', {
-          description: 'Your account is awaiting administrator approval.',
-        })
-        return
-      }
-
-      if (profile.status === 'DISABLED') {
-        await supabase.auth.signOut()
-        toast.error('Account disabled', {
-          description: 'Your account has been disabled. Contact your administrator.',
-        })
-        return
-      }
-
-      // Update last login
+      // Record the login timestamp
       await supabase
         .from('profiles')
         .update({ last_login: new Date().toISOString() })
         .eq('id', data.user.id)
 
+      // Lockdown feature temporarily disabled
+      // const lockdownState = await handlePostLoginLockdown(data.user.email || '')
+      // if (lockdownState === 'locked') { window.location.href = '/locked'; return }
+
       toast.success('Welcome back!', {
         description: 'Logging you in...',
       })
-      
-      router.push(redirect)
-      router.refresh()
-    } catch (error) {
+
+      // Full page reload ensures auth cookies are sent to the server
+      window.location.href = redirect
+    } catch {
       toast.error('Something went wrong', {
         description: 'Please try again.',
       })
@@ -116,11 +90,11 @@ export default function LoginContent() {
           <form onSubmit={handleLogin}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Username</Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
-                  type="text"
-                  placeholder="Enter your username"
+                  type="email"
+                  placeholder="Enter your email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required

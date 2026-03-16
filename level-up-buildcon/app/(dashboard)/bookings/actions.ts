@@ -1,13 +1,13 @@
 'use server'
 
 import { requireRole } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 export async function deleteBooking(bookingId: string) {
   try {
     const profile = await requireRole(['ADMIN', 'EXECUTIVE'])
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     // First verify the booking exists
     const { data: booking, error: getError } = await supabase
@@ -55,7 +55,7 @@ export async function deleteBooking(bookingId: string) {
 export async function restoreBooking(bookingId: string) {
   try {
     const profile = await requireRole(['ADMIN'])
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     // Restore by clearing deleted_at and deleted_by
     const { error } = await supabase
@@ -92,7 +92,7 @@ export async function restoreBooking(bookingId: string) {
 export async function revertToDraft(bookingId: string, reason?: string) {
   try {
     const profile = await requireRole(['ADMIN', 'EXECUTIVE'])
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     // Verify the booking exists and is in SUBMITTED or EDITED state
     const { data: booking, error: getError } = await supabase
@@ -147,7 +147,7 @@ export async function revertToDraft(bookingId: string, reason?: string) {
 export async function approveBooking(bookingId: string) {
   try {
     const profile = await requireRole(['ADMIN'])
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     // Verify booking exists and is PENDING
     const { data: booking, error: getError } = await supabase
@@ -198,7 +198,7 @@ export async function approveBooking(bookingId: string) {
 export async function rejectBooking(bookingId: string, reason?: string) {
   try {
     const profile = await requireRole(['ADMIN'])
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     // Verify booking exists and is PENDING
     const { data: booking, error: getError } = await supabase

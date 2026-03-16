@@ -1,14 +1,14 @@
 'use server'
 
 import { requireRole } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { BookingFormData } from '@/lib/validations/booking'
 
 export async function updateBooking(bookingId: string, data: Partial<BookingFormData>) {
   try {
     const profile = await requireRole(['ADMIN', 'EXECUTIVE'])
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     // Normalize and prepare booking data
     const updateData: any = {}
