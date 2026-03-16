@@ -13,6 +13,7 @@ async function getBookings(searchParams: {
   search?: string
   project?: string
   status?: string
+  unit_category?: string
   created_by?: string
   payment_mode?: string
   from_date?: string
@@ -40,6 +41,10 @@ async function getBookings(searchParams: {
 
   if (searchParams.status) {
     query = query.eq('status', searchParams.status)
+  }
+
+  if (searchParams.unit_category) {
+    query = query.eq('unit_category', searchParams.unit_category)
   }
 
   if (searchParams.created_by) {
@@ -103,6 +108,7 @@ export default async function BookingsPage({
     search?: string
     project?: string
     status?: string
+    unit_category?: string
     created_by?: string
     payment_mode?: string
     from_date?: string

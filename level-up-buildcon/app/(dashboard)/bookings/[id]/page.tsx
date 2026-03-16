@@ -2,16 +2,18 @@ import { redirect } from 'next/navigation'
 import { requireProfile } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Building2, User, DollarSign, FileText, Edit, Download, History } from 'lucide-react'
-import { Booking, Profile, BookingAuditLog } from '@/lib/types/database'
+import { Building2, User, DollarSign, FileText, Edit, Download, History, Paperclip } from 'lucide-react'
+import { Booking, Profile, BookingAuditLog, BookingDocument } from '@/lib/types/database'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { DeleteBookingButton } from './delete-button'
 import { DownloadPDFsButton } from './download-pdfs-button'
+import { RevertToDraftButton } from './revert-to-draft-button'
+import { ApproveRejectButtons } from './approve-reject-buttons'
 
 interface BookingWithCreator extends Booking {
   creator: Profile
@@ -55,6 +57,18 @@ async function getAuditLog(bookingId: string) {
   return (data || []) as AuditWithUser[]
 }
 
+async function getBookingDocuments(bookingId: string) {
+  const supabase = await createClient()
+
+  const { data } = await supabase
+    .from('booking_documents')
+    .select('*')
+    .eq('booking_id', bookingId)
+    .order('created_at')
+
+  return (data || []) as BookingDocument[]
+}
+
 export default async function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const profile = await requireProfile()
@@ -62,9 +76,10 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
     redirect('/login')
   }
 
-  const [booking, auditLog] = await Promise.all([
+  const [booking, auditLog, documents] = await Promise.all([
     getBooking(id),
     getAuditLog(id),
+    getBookingDocuments(id),
   ])
 
   if (!booking) {
@@ -114,18 +129,21 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
                 {booking.serial_display}
               </Badge>
               <Badge 
-                variant={booking.status === 'SUBMITTED' ? 'default' : 'secondary'}
-                className={booking.status === 'SUBMITTED' ? 'bg-green-600' : ''}
+                variant={booking.status === 'SUBMITTED' ? 'default' : booking.status === 'DRAFT' ? 'outline' : booking.status === 'PENDING' ? 'default' : 'secondary'}
+                className={booking.status === 'SUBMITTED' ? 'bg-green-600' : booking.status === 'DRAFT' ? 'border-amber-400 text-amber-700' : booking.status === 'PENDING' ? 'bg-amber-500' : ''}
               >
                 {booking.status}
               </Badge>
             </div>
             <p className="text-zinc-600">
-              Created by {booking.creator?.full_name} on {booking.submitted_at && format(new Date(booking.submitted_at), 'MMMM d, yyyy')}
+              Created by {booking.creator?.full_name}{booking.submitted_at ? ` on ${format(new Date(booking.submitted_at), 'MMMM d, yyyy')}` : ''}
             </p>
           </div>
           <div className="flex gap-2">
             <DownloadPDFsButton bookingId={booking.id} serialDisplay={booking.serial_display || 'Booking'} />
+            {profile.role === 'ADMIN' && booking.status === 'PENDING' && (
+              <ApproveRejectButtons bookingId={booking.id} />
+            )}
             {canEdit && (
               <Link href={`/bookings/${booking.id}/edit`}>
                 <Button className="gap-2">
@@ -134,6 +152,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
                 </Button>
               </Link>
             )}
+            <RevertToDraftButton bookingId={booking.id} canRevert={canEdit} bookingStatus={booking.status} />
             <DeleteBookingButton bookingId={booking.id} canDelete={canEdit} />
           </div>
         </div>
@@ -151,6 +170,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             <Field label="Unit Type" value={booking.unit_type === 'Other' ? booking.unit_type_other_text : booking.unit_type} />
             <Field label="Unit Number" value={booking.unit_no} />
             {booking.floor_no && <Field label="Floor" value={booking.floor_no} />}
+            {booking.builtup_area != null && <Field label="Built-up Area" value={`${booking.builtup_area} sq.ft.`} />}
             {booking.super_builtup_area && <Field label="Super Built-up Area" value={`${booking.super_builtup_area} sq.ft.`} />}
             {booking.carpet_area && <Field label="Carpet Area" value={`${booking.carpet_area} sq.ft.`} />}
           </div>
@@ -186,26 +206,17 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
         {/* Pricing & Payment */}
         <Section icon={DollarSign} title="Pricing & Payment">
           <div className="space-y-1">
-            <Field label="Basic Sale Price" value={formatCurrency(booking.basic_sale_price)} />
-            <Field label="Other Charges" value={formatCurrency(booking.other_charges || 0)} />
-            <Separator className="my-3" />
-            <Field label="Total Cost" value={formatCurrency(booking.total_cost)} />
-            {booking.total_cost_override_reason && (
-              <div className="pt-2 pb-1">
-                <p className="text-xs text-amber-600 mb-1">Override Reason:</p>
-                <p className="text-sm text-zinc-700 bg-amber-50 p-3 rounded border border-amber-200">
-                  {booking.total_cost_override_reason}
-                </p>
-              </div>
-            )}
+            {booking.rate_per_sqft && <Field label="Rate per Sq.ft." value={formatCurrency(booking.rate_per_sqft)} />}
+            <Field label="Total Amount" value={formatCurrency(booking.total_cost)} />
             <Separator className="my-3" />
             <Field label="Booking Amount Paid" value={formatCurrency(booking.booking_amount_paid)} />
-            <Field label="Payment Mode" value={booking.payment_mode.replace('_', ' / ')} />
+            {booking.gst_amount && <Field label="GST (5%)" value={formatCurrency(booking.gst_amount)} />}
+            {booking.payment_mode && <Field label="Payment Mode" value={booking.payment_mode.replace('_', ' / ')} />}
             {booking.txn_or_cheque_no && <Field label="Transaction / Cheque No." value={booking.txn_or_cheque_no} />}
             {booking.txn_date && <Field label="Transaction Date" value={format(new Date(booking.txn_date), 'MMMM d, yyyy')} />}
             {booking.payment_mode_detail && <Field label="Payment Details" value={booking.payment_mode_detail} />}
             <Separator className="my-3" />
-            <Field label="Payment Plan" value={booking.payment_plan_type.replace(/([A-Z])/g, ' $1').trim()} />
+            {booking.payment_plan_type && <Field label="Payment Plan" value={booking.payment_plan_type.replace(/([A-Z])/g, ' $1').trim()} />}
             {booking.payment_plan_custom_text && (
               <div className="pt-2">
                 <p className="text-xs text-zinc-600 mb-1">Custom Plan Details:</p>
@@ -216,6 +227,44 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             )}
           </div>
         </Section>
+
+        {/* Uploaded Documents */}
+        {documents.length > 0 && (
+          <Section icon={Paperclip} title="Uploaded Documents">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {documents.map((doc) => {
+                const docLabels: Record<string, string> = {
+                  applicant_pan: 'Applicant PAN',
+                  applicant_aadhaar: 'Applicant Aadhaar',
+                  coapplicant_pan: 'Co-Applicant PAN',
+                  coapplicant_aadhaar: 'Co-Applicant Aadhaar',
+                }
+                return (
+                  <div key={doc.id} className="flex items-center justify-between p-3 bg-zinc-50 rounded-lg border border-zinc-200">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <FileText className="w-5 h-5 text-zinc-500 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-zinc-900 truncate">{docLabels[doc.document_type] || doc.document_type}</p>
+                        <p className="text-xs text-zinc-500 truncate">{doc.file_name}</p>
+                      </div>
+                    </div>
+                    <a
+                      href={`/api/bookings/${booking.id}/documents/${doc.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-shrink-0 ml-2"
+                    >
+                      <Button variant="outline" size="sm" className="gap-1">
+                        <Download className="w-3 h-3" />
+                        View
+                      </Button>
+                    </a>
+                  </div>
+                )
+              })}
+            </div>
+          </Section>
+        )}
 
         {/* Audit Log */}
         {auditLog.length > 0 && (

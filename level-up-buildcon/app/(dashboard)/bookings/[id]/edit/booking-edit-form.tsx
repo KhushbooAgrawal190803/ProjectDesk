@@ -29,6 +29,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
     unit_type_other_text: booking.unit_type_other_text || '',
     unit_no: booking.unit_no,
     floor_no: booking.floor_no || '',
+    builtup_area: booking.builtup_area || '',
     super_builtup_area: booking.super_builtup_area || '',
     carpet_area: booking.carpet_area || '',
 
@@ -77,6 +78,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
       // Normalize numeric fields
       const normalizedData = {
         ...formData,
+        builtup_area: formData.builtup_area ? parseFloat(String(formData.builtup_area)) : undefined,
         super_builtup_area: formData.super_builtup_area ? parseFloat(String(formData.super_builtup_area)) : undefined,
         carpet_area: formData.carpet_area ? parseFloat(String(formData.carpet_area)) : undefined,
         basic_sale_price: formData.basic_sale_price ? parseFloat(String(formData.basic_sale_price)) : undefined,
@@ -143,6 +145,16 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
             <Input
               name="floor_no"
               value={formData.floor_no}
+              onChange={handleInputChange}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label>Built-up Area (sq.ft.)</Label>
+            <Input
+              name="builtup_area"
+              type="number"
+              value={formData.builtup_area}
               onChange={handleInputChange}
               className="mt-1"
             />

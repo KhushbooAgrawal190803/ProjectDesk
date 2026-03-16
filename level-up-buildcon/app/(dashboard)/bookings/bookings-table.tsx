@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, Download, Eye, Filter, X, FileText } from 'lucide-react'
+import { Search, Filter, X, FileText } from 'lucide-react'
 import { format } from 'date-fns'
 
 interface BookingWithCreator extends Booking {
@@ -85,6 +85,8 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
     switch (status) {
       case 'SUBMITTED':
         return <Badge variant="default" className="bg-green-600">Submitted</Badge>
+      case 'PENDING':
+        return <Badge variant="default" className="bg-amber-500">Pending</Badge>
       case 'EDITED':
         return <Badge variant="secondary">Edited</Badge>
       default:
@@ -168,6 +170,22 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
 
               <div>
                 <Select
+                  value={searchParams.get('unit_category') || ''}
+                  onValueChange={(v) => handleFilterChange('unit_category', v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">All Categories</SelectItem>
+                    <SelectItem value="Residential">Residential</SelectItem>
+                    <SelectItem value="Commercial">Commercial</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Select
                   value={searchParams.get('status') || ''}
                   onValueChange={(v) => handleFilterChange('status', v)}
                 >
@@ -176,6 +194,7 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">All Status</SelectItem>
+                    <SelectItem value="PENDING">Pending</SelectItem>
                     <SelectItem value="SUBMITTED">Submitted</SelectItem>
                     <SelectItem value="EDITED">Edited</SelectItem>
                   </SelectContent>
@@ -206,10 +225,10 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
                   onValueChange={(v) => handleFilterChange('created_by', v)}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="All Staff" />
+                    <SelectValue placeholder="All Users" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Staff</SelectItem>
+                    <SelectItem value="">All Users</SelectItem>
                     {filterOptions.users.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.full_name}
@@ -273,12 +292,11 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
                 <TableHead className="font-semibold">Created By</TableHead>
                 <TableHead className="font-semibold">Date</TableHead>
                 <TableHead className="font-semibold">Status</TableHead>
-                <TableHead className="w-12"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {bookings.map((booking) => (
-                <TableRow key={booking.id} className="hover:bg-zinc-50">
+                <TableRow key={booking.id} className="hover:bg-zinc-50 cursor-pointer" onClick={() => router.push(`/bookings/${booking.id}`)}>
                   <TableCell>
                     <Badge variant="outline" className="font-mono">
                       {booking.serial_display}
@@ -292,7 +310,7 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
                     {formatCurrency(booking.booking_amount_paid)}
                   </TableCell>
                   <TableCell className="text-zinc-600">
-                    {booking.payment_mode.replace('_', ' / ')}
+                    {booking.payment_mode ? booking.payment_mode.replace('_', ' / ') : '-'}
                   </TableCell>
                   <TableCell className="text-zinc-600 text-sm">
                     {booking.creator?.full_name}
@@ -301,13 +319,6 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
                     {booking.submitted_at && format(new Date(booking.submitted_at), 'MMM d, yyyy')}
                   </TableCell>
                   <TableCell>{getStatusBadge(booking.status)}</TableCell>
-                  <TableCell>
-                    <Link href={`/bookings/${booking.id}`}>
-                      <Button variant="ghost" size="sm">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </Link>
-                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

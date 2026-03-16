@@ -23,6 +23,7 @@ export async function updateBooking(bookingId: string, data: Partial<BookingForm
       unit_type_other_text: true,
       unit_no: true,
       floor_no: true,
+      builtup_area: true,
       super_builtup_area: true,
       carpet_area: true,
       applicant_name: true,
@@ -54,7 +55,7 @@ export async function updateBooking(bookingId: string, data: Partial<BookingForm
     for (const [key, value] of Object.entries(data)) {
       if (fieldMappings[key]) {
         // Convert numeric fields
-        if (['super_builtup_area', 'carpet_area', 'basic_sale_price', 'other_charges', 'total_cost', 'booking_amount_paid'].includes(key)) {
+        if (['builtup_area', 'super_builtup_area', 'carpet_area', 'basic_sale_price', 'other_charges', 'total_cost', 'booking_amount_paid'].includes(key)) {
           updateData[key] = value ? parseFloat(value as any) : null
         } else if (value === '' || value === undefined) {
           // Convert empty strings and undefined to null

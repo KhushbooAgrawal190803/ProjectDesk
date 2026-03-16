@@ -3,17 +3,26 @@
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { ChevronLeft, CheckCircle2, Loader2 } from 'lucide-react'
+import { ChevronLeft, CheckCircle2, Loader2, FileText, Image } from 'lucide-react'
 import { BookingFormData } from '@/lib/validations/booking'
+import { UploadedDoc } from './document-upload'
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  applicant_pan: 'Applicant PAN',
+  applicant_aadhaar: 'Applicant Aadhaar',
+  coapplicant_pan: 'Co-Applicant PAN',
+  coapplicant_aadhaar: 'Co-Applicant Aadhaar',
+}
 
 interface Step4ReviewProps {
   data: BookingFormData
+  documents?: Record<string, UploadedDoc>
   onBack: () => void
   onSubmit: () => void
   submitting: boolean
 }
 
-export function Step4Review({ data: rawData, onBack, onSubmit, submitting }: Step4ReviewProps) {
+export function Step4Review({ data: rawData, onBack, onSubmit, submitting, documents = {} }: Step4ReviewProps) {
   const data = rawData as any
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -66,6 +75,7 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting }: Ste
         <Field label="Unit Type" value={(data.unit_type as string) === 'Other' ? (data.unit_type_other_text as string) : (data.unit_type as string)} />
         <Field label="Unit Number" value={data.unit_no as string} />
         {(data.floor_no as string) && <Field label="Floor" value={data.floor_no as string} />}
+        {data.builtup_area != null && <Field label="Built-up Area" value={`${data.builtup_area} sq.ft.`} />}
         {data.super_builtup_area && <Field label="Super Built-up Area" value={`${data.super_builtup_area} sq.ft.`} />}
         {data.carpet_area && <Field label="Carpet Area" value={`${data.carpet_area} sq.ft.`} />}
       </Section>
@@ -95,26 +105,17 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting }: Ste
       </Section>
 
       <Section title="Pricing & Payment">
-        <Field label="Basic Sale Price" value={formatCurrency(data.basic_sale_price)} />
-        <Field label="Other Charges" value={formatCurrency(data.other_charges || 0)} />
-        <Separator />
-        <Field label="Total Cost" value={formatCurrency(data.total_cost)} />
-        {data.total_cost_override_reason && (
-          <div className="pt-2">
-            <p className="text-xs text-amber-600 mb-1">Override Reason:</p>
-            <p className="text-sm text-zinc-700 bg-amber-50 p-2 rounded border border-amber-200">
-              {data.total_cost_override_reason}
-            </p>
-          </div>
-        )}
+        <Field label="Rate per Sq.ft." value={formatCurrency(data.rate_per_sqft || 0)} />
+        <Field label="Total Amount" value={formatCurrency(data.total_cost)} />
         <Separator />
         <Field label="Booking Amount Paid" value={formatCurrency(data.booking_amount_paid)} />
-        <Field label="Payment Mode" value={data.payment_mode.replace('_', ' / ')} />
+        {data.gst_amount && <Field label="GST (5%)" value={formatCurrency(data.gst_amount)} />}
+        {data.payment_mode && <Field label="Payment Mode" value={data.payment_mode.replace('_', ' / ')} />}
         {data.txn_or_cheque_no && <Field label="Transaction / Cheque No." value={data.txn_or_cheque_no} />}
         {data.txn_date && <Field label="Transaction Date" value={new Date(data.txn_date).toLocaleDateString()} />}
         {data.payment_mode_detail && <Field label="Payment Details" value={data.payment_mode_detail} />}
         <Separator />
-        <Field label="Payment Plan" value={data.payment_plan_type.replace(/([A-Z])/g, ' $1').trim()} />
+        {data.payment_plan_type && <Field label="Payment Plan" value={data.payment_plan_type.replace(/([A-Z])/g, ' $1').trim()} />}
         {data.payment_plan_custom_text && (
           <div className="pt-2">
             <p className="text-xs text-zinc-600 mb-1">Custom Plan Details:</p>
@@ -124,6 +125,23 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting }: Ste
           </div>
         )}
       </Section>
+
+      {/* Uploaded Documents */}
+      {Object.keys(documents).length > 0 && (
+        <Section title="Uploaded Documents">
+          {Object.values(documents).map((doc) => (
+            <div key={doc.id} className="flex items-center gap-2 py-1">
+              {doc.mimeType?.startsWith('image/') ? (
+                <Image className="w-4 h-4 text-zinc-500" />
+              ) : (
+                <FileText className="w-4 h-4 text-zinc-500" />
+              )}
+              <span className="text-sm text-zinc-600">{DOC_TYPE_LABELS[doc.documentType] || doc.documentType}:</span>
+              <span className="text-sm font-medium text-zinc-900 ml-auto">{doc.fileName}</span>
+            </div>
+          ))}
+        </Section>
+      )}
 
       {/* Actions */}
       <div className="flex justify-between pt-4 border-t border-zinc-200">

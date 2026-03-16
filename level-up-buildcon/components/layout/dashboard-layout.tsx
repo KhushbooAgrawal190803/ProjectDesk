@@ -58,20 +58,18 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
     router.refresh()
   }
 
-  const navItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/new-booking', label: 'New Booking', icon: PlusCircle },
-    { href: '/bookings', label: 'All Bookings', icon: FileText },
-    { href: '/lookup', label: 'Quick Lookup', icon: Search },
-    { href: '/downloads', label: 'Downloads', icon: Download },
+  const allNavItems = [
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['EXECUTIVE', 'ACCOUNTS', 'ADMIN'] },
+    { href: '/new-booking', label: 'New Booking', icon: PlusCircle, roles: ['EXECUTIVE', 'ADMIN'] },
+    { href: '/bookings', label: 'All Bookings', icon: FileText, roles: ['EXECUTIVE', 'ACCOUNTS', 'ADMIN'] },
+    { href: '/lookup', label: 'Quick Lookup', icon: Search, roles: ['EXECUTIVE', 'ADMIN'] },
+    { href: '/downloads', label: 'Downloads', icon: Download, roles: ['EXECUTIVE', 'ADMIN'] },
+    { href: '/accounts', label: 'Accounts', icon: FileText, roles: ['ACCOUNTS', 'ADMIN'] },
+    { href: '/bookings/deleted', label: 'Deleted Bookings', icon: Trash2, roles: ['ADMIN'] },
+    { href: '/admin', label: 'Admin', icon: UserCog, roles: ['ADMIN'] },
   ]
 
-  if (profile.role === 'ADMIN') {
-    navItems.push(
-      { href: '/bookings/deleted', label: 'Deleted Bookings', icon: Trash2 },
-      { href: '/admin', label: 'Admin', icon: UserCog }
-    )
-  }
+  const navItems = allNavItems.filter(item => item.roles.includes(profile.role))
 
   const getInitials = (name: string) => {
     return name

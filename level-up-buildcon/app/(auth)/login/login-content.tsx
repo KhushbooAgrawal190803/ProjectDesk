@@ -116,11 +116,11 @@ export default function LoginContent() {
           <form onSubmit={handleLogin}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">Username</Label>
                 <Input
                   id="email"
-                  type="email"
-                  placeholder="you@company.com"
+                  type="text"
+                  placeholder="Enter your username"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -162,10 +162,7 @@ export default function LoginContent() {
         </Card>
 
         <p className="text-center text-sm text-zinc-500 mt-6">
-          Don't have an account?{' '}
-          <Link href="/signup" className="text-zinc-900 font-medium hover:underline">
-            Sign up
-          </Link>
+          Internal use only • Contact admin for access
         </p>
       </div>
     </div>

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { ChevronRight, ChevronLeft, AlertCircle } from 'lucide-react'
+import { ChevronRight, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { useEffect } from 'react'
 
@@ -17,13 +17,15 @@ const getErrorMessage = (error: any): string | null => {
 }
 
 interface Step3PricingPaymentProps {
-  data: Partial<Step3Data>
+  data: Partial<Step3Data> & { super_builtup_area?: number }
   onUpdate: (data: Partial<Step3Data>) => void
   onNext: () => void
   onBack: () => void
 }
 
 export function Step3PricingPayment({ data, onUpdate, onNext, onBack }: Step3PricingPaymentProps) {
+  const superBuiltupArea = Number(data.super_builtup_area) || 0
+
   const {
     register,
     handleSubmit,
@@ -35,28 +37,38 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack }: Step3Pri
     defaultValues: data,
   })
 
-  const basicSalePrice = watch('basic_sale_price')
-  const otherCharges = watch('other_charges')
-  const totalCost = watch('total_cost')
+  const ratePerSqft = watch('rate_per_sqft')
+  const bookingAmountPaid = watch('booking_amount_paid')
   const paymentPlanType = watch('payment_plan_type')
 
-  // Auto-calculate total
+  // Auto-calculate total cost from rate × area
   useEffect(() => {
-    if (basicSalePrice && otherCharges !== undefined) {
-      const autoTotal = Number(basicSalePrice) + Number(otherCharges)
-      if (!totalCost || Math.abs(Number(totalCost) - autoTotal) < 0.01) {
-        setValue('total_cost', autoTotal)
-      }
+    if (ratePerSqft && superBuiltupArea > 0) {
+      const total = Math.round(Number(ratePerSqft) * superBuiltupArea * 100) / 100
+      setValue('total_cost', total)
     }
-  }, [basicSalePrice, otherCharges, totalCost, setValue])
+  }, [ratePerSqft, superBuiltupArea, setValue])
+
+  // Auto-calculate GST at 5% of booking amount paid
+  useEffect(() => {
+    if (bookingAmountPaid) {
+      const gst = Number(bookingAmountPaid) * 0.05
+      setValue('gst_amount', Math.round(gst * 100) / 100)
+    } else {
+      setValue('gst_amount', undefined)
+    }
+  }, [bookingAmountPaid, setValue])
 
   const onSubmit = (formData: Step3Data) => {
     onUpdate(formData)
     onNext()
   }
 
-  const handleError = () => {
-    toast.error('Please fill in all required fields correctly')
+  const handleError = (formErrors: any) => {
+    const messages = Object.values(formErrors).map((e: any) => e?.message).filter(Boolean)
+    toast.error('Please fix the following:', {
+      description: messages.join(', ') || 'Some required fields are missing',
+    })
   }
 
   const formatCurrency = (value: number) => {
@@ -67,8 +79,8 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack }: Step3Pri
     }).format(value)
   }
 
-  const autoCalculatedTotal = (Number(basicSalePrice) || 0) + (Number(otherCharges) || 0)
-  const hasOverride = Math.abs((Number(totalCost) || 0) - autoCalculatedTotal) > 0.01
+  const calculatedTotal = Math.round(Number(ratePerSqft || 0) * superBuiltupArea * 100) / 100
+  const gstAmount = Math.round(Number(bookingAmountPaid || 0) * 0.05 * 100) / 100
 
   return (
     <form onSubmit={handleSubmit(onSubmit, handleError)} className="space-y-6">
@@ -77,71 +89,41 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack }: Step3Pri
         <h3 className="text-lg font-semibold mb-4">Pricing</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="basic_sale_price">Basic Sale Price (₹) *</Label>
+            <Label htmlFor="rate_per_sqft">Rate per Sq.ft. (₹)</Label>
             <Input
-              id="basic_sale_price"
+              id="rate_per_sqft"
               type="number"
-              step="0.01"
-              {...register('basic_sale_price')}
-              placeholder="0.00"
+              step="any"
+              {...register('rate_per_sqft')}
+              placeholder="e.g., 5000"
             />
-            {errors.basic_sale_price && (
-              <p className="text-sm text-red-600">{getErrorMessage(errors.basic_sale_price)}</p>
+            {errors.rate_per_sqft && (
+              <p className="text-sm text-red-600">{getErrorMessage(errors.rate_per_sqft)}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="other_charges">Other Charges (₹)</Label>
-            <Input
-              id="other_charges"
-              type="number"
-              step="0.01"
-              {...register('other_charges')}
-              placeholder="0.00"
-            />
-            {errors.other_charges && (
-              <p className="text-sm text-red-600">{getErrorMessage(errors.other_charges)}</p>
-            )}
-          </div>
-
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="total_cost">Total Cost (₹) *</Label>
+            <Label htmlFor="total_cost">Total Amount (₹)</Label>
             <Input
               id="total_cost"
               type="number"
-              step="0.01"
+              step="any"
               {...register('total_cost')}
               placeholder="0.00"
-              className={hasOverride ? 'border-amber-500' : ''}
+              readOnly={!!(superBuiltupArea > 0 && ratePerSqft)}
+              className={superBuiltupArea > 0 && ratePerSqft ? 'bg-zinc-50' : ''}
             />
-            {basicSalePrice && otherCharges !== undefined && (
-              <p className="text-sm text-zinc-500">
-                Auto-calculated: {formatCurrency(autoCalculatedTotal)}
+            {superBuiltupArea > 0 && ratePerSqft ? (
+              <p className="text-xs text-zinc-500">
+                {Number(ratePerSqft).toLocaleString('en-IN')} × {superBuiltupArea} sq.ft. = {formatCurrency(calculatedTotal)}
               </p>
-            )}
+            ) : superBuiltupArea === 0 ? (
+              <p className="text-xs text-amber-600">Enter super built-up area in Step 1 for auto-calculation</p>
+            ) : null}
             {errors.total_cost && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.total_cost)}</p>
             )}
           </div>
-
-          {hasOverride && (
-            <div className="space-y-2 md:col-span-2">
-              <div className="flex items-center gap-2 text-amber-600 mb-2">
-                <AlertCircle className="w-4 h-4" />
-                <span className="text-sm font-medium">Total cost override detected</span>
-              </div>
-              <Label htmlFor="total_cost_override_reason">Reason for Override *</Label>
-              <Textarea
-                id="total_cost_override_reason"
-                {...register('total_cost_override_reason')}
-                placeholder="Explain why the total differs from the calculated amount"
-                rows={2}
-              />
-              {errors.total_cost_override_reason && (
-                <p className="text-sm text-red-600">{getErrorMessage(errors.total_cost_override_reason)}</p>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -150,21 +132,28 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack }: Step3Pri
         <h3 className="text-lg font-semibold mb-4">Payment Details</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="booking_amount_paid">Booking Amount Paid (₹) *</Label>
+            <Label htmlFor="booking_amount_paid">Booking Amount Paid (₹)</Label>
             <Input
               id="booking_amount_paid"
               type="number"
-              step="0.01"
+              step="any"
               {...register('booking_amount_paid')}
               placeholder="0.00"
             />
             {errors.booking_amount_paid && (
-              <p className="text-sm text-red-600">{errors.booking_amount_paid.message}</p>
+              <p className="text-sm text-red-600">{getErrorMessage(errors.booking_amount_paid)}</p>
+            )}
+            {bookingAmountPaid && Number(bookingAmountPaid) > 0 && (
+              <div className="rounded-md bg-blue-50 border border-blue-200 p-2">
+                <p className="text-sm text-blue-700">
+                  GST (5%): <span className="font-semibold">{formatCurrency(gstAmount)}</span>
+                </p>
+              </div>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="payment_mode">Payment Mode *</Label>
+            <Label htmlFor="payment_mode">Payment Mode</Label>
             <select
               id="payment_mode"
               {...register('payment_mode')}
@@ -211,7 +200,7 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack }: Step3Pri
         <h3 className="text-lg font-semibold mb-4">Payment Plan</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2 md:col-span-2">
-            <Label>Payment Plan Type *</Label>
+            <Label>Payment Plan Type</Label>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {['ConstructionLinked', 'DownPayment', 'PossessionLinked', 'Custom'].map((type) => (
                 <label key={type}>
@@ -233,7 +222,7 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack }: Step3Pri
 
           {paymentPlanType === 'Custom' && (
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="payment_plan_custom_text">Custom Payment Plan Details *</Label>
+              <Label htmlFor="payment_plan_custom_text">Custom Payment Plan Details</Label>
               <Textarea
                 id="payment_plan_custom_text"
                 {...register('payment_plan_custom_text')}
@@ -241,7 +230,7 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack }: Step3Pri
                 rows={3}
               />
               {errors.payment_plan_custom_text && (
-                <p className="text-sm text-red-600">{errors.payment_plan_custom_text.message}</p>
+                <p className="text-sm text-red-600">{getErrorMessage(errors.payment_plan_custom_text)}</p>
               )}
             </div>
           )}

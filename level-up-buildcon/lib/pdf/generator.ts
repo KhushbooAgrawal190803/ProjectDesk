@@ -78,10 +78,20 @@ export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Pr
 
       // Row helper with better formatting
       const addRow = (label: string, value: string) => {
+        const maxValueWidth = pageWidth - 110
+        const splitValue = doc.splitTextToSize(value, maxValueWidth)
+        const lineHeight = 4.5
+        const rowHeight = Math.max(5.5, splitValue.length * lineHeight + 1)
+
+        if (yPos + rowHeight > pageHeight - 25) {
+          doc.addPage()
+          yPos = 15
+        }
+
         // Alternating light background
         if (Math.floor(yPos / 6) % 2 === 0) {
           doc.setFillColor(248, 250, 252)
-          doc.rect(15, yPos - 4, pageWidth - 30, 5.5, 'F')
+          doc.rect(15, yPos - 4, pageWidth - 30, rowHeight, 'F')
         }
 
         doc.setTextColor(75, 105, 145)
@@ -92,24 +102,9 @@ export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Pr
         doc.setTextColor(60, 70, 85)
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(10)
-        // Increased width to prevent currency values from wrapping
-        const maxValueWidth = pageWidth - 110
-        const splitValue = doc.splitTextToSize(value, maxValueWidth)
-        // If it's a currency value and it wrapped, use single line at smaller size
-        if (splitValue.length > 1 && value.includes('₹')) {
-          doc.setFontSize(9)
-          doc.text(value, 95, yPos + 0.5)
-          doc.setFontSize(10)
-        } else {
-          doc.text(splitValue, 95, yPos + 0.5)
-        }
+        doc.text(splitValue, 95, yPos + 0.5)
 
-        yPos += 6
-
-        if (yPos > pageHeight - 25) {
-          doc.addPage()
-          yPos = 15
-        }
+        yPos += rowHeight + 0.5
       }
 
       // PROJECT INFORMATION
@@ -134,6 +129,7 @@ export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Pr
       addRow('Type', booking.unit_type || 'N/A')
       addRow('Unit Number', booking.unit_no || 'N/A')
       addRow('Floor Number', booking.floor_no || 'N/A')
+      addRow('Built-up Area', `${booking.builtup_area != null ? booking.builtup_area : 'N/A'} sq.ft`)
       addRow('Super Built-up Area', `${booking.super_builtup_area || 'N/A'} sq.ft`)
       addRow('Carpet Area', `${booking.carpet_area || 'N/A'} sq.ft`)
       yPos += 3
@@ -161,10 +157,14 @@ export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Pr
 
       // PAYMENT INFORMATION
       addSection('PAYMENT INFORMATION')
-      addRow('Basic Sale Price', formatCurrency(booking.basic_sale_price || 0))
-      addRow('Other Charges', formatCurrency(booking.other_charges || 0))
-      addRow('Total Cost', formatCurrency(booking.total_cost || 0))
+      if (booking.rate_per_sqft) {
+        addRow('Rate per Sq.ft.', formatCurrency(booking.rate_per_sqft))
+      }
+      addRow('Total Amount', formatCurrency(booking.total_cost || 0))
       addRow('Booking Amount Paid', formatCurrency(booking.booking_amount_paid || 0))
+      if (booking.gst_amount) {
+        addRow('GST (5%)', formatCurrency(booking.gst_amount))
+      }
       addRow('Payment Mode', booking.payment_mode || 'N/A')
       if (booking.txn_or_cheque_no) {
         addRow('Txn/Cheque No', booking.txn_or_cheque_no)
@@ -308,9 +308,19 @@ export function generateCustomerPDF(booking: Booking & { creator?: Profile }): P
 
       // Row helper
       const addRow = (label: string, value: string) => {
+        const maxValueWidth = pageWidth - 110
+        const splitValue = doc.splitTextToSize(value, maxValueWidth)
+        const lineHeight = 4.5
+        const rowHeight = Math.max(5.5, splitValue.length * lineHeight + 1)
+
+        if (yPos + rowHeight > pageHeight - 25) {
+          doc.addPage()
+          yPos = 15
+        }
+
         if (Math.floor(yPos / 6) % 2 === 0) {
           doc.setFillColor(248, 250, 252)
-          doc.rect(15, yPos - 4, pageWidth - 30, 5.5, 'F')
+          doc.rect(15, yPos - 4, pageWidth - 30, rowHeight, 'F')
         }
 
         doc.setTextColor(75, 105, 145)
@@ -321,24 +331,9 @@ export function generateCustomerPDF(booking: Booking & { creator?: Profile }): P
         doc.setTextColor(60, 70, 85)
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(10)
-        // Increased width to prevent currency values from wrapping
-        const maxValueWidth = pageWidth - 110
-        const splitValue = doc.splitTextToSize(value, maxValueWidth)
-        // If it's a currency value and it wrapped, use single line at smaller size
-        if (splitValue.length > 1 && value.includes('₹')) {
-          doc.setFontSize(9)
-          doc.text(value, 95, yPos + 0.5)
-          doc.setFontSize(10)
-        } else {
-          doc.text(splitValue, 95, yPos + 0.5)
-        }
+        doc.text(splitValue, 95, yPos + 0.5)
 
-        yPos += 6
-
-        if (yPos > pageHeight - 25) {
-          doc.addPage()
-          yPos = 15
-        }
+        yPos += rowHeight + 0.5
       }
 
       // BOOKING DETAILS
@@ -367,8 +362,14 @@ export function generateCustomerPDF(booking: Booking & { creator?: Profile }): P
       // PAYMENT SUMMARY
       addSection('PAYMENT SUMMARY')
       const remainingAmount = (booking.total_cost || 0) - (booking.booking_amount_paid || 0)
-      addRow('Total Property Cost', formatCurrency(booking.total_cost || 0))
+      if (booking.rate_per_sqft) {
+        addRow('Rate per Sq.ft.', formatCurrency(booking.rate_per_sqft))
+      }
+      addRow('Total Amount', formatCurrency(booking.total_cost || 0))
       addRow('Amount Paid', formatCurrency(booking.booking_amount_paid || 0))
+      if (booking.gst_amount) {
+        addRow('GST (5%)', formatCurrency(booking.gst_amount))
+      }
       addRow('Remaining Amount', formatCurrency(remainingAmount))
       yPos += 4
 

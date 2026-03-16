@@ -31,7 +31,7 @@ export function DownloadPDFsButton({ bookingId, serialDisplay }: DownloadPDFsBut
       // Create a temporary anchor element and click it to trigger download
       const link = document.createElement('a')
       link.href = url
-      link.download = `${serialDisplay}_Bookings.zip`
+      link.download = `${serialDisplay.replace(/\//g, '_')}_Bookings.zip`
       document.body.appendChild(link)
       link.click()
 

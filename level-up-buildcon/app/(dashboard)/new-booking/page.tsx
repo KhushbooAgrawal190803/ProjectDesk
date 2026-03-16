@@ -1,11 +1,11 @@
 import { redirect } from 'next/navigation'
-import { requireProfile } from '@/lib/auth/get-user'
+import { requireRole } from '@/lib/auth/get-user'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { BookingWizard } from './booking-wizard'
 import { getUserDrafts } from './actions'
 
 export default async function NewBookingPage() {
-  const profile = await requireProfile()
+  const profile = await requireRole(['EXECUTIVE', 'ADMIN'])
   if (!profile) {
     redirect('/login')
   }

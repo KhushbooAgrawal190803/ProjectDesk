@@ -45,7 +45,7 @@ export async function getUserStats() {
     .from('profiles')
     .select('role')
   
-  const staffCount = roleBreakdown?.filter(p => p.role === 'STAFF').length || 0
+  const accountsCount = roleBreakdown?.filter(p => p.role === 'ACCOUNTS').length || 0
   const executiveCount = roleBreakdown?.filter(p => p.role === 'EXECUTIVE').length || 0
   const adminCount = roleBreakdown?.filter(p => p.role === 'ADMIN').length || 0
   
@@ -53,7 +53,7 @@ export async function getUserStats() {
     totalUsers: totalUsers || 0,
     activeUsers: activeUsers || 0,
     pendingUsers: pendingUsers || 0,
-    staffCount,
+    accountsCount,
     executiveCount,
     adminCount,
   }
@@ -146,16 +146,20 @@ export async function createUser(data: {
   email: string
   fullName: string
   role: UserRole
-  tempPassword?: string
+  password: string
 }) {
   const profile = await requireRole(['ADMIN'])
+  
+  if (!data.password || data.password.length < 6) {
+    throw new Error('Password must be at least 6 characters')
+  }
   
   const serviceSupabase = await createServiceClient()
   
   // Create auth user
   const { data: authData, error: authError } = await serviceSupabase.auth.admin.createUser({
     email: data.email,
-    password: data.tempPassword || Math.random().toString(36).slice(-12),
+    password: data.password,
     email_confirm: true,
   })
   
@@ -179,11 +183,6 @@ export async function createUser(data: {
     await serviceSupabase.auth.admin.deleteUser(authData.user.id)
     throw new Error('Failed to create profile')
   }
-  
-  // Send password reset email
-  await serviceSupabase.auth.resetPasswordForEmail(data.email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/reset-password`,
-  })
   
   // Log action
   const supabase = await createClient()
@@ -234,9 +233,9 @@ export async function getSettings() {
 }
 
 export async function updateSettings(settings: {
-  allow_self_signup?: boolean
   serial_prefix?: string
   default_project_location?: string
+  forgot_password_email?: string
 }) {
   await requireRole(['ADMIN'])
   

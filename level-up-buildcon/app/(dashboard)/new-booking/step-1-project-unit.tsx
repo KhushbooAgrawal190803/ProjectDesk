@@ -1,12 +1,15 @@
 'use client'
 
+import { useState, useCallback, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { step1Schema, Step1Data } from '@/lib/validations/booking'
+import { getFlatAreas } from '@/lib/data/flat-areas'
+import { checkUnitAvailability } from './actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
 const getErrorMessage = (error: any): string | null => {
@@ -18,13 +21,18 @@ interface Step1ProjectUnitProps {
   data: Partial<Step1Data>
   onUpdate: (data: Partial<Step1Data>) => void
   onNext: () => void
+  draftId?: string
 }
 
-export function Step1ProjectUnit({ data, onUpdate, onNext }: Step1ProjectUnitProps) {
+export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1ProjectUnitProps) {
+  const [unitWarning, setUnitWarning] = useState<string | null>(null)
+  const [checkingUnit, setCheckingUnit] = useState(false)
+
   const {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<Step1Data>({
     resolver: zodResolver(step1Schema),
@@ -39,14 +47,53 @@ export function Step1ProjectUnit({ data, onUpdate, onNext }: Step1ProjectUnitPro
   })
 
   const unitType = watch('unit_type')
+  const projectName = watch('project_name')
+  const unitNo = watch('unit_no')
+
+  // Auto-fill built-up and super built-up area when flat number is picked (Anandam)
+  useEffect(() => {
+    if (!projectName || !unitNo) return
+    const areas = getFlatAreas(projectName, unitNo)
+    if (areas) {
+      if (areas.built_up_area_sqft != null) setValue('builtup_area', areas.built_up_area_sqft)
+      if (areas.super_built_up_area_sqft != null) setValue('super_builtup_area', areas.super_built_up_area_sqft)
+    }
+  }, [projectName, unitNo, setValue])
+
+  const checkUnit = useCallback(async () => {
+    if (!projectName || !unitNo) {
+      setUnitWarning(null)
+      return
+    }
+    setCheckingUnit(true)
+    try {
+      const result = await checkUnitAvailability(projectName, unitNo, draftId)
+      if (!result.available) {
+        setUnitWarning(result.message || 'This unit is already booked')
+      } else {
+        setUnitWarning(null)
+      }
+    } catch {
+      setUnitWarning(null)
+    } finally {
+      setCheckingUnit(false)
+    }
+  }, [projectName, unitNo, draftId])
 
   const onSubmit = (formData: Step1Data) => {
+    if (unitWarning) {
+      toast.error('Unit not available', { description: unitWarning })
+      return
+    }
     onUpdate(formData)
     onNext()
   }
 
-  const handleError = () => {
-    toast.error('Please fill in all required fields correctly')
+  const handleError = (formErrors: any) => {
+    const messages = Object.values(formErrors).map((e: any) => e?.message).filter(Boolean)
+    toast.error('Please fix the following:', {
+      description: messages.join(', ') || 'Some required fields are missing',
+    })
   }
 
   return (
@@ -56,7 +103,7 @@ export function Step1ProjectUnit({ data, onUpdate, onNext }: Step1ProjectUnitPro
         <h3 className="text-lg font-semibold mb-4">Project Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="project_name">Project Name *</Label>
+            <Label htmlFor="project_name">Project Name</Label>
             <Input
               id="project_name"
               {...register('project_name')}
@@ -68,7 +115,7 @@ export function Step1ProjectUnit({ data, onUpdate, onNext }: Step1ProjectUnitPro
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="project_location">Location *</Label>
+            <Label htmlFor="project_location">Location</Label>
             <Input
               id="project_location"
               {...register('project_location')}
@@ -113,7 +160,7 @@ export function Step1ProjectUnit({ data, onUpdate, onNext }: Step1ProjectUnitPro
         <h3 className="text-lg font-semibold mb-4">Unit Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="unit_category">Unit Category *</Label>
+            <Label htmlFor="unit_category">Unit Category</Label>
             <div className="flex gap-2">
               <label className="flex-1">
                 <input
@@ -141,7 +188,7 @@ export function Step1ProjectUnit({ data, onUpdate, onNext }: Step1ProjectUnitPro
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="unit_type">Unit Type *</Label>
+            <Label htmlFor="unit_type">Unit Type</Label>
             <select
               id="unit_type"
               {...register('unit_type')}
@@ -158,7 +205,7 @@ export function Step1ProjectUnit({ data, onUpdate, onNext }: Step1ProjectUnitPro
 
           {unitType === 'Other' && (
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="unit_type_other_text">Specify Unit Type *</Label>
+              <Label htmlFor="unit_type_other_text">Specify Unit Type</Label>
               <Input
                 id="unit_type_other_text"
                 {...register('unit_type_other_text')}
@@ -171,14 +218,25 @@ export function Step1ProjectUnit({ data, onUpdate, onNext }: Step1ProjectUnitPro
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="unit_no">Unit Number *</Label>
+            <Label htmlFor="unit_no">Unit Number</Label>
             <Input
               id="unit_no"
               {...register('unit_no')}
-              placeholder="e.g., A-101"
+              placeholder="e.g., 101"
+              onBlur={checkUnit}
+              className={unitWarning ? 'border-amber-500 focus:ring-amber-500' : ''}
             />
             {errors.unit_no && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.unit_no)}</p>
+            )}
+            {checkingUnit && (
+              <p className="text-sm text-zinc-500">Checking availability...</p>
+            )}
+            {unitWarning && !errors.unit_no && (
+              <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 p-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                <p className="text-sm text-amber-700">{unitWarning}</p>
+              </div>
             )}
           </div>
 
@@ -192,13 +250,27 @@ export function Step1ProjectUnit({ data, onUpdate, onNext }: Step1ProjectUnitPro
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="builtup_area">Built-up Area (sq.ft.)</Label>
+            <Input
+              id="builtup_area"
+              type="number"
+              step="0.01"
+              {...register('builtup_area')}
+              placeholder="Auto-filled for Anandam"
+            />
+            {errors.builtup_area && (
+              <p className="text-sm text-red-600">{getErrorMessage(errors.builtup_area)}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="super_builtup_area">Super Built-up Area (sq.ft.)</Label>
             <Input
               id="super_builtup_area"
               type="number"
               step="0.01"
               {...register('super_builtup_area')}
-              placeholder="e.g., 1200"
+              placeholder="Auto-filled for Anandam"
             />
             {errors.super_builtup_area && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.super_builtup_area)}</p>

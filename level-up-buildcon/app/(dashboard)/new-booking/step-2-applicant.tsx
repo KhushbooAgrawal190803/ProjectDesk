@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronRight, ChevronLeft, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
+import { DocumentUploadSection, UploadedDoc } from './document-upload'
 
 const getErrorMessage = (error: any): string | null => {
   if (!error) return null
@@ -21,27 +22,40 @@ interface Step2ApplicantProps {
   onUpdate: (data: Partial<Step2Data>) => void
   onNext: () => void
   onBack: () => void
+  draftId?: string
+  documents: Record<string, UploadedDoc>
+  onDocumentsChange: (docs: Record<string, UploadedDoc>) => void
 }
 
-export function Step2Applicant({ data, onUpdate, onNext, onBack }: Step2ApplicantProps) {
+export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, documents, onDocumentsChange }: Step2ApplicantProps) {
   const [showCoApplicant, setShowCoApplicant] = useState(data.has_coapplicant || false)
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<Step2Data>({
     resolver: zodResolver(step2Schema) as any,
-    defaultValues: data as any,
+    defaultValues: { ...data, has_coapplicant: data.has_coapplicant || false } as any,
   })
+
+  const handleCoApplicantToggle = (checked: boolean) => {
+    setShowCoApplicant(checked)
+    setValue('has_coapplicant', checked)
+  }
 
   const onSubmit = (formData: Step2Data) => {
     onUpdate({ ...formData, has_coapplicant: showCoApplicant })
     onNext()
   }
 
-  const handleError = () => {
-    toast.error('Please fill in all required fields correctly')
+  const handleError = (formErrors: any) => {
+    const fieldNames = Object.keys(formErrors)
+    const messages = fieldNames.map((f: string) => formErrors[f]?.message).filter(Boolean)
+    toast.error('Please fix the following:', {
+      description: messages.join(', ') || 'Some required fields are missing',
+    })
   }
 
   return (
@@ -51,7 +65,7 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack }: Step2Applican
         <h3 className="text-lg font-semibold mb-4">Primary Applicant</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="applicant_name">Full Name *</Label>
+            <Label htmlFor="applicant_name">Full Name</Label>
             <Input
               id="applicant_name"
               {...register('applicant_name')}
@@ -63,7 +77,7 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack }: Step2Applican
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="applicant_father_or_spouse">Father&apos;s / Spouse Name *</Label>
+            <Label htmlFor="applicant_father_or_spouse">Father&apos;s / Spouse Name</Label>
             <Input
               id="applicant_father_or_spouse"
               {...register('applicant_father_or_spouse')}
@@ -75,7 +89,7 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack }: Step2Applican
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="applicant_mobile">Mobile Number *</Label>
+            <Label htmlFor="applicant_mobile">Mobile Number</Label>
             <Input
               id="applicant_mobile"
               {...register('applicant_mobile')}
@@ -143,7 +157,7 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack }: Step2Applican
         <Checkbox
           id="has_coapplicant"
           checked={showCoApplicant}
-          onCheckedChange={(checked) => setShowCoApplicant(checked as boolean)}
+          onCheckedChange={(checked) => handleCoApplicantToggle(checked as boolean)}
         />
         <Label htmlFor="has_coapplicant" className="flex items-center gap-2 cursor-pointer">
           <UserPlus className="w-4 h-4" />
@@ -157,7 +171,7 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack }: Step2Applican
           <h3 className="text-lg font-semibold mb-4">Co-Applicant</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="coapplicant_name">Full Name *</Label>
+              <Label htmlFor="coapplicant_name">Full Name</Label>
               <Input
                 id="coapplicant_name"
                 {...register('coapplicant_name')}
@@ -169,7 +183,7 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack }: Step2Applican
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="coapplicant_relationship">Relationship *</Label>
+              <Label htmlFor="coapplicant_relationship">Relationship</Label>
               <Input
                 id="coapplicant_relationship"
                 {...register('coapplicant_relationship')}
@@ -222,6 +236,14 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack }: Step2Applican
           </div>
         </div>
       )}
+
+      {/* Document Uploads */}
+      <DocumentUploadSection
+        showCoApplicant={showCoApplicant}
+        bookingId={draftId}
+        documents={documents}
+        onDocumentsChange={onDocumentsChange}
+      />
 
       {/* Actions */}
       <div className="flex justify-between pt-4 border-t border-zinc-200">

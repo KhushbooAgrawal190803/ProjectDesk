@@ -57,12 +57,13 @@ export function UsersTable({ users }: UsersTableProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [roleDialogOpen, setRoleDialogOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null)
-  const [newRole, setNewRole] = useState<UserRole>('STAFF')
+  const [newRole, setNewRole] = useState<UserRole>('EXECUTIVE')
 
   // Create user form state
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserName, setNewUserName] = useState('')
-  const [newUserRole, setNewUserRole] = useState<UserRole>('STAFF')
+  const [newUserPassword, setNewUserPassword] = useState('')
+  const [newUserRole, setNewUserRole] = useState<UserRole>('EXECUTIVE')
 
   const handleApprove = async (userId: string) => {
     setLoading(userId)
@@ -124,14 +125,14 @@ export function UsersTable({ users }: UsersTableProps) {
         email: newUserEmail,
         fullName: newUserName,
         role: newUserRole,
+        password: newUserPassword,
       })
-      toast.success('User created', {
-        description: 'Password reset email sent to user',
-      })
+      toast.success('User created successfully')
       setCreateDialogOpen(false)
       setNewUserEmail('')
       setNewUserName('')
-      setNewUserRole('STAFF')
+      setNewUserPassword('')
+      setNewUserRole('EXECUTIVE')
     } catch (error: any) {
       toast.error('Failed to create user', {
         description: error.message,
@@ -153,12 +154,12 @@ export function UsersTable({ users }: UsersTableProps) {
   }
 
   const getRoleBadge = (role: UserRole) => {
-    const colors = {
+    const colors: Record<string, string> = {
       ADMIN: 'bg-purple-600 text-white',
       EXECUTIVE: 'bg-blue-600 text-white',
-      STAFF: 'bg-zinc-600 text-white',
+      ACCOUNTS: 'bg-emerald-600 text-white',
     }
-    return <Badge className={colors[role]}>{role}</Badge>
+    return <Badge className={colors[role] || 'bg-zinc-600 text-white'}>{role}</Badge>
   }
 
   return (
@@ -176,7 +177,7 @@ export function UsersTable({ users }: UsersTableProps) {
             <TableHeader>
               <TableRow className="bg-zinc-50">
                 <TableHead className="font-semibold">Name</TableHead>
-                <TableHead className="font-semibold">Email</TableHead>
+                <TableHead className="font-semibold">Username</TableHead>
                 <TableHead className="font-semibold">Role</TableHead>
                 <TableHead className="font-semibold">Status</TableHead>
                 <TableHead className="font-semibold">Created</TableHead>
@@ -252,7 +253,7 @@ export function UsersTable({ users }: UsersTableProps) {
           <DialogHeader>
             <DialogTitle>Create New User</DialogTitle>
             <DialogDescription>
-              Create a new user account. A password reset email will be sent to the user.
+              Create a new user account with a username and password.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateUser}>
@@ -268,7 +269,7 @@ export function UsersTable({ users }: UsersTableProps) {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">Username</Label>
                 <Input
                   id="email"
                   type="email"
@@ -279,14 +280,26 @@ export function UsersTable({ users }: UsersTableProps) {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={newUserPassword}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  required
+                  placeholder="At least 6 characters"
+                  minLength={6}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
                 <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as UserRole)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="STAFF">Staff</SelectItem>
                     <SelectItem value="EXECUTIVE">Executive</SelectItem>
+                    <SelectItem value="ACCOUNTS">Accounts</SelectItem>
                     <SelectItem value="ADMIN">Admin</SelectItem>
                   </SelectContent>
                 </Select>
@@ -326,8 +339,8 @@ export function UsersTable({ users }: UsersTableProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="STAFF">Staff</SelectItem>
                   <SelectItem value="EXECUTIVE">Executive</SelectItem>
+                  <SelectItem value="ACCOUNTS">Accounts</SelectItem>
                   <SelectItem value="ADMIN">Admin</SelectItem>
                 </SelectContent>
               </Select>

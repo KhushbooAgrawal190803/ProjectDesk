@@ -5,7 +5,6 @@ import { Settings } from '@/lib/types/database'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { updateSettings } from './actions'
 
@@ -15,9 +14,9 @@ interface SettingsFormProps {
 
 export function SettingsForm({ settings }: SettingsFormProps) {
   const [loading, setLoading] = useState(false)
-  const [allowSelfSignup, setAllowSelfSignup] = useState(settings.allow_self_signup)
   const [serialPrefix, setSerialPrefix] = useState(settings.serial_prefix)
   const [defaultLocation, setDefaultLocation] = useState(settings.default_project_location)
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState(settings.forgot_password_email || 'agkhushboo43@gmail.com')
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,9 +24,9 @@ export function SettingsForm({ settings }: SettingsFormProps) {
 
     try {
       await updateSettings({
-        allow_self_signup: allowSelfSignup,
         serial_prefix: serialPrefix,
         default_project_location: defaultLocation,
+        forgot_password_email: forgotPasswordEmail,
       })
       toast.success('Settings updated successfully')
     } catch (error) {
@@ -40,23 +39,6 @@ export function SettingsForm({ settings }: SettingsFormProps) {
   return (
     <form onSubmit={handleSave} className="space-y-6 max-w-2xl">
       <div className="space-y-4">
-        <div className="flex items-center justify-between p-4 border border-zinc-200 rounded-lg">
-          <div className="space-y-0.5">
-            <Label htmlFor="selfSignup" className="text-base">
-              Allow Self-Signup
-            </Label>
-            <p className="text-sm text-zinc-500">
-              Allow users to create accounts without admin approval
-            </p>
-          </div>
-          <Switch
-            id="selfSignup"
-            checked={allowSelfSignup}
-            onCheckedChange={setAllowSelfSignup}
-            disabled={loading}
-          />
-        </div>
-
         <div className="space-y-2">
           <Label htmlFor="serialPrefix">Serial Number Prefix</Label>
           <Input
@@ -85,6 +67,22 @@ export function SettingsForm({ settings }: SettingsFormProps) {
           />
           <p className="text-sm text-zinc-500">
             Default location for new bookings
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="forgotPasswordEmail">Forgot Password Notification Email</Label>
+          <Input
+            id="forgotPasswordEmail"
+            type="email"
+            value={forgotPasswordEmail}
+            onChange={(e) => setForgotPasswordEmail(e.target.value)}
+            placeholder="admin@company.com"
+            required
+            disabled={loading}
+          />
+          <p className="text-sm text-zinc-500">
+            Password reset requests from users will be sent to this email address
           </p>
         </div>
       </div>

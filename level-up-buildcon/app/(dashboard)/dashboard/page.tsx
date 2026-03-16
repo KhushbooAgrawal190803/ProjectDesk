@@ -10,7 +10,6 @@ import {
   IndianRupee, 
   TrendingUp
 } from 'lucide-react'
-import { Booking, Profile as ProfileType } from '@/lib/types/database'
 
 async function getDashboardStats() {
   const supabase = await createClient()
@@ -144,7 +143,7 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-semibold">{stats.activeUsers}</div>
-              <p className="text-xs text-zinc-500 mt-1">Staff members</p>
+              <p className="text-xs text-zinc-500 mt-1">Team members</p>
             </CardContent>
           </Card>
         </div>

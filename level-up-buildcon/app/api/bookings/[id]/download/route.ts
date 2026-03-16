@@ -58,14 +58,17 @@ export async function GET(
       generateCustomerPDF(booking),
     ])
 
-    // Create zip file
+    // Sanitize serial_display for filenames (replace / with _)
+    const safeSerial = (booking.serial_display || 'Booking').replace(/\//g, '_')
+
+    // Create zip file — flat structure, no nested folders
     const zipBuffer = await createZipBuffer([
       {
-        name: `${booking.serial_display}_Company.pdf`,
+        name: `${safeSerial}_Company.pdf`,
         buffer: companyPDF,
       },
       {
-        name: `${booking.serial_display}_Customer.pdf`,
+        name: `${safeSerial}_Customer.pdf`,
         buffer: customerPDF,
       },
     ])
@@ -74,7 +77,7 @@ export async function GET(
     return new NextResponse(zipBuffer as any, {
       headers: {
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="${booking.serial_display}_Bookings.zip"`,
+        'Content-Disposition': `attachment; filename="${safeSerial}_Bookings.zip"`,
       },
     })
   } catch (error) {

@@ -1,17 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
-import { ChevronRight, ChevronLeft, Save, CheckCircle2, FileText, Trash2 } from 'lucide-react'
+import { ChevronRight, CheckCircle2, FileText, Save, Trash2 } from 'lucide-react'
 import { BookingFormData } from '@/lib/validations/booking'
 import { Booking } from '@/lib/types/database'
 import { saveDraft, submitBooking, getDraft, deleteDraft } from './actions'
+import { linkDocumentsToBooking, getDraftDocuments } from './document-actions'
+import { UploadedDoc } from './document-upload'
 import { Step1ProjectUnit } from './step-1-project-unit'
 import { Step2Applicant } from './step-2-applicant'
 import { Step3PricingPayment } from './step-3-pricing-payment'
@@ -37,7 +38,6 @@ export function BookingWizard({ drafts }: BookingWizardProps) {
     unit_type: 'Flat',
     payment_mode: 'UPI',
     payment_plan_type: 'ConstructionLinked',
-    other_charges: 0,
   })
   const [draftId, setDraftId] = useState<string | undefined>()
   const [saving, setSaving] = useState(false)
@@ -45,6 +45,9 @@ export function BookingWizard({ drafts }: BookingWizardProps) {
   const [showSuccess, setShowSuccess] = useState(false)
   const [submittedBookingId, setSubmittedBookingId] = useState<string>()
   const [draftsDialogOpen, setDraftsDialogOpen] = useState(false)
+  const [documents, setDocuments] = useState<Record<string, UploadedDoc>>({})
+  const [formKey, setFormKey] = useState(0)
+  const [draftLoaded, setDraftLoaded] = useState(false)
 
   const updateFormData = (data: Partial<BookingFormData>) => {
     setFormData((prev) => ({ ...prev, ...data }))
@@ -68,10 +71,53 @@ export function BookingWizard({ drafts }: BookingWizardProps) {
   const handleLoadDraft = async (id: string) => {
     try {
       const draft = await getDraft(id)
-      setFormData(draft)
+      
+      // Only keep booking form fields, convert null to undefined
+      const formFields = [
+        'project_name', 'project_location', 'project_address', 'rera_regn_no', 'building_permit_no',
+        'unit_category', 'unit_type', 'unit_type_other_text', 'unit_no', 'floor_no',
+        'builtup_area', 'super_builtup_area', 'carpet_area',
+        'applicant_name', 'applicant_father_or_spouse', 'applicant_mobile', 'applicant_email',
+        'applicant_pan', 'applicant_aadhaar', 'applicant_address',
+        'coapplicant_name', 'coapplicant_relationship', 'coapplicant_mobile',
+        'coapplicant_pan', 'coapplicant_aadhaar',
+        'rate_per_sqft', 'total_cost', 'gst_amount',
+        'booking_amount_paid', 'payment_mode', 'payment_mode_detail',
+        'txn_or_cheque_no', 'txn_date',
+        'payment_plan_type', 'payment_plan_custom_text',
+      ]
+      const sanitized: Record<string, any> = {}
+      for (const key of formFields) {
+        const val = (draft as any)[key]
+        if (val !== null && val !== undefined) {
+          sanitized[key] = val
+        }
+      }
+      // Detect co-applicant
+      if (sanitized.coapplicant_name) {
+        sanitized.has_coapplicant = true
+      }
+      
+      // Restore previously uploaded documents for this draft
+      const existingDocs = await getDraftDocuments(id)
+      const restoredDocs: Record<string, UploadedDoc> = {}
+      for (const doc of existingDocs) {
+        restoredDocs[doc.document_type] = {
+          id: doc.id,
+          documentType: doc.document_type,
+          fileName: doc.file_name,
+          fileSize: doc.file_size || 0,
+          mimeType: doc.mime_type || '',
+        }
+      }
+      
+      setFormData(sanitized)
+      setDocuments(restoredDocs)
       setDraftId(id)
       setDraftsDialogOpen(false)
       setCurrentStep(1)
+      setFormKey((k) => k + 1)
+      setDraftLoaded(true)
       toast.success('Draft loaded')
     } catch (error) {
       toast.error('Failed to load draft')
@@ -92,6 +138,13 @@ export function BookingWizard({ drafts }: BookingWizardProps) {
     setSubmitting(true)
     try {
       const result = await submitBooking(formData as BookingFormData, draftId)
+      
+      // Link uploaded documents to the booking
+      const docIds = Object.values(documents).map(d => d.id)
+      if (docIds.length > 0) {
+        await linkDocumentsToBooking(docIds, result.bookingId)
+      }
+      
       setSubmittedBookingId(result.bookingId)
       setShowSuccess(true)
     } catch (error: any) {
@@ -108,23 +161,11 @@ export function BookingWizard({ drafts }: BookingWizardProps) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  // Auto-calculate total cost
-  useEffect(() => {
-    if (formData.basic_sale_price && formData.other_charges !== undefined) {
-      const basicPrice = typeof formData.basic_sale_price === 'number' ? formData.basic_sale_price : parseFloat(String(formData.basic_sale_price)) || 0
-      const otherCharges = typeof formData.other_charges === 'number' ? formData.other_charges : parseFloat(String(formData.other_charges)) || 0
-      const autoTotal = basicPrice + otherCharges
-      if (!formData.total_cost || Math.abs(parseFloat(String(formData.total_cost || 0)) - autoTotal) < 0.01) {
-        setFormData((prev) => ({ ...prev, total_cost: autoTotal }))
-      }
-    }
-  }, [formData.basic_sale_price, formData.other_charges])
-
   return (
     <>
       <div className="space-y-6">
         {/* Draft Actions */}
-        {drafts.length > 0 && (
+        {drafts.length > 0 && !draftLoaded && (
           <Card className="border-zinc-200 shadow-sm bg-blue-50 border-blue-200">
             <CardContent className="py-4">
               <div className="flex items-center justify-between">
@@ -206,21 +247,28 @@ export function BookingWizard({ drafts }: BookingWizardProps) {
           <CardContent className="space-y-6">
             {currentStep === 1 && (
               <Step1ProjectUnit
+                key={formKey}
                 data={formData}
                 onUpdate={updateFormData}
                 onNext={() => goToStep(2)}
+                draftId={draftId}
               />
             )}
             {currentStep === 2 && (
               <Step2Applicant
+                key={formKey}
                 data={formData}
                 onUpdate={updateFormData}
                 onNext={() => goToStep(3)}
                 onBack={() => goToStep(1)}
+                draftId={draftId}
+                documents={documents}
+                onDocumentsChange={setDocuments}
               />
             )}
             {currentStep === 3 && (
               <Step3PricingPayment
+                key={formKey}
                 data={formData}
                 onUpdate={updateFormData}
                 onNext={() => goToStep(4)}
@@ -233,6 +281,7 @@ export function BookingWizard({ drafts }: BookingWizardProps) {
                 onBack={() => goToStep(3)}
                 onSubmit={handleSubmit}
                 submitting={submitting}
+                documents={documents}
               />
             )}
 
@@ -334,10 +383,10 @@ export function BookingWizard({ drafts }: BookingWizardProps) {
                     unit_type: 'Flat',
                     payment_mode: 'UPI',
                     payment_plan_type: 'ConstructionLinked',
-                    other_charges: 0,
                   })
                   setDraftId(undefined)
                   setCurrentStep(1)
+                  setDocuments({})
                   router.refresh()
                 }}
                 className="w-full"

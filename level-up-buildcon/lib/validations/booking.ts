@@ -1,98 +1,56 @@
 import { z } from 'zod'
 
+const optionalString = z.string().optional().or(z.literal(''))
+const optionalNumber = z.union([z.number(), z.string()]).optional().transform(val => {
+  if (val === undefined || val === '' || val === null) return undefined
+  const num = Number(val)
+  return isNaN(num) ? undefined : num
+})
+
 export const step1Schema = z.object({
-  project_name: z.string().min(1, 'Project name is required'),
-  project_location: z.string().min(1, 'Project location is required'),
-  project_address: z.string().optional(),
-  rera_regn_no: z.string().optional(),
-  building_permit_no: z.string().optional(),
-  unit_category: z.enum(['Residential', 'Commercial']),
-  unit_type: z.enum(['Flat', 'Villa', 'Plot', 'Shop', 'Office', 'Other']),
-  unit_type_other_text: z.string().optional(),
-  unit_no: z.string().min(1, 'Unit number is required'),
-  floor_no: z.string().optional(),
-  super_builtup_area: z.union([z.number(), z.string()]).optional().transform(val => val ? parseFloat(String(val)) : undefined),
-  carpet_area: z.union([z.number(), z.string()]).optional().transform(val => val ? parseFloat(String(val)) : undefined),
-}).refine(
-  (data) => {
-    if (data.unit_type === 'Other' && !data.unit_type_other_text) {
-      return false
-    }
-    return true
-  },
-  {
-    message: 'Please specify the unit type',
-    path: ['unit_type_other_text'],
-  }
-) as any
+  project_name: optionalString,
+  project_location: optionalString,
+  project_address: optionalString,
+  rera_regn_no: optionalString,
+  building_permit_no: optionalString,
+  unit_category: z.enum(['Residential', 'Commercial']).optional(),
+  unit_type: z.enum(['Flat', 'Villa', 'Plot', 'Shop', 'Office', 'Other']).optional(),
+  unit_type_other_text: optionalString,
+  unit_no: optionalString,
+  floor_no: optionalString,
+  builtup_area: optionalNumber,
+  super_builtup_area: optionalNumber,
+  carpet_area: optionalNumber,
+}) as any
 
 export const step2Schema = z.object({
-  applicant_name: z.string().min(1, 'Applicant name is required'),
-  applicant_father_or_spouse: z.string().min(1, 'Father/Spouse name is required'),
-  applicant_mobile: z.string().regex(/^[6-9]\d{9}$/, 'Invalid mobile number'),
-  applicant_email: z.string().email('Invalid email').optional().or(z.literal('')),
-  applicant_pan: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, 'Invalid PAN').optional().or(z.literal('')),
-  applicant_aadhaar: z.string().regex(/^\d{12}$/, 'Invalid Aadhaar').optional().or(z.literal('')),
-  applicant_address: z.string().optional(),
+  applicant_name: optionalString,
+  applicant_father_or_spouse: optionalString,
+  applicant_mobile: optionalString,
+  applicant_email: optionalString,
+  applicant_pan: optionalString,
+  applicant_aadhaar: optionalString,
+  applicant_address: optionalString,
   has_coapplicant: z.boolean().optional().default(false),
-  coapplicant_name: z.string().optional(),
-  coapplicant_relationship: z.string().optional(),
-  coapplicant_mobile: z.string().optional(),
-  coapplicant_pan: z.string().optional(),
-  coapplicant_aadhaar: z.string().optional(),
-}).refine(
-  (data) => {
-    if (data.has_coapplicant) {
-      if (!data.coapplicant_name) return false
-      if (!data.coapplicant_relationship) return false
-      if (data.coapplicant_mobile && !/^[6-9]\d{9}$/.test(data.coapplicant_mobile)) return false
-      if (data.coapplicant_pan && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(data.coapplicant_pan)) return false
-      if (data.coapplicant_aadhaar && !/^\d{12}$/.test(data.coapplicant_aadhaar)) return false
-    }
-    return true
-  },
-  {
-    message: 'Co-applicant details are incomplete',
-    path: ['coapplicant_name'],
-  }
-)
+  coapplicant_name: optionalString,
+  coapplicant_relationship: optionalString,
+  coapplicant_mobile: optionalString,
+  coapplicant_pan: optionalString,
+  coapplicant_aadhaar: optionalString,
+}) as any
 
 export const step3Schema = z.object({
-  basic_sale_price: z.union([z.number(), z.string()]).transform(val => typeof val === 'number' ? val : parseFloat(val || '0')).refine(val => val > 0, { message: 'Basic sale price must be positive' }),
-  other_charges: z.union([z.number(), z.string()]).transform(val => typeof val === 'number' ? val : parseFloat(val || '0')).refine(val => val >= 0, { message: 'Other charges cannot be negative' }).optional().default(0),
-  total_cost: z.union([z.number(), z.string()]).transform(val => typeof val === 'number' ? val : parseFloat(val || '0')).refine(val => val > 0, { message: 'Total cost must be positive' }),
-  total_cost_override_reason: z.string().optional(),
-  booking_amount_paid: z.union([z.number(), z.string()]).transform(val => typeof val === 'number' ? val : parseFloat(val || '0')).refine(val => val > 0, { message: 'Booking amount must be positive' }),
-  payment_mode: z.enum(['Cash', 'Cheque', 'NEFT_RTGS', 'UPI']),
-  payment_mode_detail: z.string().optional(),
-  txn_or_cheque_no: z.string().optional(),
-  txn_date: z.string().optional(),
-  payment_plan_type: z.enum(['ConstructionLinked', 'DownPayment', 'PossessionLinked', 'Custom']),
-  payment_plan_custom_text: z.string().optional(),
-}).refine(
-  (data) => {
-    const autoTotal = data.basic_sale_price + (data.other_charges || 0)
-    if (Math.abs(data.total_cost - autoTotal) > 0.01 && !data.total_cost_override_reason) {
-      return false
-    }
-    return true
-  },
-  {
-    message: 'Please provide a reason for overriding the total cost',
-    path: ['total_cost_override_reason'],
-  }
-).refine(
-  (data) => {
-    if (data.payment_plan_type === 'Custom' && !data.payment_plan_custom_text) {
-      return false
-    }
-    return true
-  },
-  {
-    message: 'Please specify the custom payment plan',
-    path: ['payment_plan_custom_text'],
-  }
-)
+  rate_per_sqft: optionalNumber,
+  total_cost: optionalNumber,
+  booking_amount_paid: optionalNumber,
+  gst_amount: optionalNumber,
+  payment_mode: z.enum(['Cash', 'Cheque', 'NEFT_RTGS', 'UPI']).optional(),
+  payment_mode_detail: optionalString,
+  txn_or_cheque_no: optionalString,
+  txn_date: optionalString,
+  payment_plan_type: z.enum(['ConstructionLinked', 'DownPayment', 'PossessionLinked', 'Custom']).optional(),
+  payment_plan_custom_text: optionalString,
+}) as any
 
 export const bookingSchema = z.object({
   ...step1Schema.shape,

@@ -80,13 +80,13 @@ export default async function AdminPage() {
             <CardContent>
               <div className="flex items-center gap-3 text-sm">
                 <div>
-                  <div className="font-semibold">{stats.staffCount}</div>
-                  <div className="text-xs text-zinc-500">Staff</div>
+                  <div className="font-semibold">{stats.executiveCount}</div>
+                  <div className="text-xs text-zinc-500">Exec</div>
                 </div>
                 <div className="w-px h-8 bg-zinc-200" />
                 <div>
-                  <div className="font-semibold">{stats.executiveCount}</div>
-                  <div className="text-xs text-zinc-500">Exec</div>
+                  <div className="font-semibold">{stats.accountsCount}</div>
+                  <div className="text-xs text-zinc-500">Accts</div>
                 </div>
                 <div className="w-px h-8 bg-zinc-200" />
                 <div>
