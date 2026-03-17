@@ -28,7 +28,8 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting, docum
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
     }).format(amount)
   }
 
@@ -45,7 +46,7 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting, docum
     <div className="flex items-start justify-between py-1">
       <span className="text-sm text-zinc-600">{label}:</span>
       <span className="text-sm font-medium text-zinc-900 text-right ml-4">
-        {value || '-'}
+        {value !== undefined && value !== null && value !== '' ? value : '-'}
       </span>
     </div>
   )
@@ -105,9 +106,9 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting, docum
 
       <Section title="Pricing & Payment">
         <Field label="Rate per Sq.ft." value={formatCurrency(data.rate_per_sqft || 0)} />
-        <Field label="Total Amount" value={formatCurrency(data.total_cost)} />
+        <Field label="Total Amount" value={formatCurrency(Number(data.total_cost) || 0)} />
         <Separator />
-        <Field label="Booking Amount Paid" value={formatCurrency(data.booking_amount_paid)} />
+        <Field label="Booking Amount Paid" value={formatCurrency(Number(data.booking_amount_paid) || 0)} />
         {data.gst_amount && <Field label="GST (5%)" value={formatCurrency(data.gst_amount)} />}
         {data.payment_mode && <Field label="Payment Mode" value={data.payment_mode.replace('_', ' / ')} />}
         {data.txn_or_cheque_no && <Field label="Transaction / Cheque No." value={data.txn_or_cheque_no} />}

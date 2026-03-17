@@ -2,7 +2,8 @@ import { Booking, Profile } from '@/lib/types/database'
 import { jsPDF } from 'jspdf'
 
 const formatCurrency = (amount: number) => {
-  return `Rs. ${(amount || 0).toLocaleString('en-IN')}`
+  const n = amount ?? 0
+  return `Rs. ${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
 
 export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Promise<Buffer> {

@@ -41,19 +41,19 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack, availableP
   const ratePerSqft = watch('rate_per_sqft')
   const bookingAmountPaid = watch('booking_amount_paid')
 
-  // Auto-calculate total cost from rate × area
+  // Auto-calculate total cost from rate × area (no rounding)
   useEffect(() => {
-    if (ratePerSqft && superBuiltupArea > 0) {
-      const total = Math.round(Number(ratePerSqft) * superBuiltupArea * 100) / 100
+    if (ratePerSqft != null && ratePerSqft !== '' && superBuiltupArea > 0) {
+      const total = Number(ratePerSqft) * superBuiltupArea
       setValue('total_cost', total)
     }
   }, [ratePerSqft, superBuiltupArea, setValue])
 
-  // Auto-calculate GST at 5% of booking amount paid
+  // Auto-calculate GST at 5% of booking amount paid (no rounding)
   useEffect(() => {
-    if (bookingAmountPaid) {
+    if (bookingAmountPaid != null && bookingAmountPaid !== '') {
       const gst = Number(bookingAmountPaid) * 0.05
-      setValue('gst_amount', Math.round(gst * 100) / 100)
+      setValue('gst_amount', gst)
     } else {
       setValue('gst_amount', undefined)
     }
@@ -75,12 +75,13 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack, availableP
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
     }).format(value)
   }
 
-  const calculatedTotal = Math.round(Number(ratePerSqft || 0) * superBuiltupArea * 100) / 100
-  const gstAmount = Math.round(Number(bookingAmountPaid || 0) * 0.05 * 100) / 100
+  const calculatedTotal = Number(ratePerSqft || 0) * superBuiltupArea
+  const gstAmount = Number(bookingAmountPaid ?? 0) * 0.05
 
   return (
     <form onSubmit={handleSubmit(onSubmit, handleError)} className="space-y-6">

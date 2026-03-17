@@ -14,6 +14,8 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
     const bookingData: any = {
       status: 'DRAFT',
       created_by: profile.id,
+      // Persisted DB enum – for Anandam everything is treated as a flat
+      unit_type: 'Flat',
     }
 
     // Only include fields that are provided in the partial data
@@ -24,8 +26,6 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
       rera_regn_no: true,
       building_permit_no: true,
       unit_category: true,
-      unit_type: true,
-      unit_type_other_text: true,
       unit_no: true,
       floor_no: true,
       builtup_area: true,
@@ -55,11 +55,13 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
       payment_plan_custom_text: true,
     }
 
-    // Map and normalize fields
+    // Map and normalize fields (avoid sending NaN for numeric fields)
+    const numKeys = ['builtup_area', 'super_builtup_area', 'carpet_area', 'rate_per_sqft', 'total_cost', 'gst_amount', 'booking_amount_paid']
     for (const [key, value] of Object.entries(data)) {
       if (fieldMappings[key]) {
-        if (['builtup_area', 'super_builtup_area', 'carpet_area', 'rate_per_sqft', 'total_cost', 'gst_amount', 'booking_amount_paid'].includes(key)) {
-          bookingData[key] = value ? Number(value) : null
+        if (numKeys.includes(key)) {
+          const n = value != null && value !== '' ? Number(value) : null
+          bookingData[key] = Number.isFinite(n) ? n : null
         } else if (value === '' || value === undefined) {
           bookingData[key] = null
         } else {
@@ -180,6 +182,13 @@ export async function checkUnitAvailability(
   }
 }
 
+// Coerce to number or null; never send NaN to the DB
+function toNum(v: unknown): number | null {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
 export async function submitBooking(data: BookingFormData, draftId?: string) {
   try {
     const profile = await requireProfile()
@@ -200,7 +209,7 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
       }
     }
 
-    // Normalize and prepare booking data
+    // Normalize and prepare booking data (use toNum so we never send NaN)
     const bookingData = {
       // Project & Unit
       project_name: baseData.project_name || null,
@@ -209,13 +218,14 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
       rera_regn_no: baseData.rera_regn_no || null,
       building_permit_no: baseData.building_permit_no || null,
       unit_category: baseData.unit_category || null,
-      unit_type: baseData.unit_type || null,
-      unit_type_other_text: baseData.unit_type === 'Other' ? baseData.unit_type_other_text : null,
+      // Persisted DB enum – for Anandam everything is treated as a flat
+      unit_type: 'Flat' as const,
+      unit_type_other_text: null,
       unit_no: baseData.unit_no || null,
       floor_no: baseData.floor_no || null,
-      builtup_area: baseData.builtup_area ? Number(baseData.builtup_area) : null,
-      super_builtup_area: baseData.super_builtup_area ? Number(baseData.super_builtup_area) : null,
-      carpet_area: baseData.carpet_area ? Number(baseData.carpet_area) : null,
+      builtup_area: toNum(baseData.builtup_area),
+      super_builtup_area: toNum(baseData.super_builtup_area),
+      carpet_area: toNum(baseData.carpet_area),
       
       // Applicant
       applicant_name: baseData.applicant_name || null,
@@ -234,10 +244,10 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
       coapplicant_aadhaar: baseData.coapplicant_aadhaar || null,
       
       // Pricing & Payment
-      rate_per_sqft: baseData.rate_per_sqft ? Number(baseData.rate_per_sqft) : null,
-      total_cost: baseData.total_cost ? Number(baseData.total_cost) : null,
-      gst_amount: baseData.gst_amount ? Number(baseData.gst_amount) : null,
-      booking_amount_paid: baseData.booking_amount_paid ? Number(baseData.booking_amount_paid) : null,
+      rate_per_sqft: toNum(baseData.rate_per_sqft),
+      total_cost: toNum(baseData.total_cost),
+      gst_amount: toNum(baseData.gst_amount),
+      booking_amount_paid: toNum(baseData.booking_amount_paid),
       payment_mode: baseData.payment_mode || null,
       payment_mode_detail: baseData.payment_mode_detail || null,
       txn_or_cheque_no: baseData.txn_or_cheque_no || null,
