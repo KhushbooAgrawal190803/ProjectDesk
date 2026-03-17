@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -66,16 +67,22 @@ export default function LoginContent() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-zinc-50 px-4 py-6">
       <div className="w-full max-w-md">
         <div className="flex items-center justify-center mb-8">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-zinc-900 rounded-xl flex items-center justify-center">
-              <Building2 className="w-7 h-7 text-white" />
+          <div className="flex items-center gap-4">
+            <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-3xl overflow-hidden bg-zinc-900 flex items-center justify-center">
+              <Image
+                src="/anandam-logo.png"
+                alt="Anandam - Level Up Buildcon"
+                fill
+                className="object-cover"
+                priority
+              />
             </div>
             <div>
               <h1 className="text-2xl font-semibold text-zinc-900">Level Up Buildcon</h1>
-              <p className="text-sm text-zinc-500">Booking Registry</p>
+              <p className="text-sm text-zinc-500">Anandam — Booking Registry</p>
             </div>
           </div>
         </div>

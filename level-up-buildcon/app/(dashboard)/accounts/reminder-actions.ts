@@ -54,11 +54,13 @@ export async function getSlabsWithStats(): Promise<SlabWithStats[]> {
 
   const { data: payments } = await supabase
     .from('booking_payment_slabs')
-    .select('slab_id, amount_due, amount_received')
+    .select('booking_id, slab_id, amount_due, amount_received')
 
   const bookingIds = new Set((bookings || []).map((b: any) => b.id))
   const paymentMap = new Map<number, { due: number; received: number }>()
   for (const p of payments || []) {
+    // Ignore payments for bookings that are no longer active (e.g. deleted)
+    if (!bookingIds.has(p.booking_id)) continue
     const cur = paymentMap.get(p.slab_id) || { due: 0, received: 0 }
     paymentMap.set(p.slab_id, {
       due: cur.due + Number(p.amount_due),
@@ -71,7 +73,10 @@ export async function getSlabsWithStats(): Promise<SlabWithStats[]> {
   return (slabs || []).map((s: any) => {
     const pm = paymentMap.get(s.id) || { due: 0, received: 0 }
     const paidCount = (payments || []).filter(
-      (p: any) => p.slab_id === s.id && Number(p.amount_received) >= Number(p.amount_due)
+      (p: any) =>
+        bookingIds.has(p.booking_id) &&
+        p.slab_id === s.id &&
+        Number(p.amount_received) >= Number(p.amount_due)
     ).length
     return {
       id: s.id,

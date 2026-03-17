@@ -19,7 +19,18 @@ export function DownloadPDFsButton({ bookingId, serialDisplay }: DownloadPDFsBut
       const response = await fetch(`/api/bookings/${bookingId}/download`)
 
       if (!response.ok) {
-        throw new Error('Failed to download PDFs')
+        let message = 'Failed to download PDFs'
+        try {
+          const body = await response.json().catch(() => null)
+          if (body?.error) message = body.error
+          else if (response.status === 404) message = 'Booking not found'
+          else if (response.status >= 500) message = 'Server error generating PDFs'
+          else if (response.status === 302 || response.status === 401) message = 'Please sign in again'
+        } catch {
+          if (response.status === 404) message = 'Booking not found'
+          else if (response.status >= 500) message = 'Server error generating PDFs'
+        }
+        throw new Error(message)
       }
 
       // Create a blob from the response
@@ -42,7 +53,7 @@ export function DownloadPDFsButton({ bookingId, serialDisplay }: DownloadPDFsBut
       toast.success('PDFs downloaded successfully')
     } catch (error) {
       console.error('Download error:', error)
-      toast.error('Failed to download PDFs')
+      toast.error(error instanceof Error ? error.message : 'Failed to download PDFs')
     } finally {
       setIsLoading(false)
     }

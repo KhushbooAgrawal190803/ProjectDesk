@@ -7,7 +7,7 @@ import { BookingFormData } from '@/lib/validations/booking'
 
 export async function updateBooking(bookingId: string, data: Partial<BookingFormData>) {
   try {
-    const profile = await requireRole(['ADMIN', 'EXECUTIVE'])
+    const profile = await requireRole(['ADMIN'])
     const supabase = await createServiceClient()
 
     // Normalize and prepare booking data

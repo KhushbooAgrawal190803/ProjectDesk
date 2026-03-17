@@ -16,7 +16,7 @@ export default async function DownloadsPage() {
       <div className="space-y-8">
         <div>
           <h1 className="text-3xl font-semibold text-zinc-900">Bulk Downloads</h1>
-          <p className="text-zinc-600 mt-1">Download booking documents in bulk</p>
+          <p className="text-zinc-600 mt-1">Download company and customer PDFs in a single archive</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -35,13 +35,15 @@ export default async function DownloadsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <Button className="w-full gap-2" disabled>
+              <Button
+                asChild
+                className="w-full gap-2"
+              >
+                <a href="/api/bookings/bulk-download?kind=company">
                 <Download className="w-4 h-4" />
                 Download All Company PDFs
+                </a>
               </Button>
-              <p className="text-xs text-zinc-500 text-center mt-3">
-                PDF generation coming soon
-              </p>
             </CardContent>
           </Card>
 
@@ -60,13 +62,15 @@ export default async function DownloadsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <Button className="w-full gap-2" disabled>
+              <Button
+                asChild
+                className="w-full gap-2"
+              >
+                <a href="/api/bookings/bulk-download?kind=customer">
                 <Download className="w-4 h-4" />
                 Download All Customer PDFs
+                </a>
               </Button>
-              <p className="text-xs text-zinc-500 text-center mt-3">
-                PDF generation coming soon
-              </p>
             </CardContent>
           </Card>
 
@@ -88,12 +92,18 @@ export default async function DownloadsPage() {
               <p className="text-sm text-zinc-600 mb-4">
                 Use the filters on the All Bookings page, then return here to download only the filtered results.
               </p>
-              <Button className="w-full gap-2" disabled>
-                <FileArchive className="w-4 h-4" />
-                Download Filtered Results
+              <Button
+                asChild
+                className="w-full gap-2"
+                variant="outline"
+              >
+                <a href="/api/bookings/bulk-download?kind=both">
+                  <FileArchive className="w-4 h-4" />
+                  Download All PDFs (Company + Customer)
+                </a>
               </Button>
               <p className="text-xs text-zinc-500 text-center mt-3">
-                Feature coming soon
+                Uses all submitted, non-deleted bookings currently in the system.
               </p>
             </CardContent>
           </Card>

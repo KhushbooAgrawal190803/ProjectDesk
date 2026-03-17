@@ -1,5 +1,5 @@
 import { requireRole } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -18,31 +18,52 @@ import { RotateCcw, FileText } from 'lucide-react'
 import { RestoreBookingButton } from './restore-button'
 
 interface DeletedBookingWithCreator extends Booking {
-  creator: Profile
+  creator?: Profile
   deleter?: Profile
   deleted_at?: string
   deleted_by?: string
 }
 
 async function getDeletedBookings() {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
-  const { data, error } = await supabase
+  const { data: bookings, error } = await supabase
     .from('bookings')
-    .select(`
-      *,
-      creator:profiles!created_by(*),
-      deleter:profiles!deleted_by(*)
-    `)
+    .select('*')
     .not('deleted_at', 'is', null)
     .order('deleted_at', { ascending: false })
 
-  if (error) {
+  if (error || !bookings) {
     console.error('Error fetching deleted bookings:', error)
     return []
   }
 
-  return data as DeletedBookingWithCreator[]
+  // Manually load creator/deleter profiles to avoid PostgREST relationship issues
+  const creatorIds = Array.from(new Set(bookings.map((b) => b.created_by).filter(Boolean))) as string[]
+  const deleterIds = Array.from(
+    new Set(bookings.map((b) => b.deleted_by).filter(Boolean))
+  ) as string[]
+  const profileIds = Array.from(new Set([...creatorIds, ...deleterIds]))
+
+  let profilesById = new Map<string, Profile>()
+  if (profileIds.length > 0) {
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('*')
+      .in('id', profileIds)
+
+    if (!profilesError && profiles) {
+      profilesById = new Map(
+        (profiles as Profile[]).map((p) => [p.id, p])
+      )
+    }
+  }
+
+  return bookings.map((b) => ({
+    ...(b as Booking),
+    creator: profilesById.get(b.created_by as string),
+    deleter: b.deleted_by ? profilesById.get(b.deleted_by as string) : undefined,
+  })) as DeletedBookingWithCreator[]
 }
 
 export default async function DeletedBookingsPage() {

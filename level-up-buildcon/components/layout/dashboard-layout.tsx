@@ -2,6 +2,7 @@
 
 import React, { ReactNode } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -60,7 +61,7 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
 
   const allNavItems = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['EXECUTIVE', 'ACCOUNTS', 'ADMIN'] },
-    { href: '/new-booking', label: 'New Booking', icon: PlusCircle, roles: ['EXECUTIVE', 'ADMIN'] },
+    { href: '/new-booking', label: 'New Booking', icon: PlusCircle, roles: ['ADMIN'] },
     { href: '/bookings', label: 'All Bookings', icon: FileText, roles: ['EXECUTIVE', 'ACCOUNTS', 'ADMIN'] },
     { href: '/lookup', label: 'Quick Lookup', icon: Search, roles: ['EXECUTIVE', 'ADMIN'] },
     { href: '/downloads', label: 'Downloads', icon: Download, roles: ['EXECUTIVE', 'ADMIN'] },
@@ -83,14 +84,22 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-zinc-50">
       {/* Header */}
-      <header className="bg-white border-b border-zinc-200 sticky top-0 z-50">
-        <div className="w-full px-4 md:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link href="/dashboard" className="flex items-center gap-2 md:gap-3 hover:opacity-80 transition-opacity">
-            <div className="w-8 h-8 md:w-9 md:h-9 bg-zinc-900 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Building2 className="w-4 h-4 md:w-5 md:h-5 text-white" />
+      <header className="bg-white/90 backdrop-blur border-b border-zinc-200 sticky top-0 z-50">
+        <div className="w-full px-3 md:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <Link href="/dashboard" className="flex items-center gap-3 md:gap-4 hover:opacity-80 transition-opacity">
+            <div className="relative w-12 h-12 md:w-16 md:h-16 flex-shrink-0 overflow-hidden rounded-xl">
+              <Image
+                src="/anandam-logo.png"
+                alt="Anandam - Level Up Buildcon"
+                fill
+                className="object-cover"
+                priority
+              />
             </div>
             <div className="hidden sm:block">
-              <h1 className="text-base md:text-lg font-semibold text-zinc-900 whitespace-nowrap">Level Up Buildcon</h1>
+              <h1 className="text-base md:text-lg font-semibold text-zinc-900 whitespace-nowrap">
+                Level Up Buildcon
+              </h1>
             </div>
           </Link>
 

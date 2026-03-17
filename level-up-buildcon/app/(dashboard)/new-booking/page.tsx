@@ -23,7 +23,7 @@ export default async function NewBookingPage({
 }: {
   searchParams: Promise<{ unit?: string }>
 }) {
-  const profile = await requireRole(['EXECUTIVE', 'ADMIN'])
+  const profile = await requireRole(['ADMIN'])
   if (!profile) {
     redirect('/login')
   }

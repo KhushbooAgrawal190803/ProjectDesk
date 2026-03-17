@@ -27,6 +27,7 @@ interface Step1ProjectUnitProps {
 export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1ProjectUnitProps) {
   const [unitWarning, setUnitWarning] = useState<string | null>(null)
   const [flatError, setFlatError] = useState<string | null>(null)
+  const [unitSizeLabel, setUnitSizeLabel] = useState<string | null>(null)
   const [checkingUnit, setCheckingUnit] = useState(false)
 
   const {
@@ -80,6 +81,21 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
       setValue('floor_no', digits.slice(0, -2))
     }
   }, [unitNo, setValue])
+
+  // Derive unit size label for residential units: flats ending in 4 or 8 are 4BHK, others 3BHK
+  useEffect(() => {
+    if (!unitNo || unitCategory !== 'Residential') {
+      setUnitSizeLabel(null)
+      return
+    }
+    const trimmed = unitNo.trim()
+    const lastChar = trimmed[trimmed.length - 1]
+    if (lastChar === '4' || lastChar === '8') {
+      setUnitSizeLabel('4 BHK')
+    } else {
+      setUnitSizeLabel('3 BHK')
+    }
+  }, [unitNo, unitCategory])
 
   // Validate flat number against the selected category
   useEffect(() => {
@@ -254,6 +270,12 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
               onBlur={checkUnit}
               className={unitWarning ? 'border-amber-500 focus:ring-amber-500' : ''}
             />
+            {unitSizeLabel && !flatError && (
+              <p className="text-sm text-zinc-600">
+                Unit size:&nbsp;
+                <span className="font-medium">{unitSizeLabel}</span>
+              </p>
+            )}
             {errors.unit_no && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.unit_no)}</p>
             )}

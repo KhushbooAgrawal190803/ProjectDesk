@@ -23,8 +23,13 @@ DECLARE
 BEGIN
   IF NEW.serial_no IS NULL AND NEW.status = 'SUBMITTED' THEN
     IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status = 'DRAFT') THEN
-      -- Use shared sequence
-      seq_val := nextval('booking_serial_lubc_seq');
+      -- Compute next serial number from existing active (non-deleted) submitted bookings
+      SELECT COALESCE(MAX(serial_no), 0) + 1
+      INTO seq_val
+      FROM bookings
+      WHERE deleted_at IS NULL
+        AND status = 'SUBMITTED';
+
       NEW.serial_no := seq_val;
       
       -- Determine category code

@@ -356,7 +356,12 @@ export function generateCustomerPDF(booking: Booking & { creator?: Profile }): P
       addRow('Type', booking.unit_type || 'N/A')
       addRow('Unit Number', booking.unit_no || 'N/A')
       addRow('Floor', booking.floor_no || 'N/A')
-      addRow('Area', `${booking.carpet_area || 'N/A'} sq.ft`)
+      // Prefer super built-up area for total area display, then built-up, then carpet
+      const area =
+        booking.super_builtup_area ??
+        booking.builtup_area ??
+        booking.carpet_area
+      addRow('Area', `${area != null ? area : 'N/A'} sq.ft`)
       yPos += 4
 
       // PAYMENT SUMMARY

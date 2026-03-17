@@ -6,13 +6,13 @@ import { revalidatePath } from 'next/cache'
 
 export async function deleteBooking(bookingId: string) {
   try {
-    const profile = await requireRole(['ADMIN', 'EXECUTIVE'])
+    const profile = await requireRole(['ADMIN'])
     const supabase = await createServiceClient()
 
     // First verify the booking exists
     const { data: booking, error: getError } = await supabase
       .from('bookings')
-      .select('id')
+      .select('id, serial_no, serial_display')
       .eq('id', bookingId)
       .single()
 
@@ -20,12 +20,14 @@ export async function deleteBooking(bookingId: string) {
       throw new Error('Booking not found')
     }
 
-    // Soft delete - set deleted_at and deleted_by
+    // Soft delete - set deleted_at and deleted_by, and clear serial so restored bookings get a new serial
     const { error } = await supabase
       .from('bookings')
       .update({
         deleted_at: new Date().toISOString(),
         deleted_by: profile.id,
+        serial_no: null,
+        serial_display: null,
       })
       .eq('id', bookingId)
 
@@ -57,7 +59,7 @@ export async function restoreBooking(bookingId: string) {
     const profile = await requireRole(['ADMIN'])
     const supabase = await createServiceClient()
 
-    // Restore by clearing deleted_at and deleted_by
+    // Restore by clearing deleted_at / deleted_by; serial will be re-generated on next SUBMITTED transition
     const { error } = await supabase
       .from('bookings')
       .update({
@@ -91,7 +93,7 @@ export async function restoreBooking(bookingId: string) {
 
 export async function revertToDraft(bookingId: string, reason?: string) {
   try {
-    const profile = await requireRole(['ADMIN', 'EXECUTIVE'])
+    const profile = await requireRole(['ADMIN'])
     const supabase = await createServiceClient()
 
     // Verify the booking exists and is in SUBMITTED or EDITED state

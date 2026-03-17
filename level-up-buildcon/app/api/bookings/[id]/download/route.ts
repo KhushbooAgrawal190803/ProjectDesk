@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireProfile } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { generateCompanyPDF, generateCustomerPDF } from '@/lib/pdf/generator'
 import archiver from 'archiver'
 import { Writable } from 'stream'
+
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 // Create a zip buffer from files
 const createZipBuffer = async (files: { name: string; buffer: Buffer }[]): Promise<Buffer> => {
@@ -32,14 +35,14 @@ const createZipBuffer = async (files: { name: string; buffer: Buffer }[]): Promi
 }
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
     await requireProfile()
 
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     // Fetch booking
     const { data: booking, error } = await supabase

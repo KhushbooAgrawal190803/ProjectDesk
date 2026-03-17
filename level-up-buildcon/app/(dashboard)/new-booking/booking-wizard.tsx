@@ -357,9 +357,9 @@ export function BookingWizard({ drafts, prefilledUnit, availableParking = 27 }: 
         </DialogContent>
       </Dialog>
 
-      {/* Success Dialog */}
-      <Dialog open={showSuccess} onOpenChange={setShowSuccess}>
-        <DialogContent className="max-w-md">
+      {/* Success Dialog — no close (X); only New Booking, View Booking, Home */}
+      <Dialog open={showSuccess} onOpenChange={() => {}}>
+        <DialogContent className="max-w-md" showCloseButton={false}>
           <DialogTitle className="sr-only">Booking Submitted Successfully</DialogTitle>
           <div className="text-center py-6 space-y-4">
             <div className="flex justify-center">
@@ -375,17 +375,25 @@ export function BookingWizard({ drafts, prefilledUnit, availableParking = 27 }: 
             </div>
             <div className="flex flex-col gap-3 pt-4">
               <Button
-                onClick={() => router.push(`/bookings/${submittedBookingId}`)}
-                className="w-full"
+                onClick={() => {
+                  setShowSuccess(false)
+                  router.push(`/bookings/${submittedBookingId}`)
+                }}
+                className="w-full gap-2"
               >
-                View Booking Details
+                <FileText className="w-4 h-4" />
+                View Booking
               </Button>
               <Button
                 variant="outline"
                 onClick={() => {
                   setShowSuccess(false)
                   setFormData({
+                    project_name: 'Anandam',
                     project_location: 'Ranchi, Jharkhand',
+                    project_address: 'PLOT NO 1089 KHATA NO 74, GUTUWA NAGRI RANCHI JHARKHAND',
+                    rera_regn_no: 'JHARERA/PROJECT/15/2026',
+                    building_permit_no: 'RRDA/GH/0369/2025',
                     unit_category: 'Residential',
                     unit_type: 'Residential',
                     payment_mode: 'UPI',
@@ -394,11 +402,22 @@ export function BookingWizard({ drafts, prefilledUnit, availableParking = 27 }: 
                   setDraftId(undefined)
                   setCurrentStep(1)
                   setDocuments({})
+                  setFormKey((k) => k + 1)
                   router.refresh()
                 }}
                 className="w-full"
               >
-                Create Another Booking
+                New Booking
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowSuccess(false)
+                  router.push('/dashboard')
+                }}
+                className="w-full"
+              >
+                Home
               </Button>
             </div>
           </div>

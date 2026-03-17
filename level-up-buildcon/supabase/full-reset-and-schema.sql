@@ -233,12 +233,22 @@ CREATE OR REPLACE FUNCTION generate_serial_number()
 RETURNS TRIGGER AS $$
 DECLARE
   prefix TEXT;
+  next_serial INTEGER;
 BEGIN
   IF NEW.serial_no IS NULL AND NEW.status = 'SUBMITTED' THEN
     IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status = 'DRAFT') THEN
+      -- Compute the next serial based only on active (non-deleted) submitted bookings
+      SELECT COALESCE(MAX(serial_no), 0) + 1
+      INTO next_serial
+      FROM bookings
+      WHERE deleted_at IS NULL
+        AND status = 'SUBMITTED';
+
       SELECT serial_prefix INTO prefix FROM settings LIMIT 1;
-      NEW.serial_no := nextval('booking_serial_seq');
-      NEW.serial_display := prefix || LPAD(NEW.serial_no::TEXT, 6, '0');
+
+      NEW.serial_no := next_serial;
+      -- Serial display with 4 digits: 0000–9999
+      NEW.serial_display := prefix || LPAD(NEW.serial_no::TEXT, 4, '0');
       NEW.submitted_at := NOW();
     END IF;
   END IF;
