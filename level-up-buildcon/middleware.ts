@@ -1,63 +1,34 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
-  // If Supabase env vars are missing, skip middleware entirely
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
 
-  if (!supabaseUrl || !supabaseKey) {
-    return NextResponse.next()
+  // Derive the Supabase project ref from the URL to find the auth cookie
+  // Cookie name pattern: sb-<project-ref>-auth-token
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  const projectRef = supabaseUrl.split('//')[1]?.split('.')[0] || ''
+  const hasSession =
+    !!request.cookies.get(`sb-${projectRef}-auth-token`) ||
+    !!request.cookies.get(`sb-${projectRef}-auth-token.0`) ||
+    !!request.cookies.get('sb-access-token')
+
+  const protectedPaths = ['/dashboard', '/bookings', '/admin', '/new-booking', '/accounts', '/lookup']
+  const isProtected = protectedPaths.some(p => pathname.startsWith(p))
+
+  if (isProtected && !hasSession) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('redirect', pathname)
+    return NextResponse.redirect(url)
   }
 
-  try {
-    let supabaseResponse = NextResponse.next({ request })
-
-    const supabase = createServerClient(supabaseUrl, supabaseKey, {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    })
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    const protectedPaths = ['/dashboard', '/bookings', '/admin', '/new-booking']
-    const isProtectedPath = protectedPaths.some(path =>
-      request.nextUrl.pathname.startsWith(path)
-    )
-
-    if (isProtectedPath && !user) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/login'
-      url.searchParams.set('redirect', request.nextUrl.pathname)
-      return NextResponse.redirect(url)
-    }
-
-    if (
-      user &&
-      (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/signup')
-    ) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/dashboard'
-      return NextResponse.redirect(url)
-    }
-
-    return supabaseResponse
-  } catch {
-    // On any middleware error, allow the request through rather than returning 500
-    return NextResponse.next()
+  if (hasSession && (pathname === '/login' || pathname === '/signup')) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
   }
+
+  return NextResponse.next()
 }
 
 export const config = {
