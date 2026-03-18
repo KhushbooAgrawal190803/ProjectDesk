@@ -53,10 +53,11 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
       txn_date: true,
       payment_plan_type: true,
       payment_plan_custom_text: true,
+      additional_parking: true,
     }
 
     // Map and normalize fields (avoid sending NaN for numeric fields)
-    const numKeys = ['builtup_area', 'super_builtup_area', 'carpet_area', 'rate_per_sqft', 'total_cost', 'gst_amount', 'booking_amount_paid']
+    const numKeys = ['builtup_area', 'super_builtup_area', 'carpet_area', 'rate_per_sqft', 'total_cost', 'gst_amount', 'booking_amount_paid', 'additional_parking']
     for (const [key, value] of Object.entries(data)) {
       if (fieldMappings[key]) {
         if (numKeys.includes(key)) {
@@ -256,7 +257,9 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
       // Payment Plan
       payment_plan_type: baseData.payment_plan_type || null,
       payment_plan_custom_text: baseData.payment_plan_custom_text || null,
-      
+
+      additional_parking: Math.min(5, Math.max(0, Number(baseData.additional_parking) || 0)),
+
       // System fields
       status: profile.role === 'ADMIN' ? 'SUBMITTED' : 'PENDING',
       created_by: profile.id,
