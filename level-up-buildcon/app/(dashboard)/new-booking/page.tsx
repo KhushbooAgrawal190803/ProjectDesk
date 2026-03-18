@@ -6,6 +6,7 @@ import { BookingWizard } from './booking-wizard'
 import { getUserDrafts } from './actions'
 
 const TOTAL_PARKING = 27
+const TOTAL_PREMIUM_PARKING = 9
 
 async function getAvailableParking(): Promise<number> {
   try {
@@ -22,23 +23,40 @@ async function getAvailableParking(): Promise<number> {
   }
 }
 
+async function getAvailablePremiumParking(): Promise<number> {
+  try {
+    const supabase = await createServiceClient()
+    const { data } = await supabase
+      .from('bookings')
+      .select('premium_parking')
+      .neq('status', 'DRAFT')
+      .is('deleted_at', null)
+    const booked = (data || []).reduce((s, b) => s + (Number((b as any).premium_parking) || 0), 0)
+    return Math.max(0, TOTAL_PREMIUM_PARKING - booked)
+  } catch {
+    return TOTAL_PREMIUM_PARKING
+  }
+}
+
 export default async function NewBookingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ unit?: string }>
+  searchParams: Promise<{ unit?: string; draftId?: string }>
 }) {
   try {
-    const profile = await requireRole(['ADMIN'])
+    const profile = await requireRole(['ADMIN', 'ACCOUNTS', 'EXECUTIVE'])
     if (!profile) {
       redirect('/login')
     }
 
-    const [drafts, params, availableParking] = await Promise.all([
+    const [drafts, params, availableParking, availablePremiumParking] = await Promise.all([
       getUserDrafts(),
       searchParams,
       getAvailableParking(),
+      getAvailablePremiumParking(),
     ])
     const prefilledUnit = params.unit ?? null
+    const preselectedDraftId = params.draftId ?? null
 
     return (
       <DashboardLayout profile={profile}>
@@ -50,7 +68,13 @@ export default async function NewBookingPage({
             </p>
           </div>
 
-          <BookingWizard drafts={drafts} prefilledUnit={prefilledUnit} availableParking={availableParking} />
+          <BookingWizard
+            drafts={drafts}
+            prefilledUnit={prefilledUnit}
+            preselectedDraftId={preselectedDraftId}
+            availableParking={availableParking}
+            availablePremiumParking={availablePremiumParking}
+          />
         </div>
       </DashboardLayout>
     )

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { getAllKnownFlats, isAmenityFlat, isCommercialFlat } from '@/lib/data/flat-areas'
+import { getOwnerTypeForFlat, OWNER_NAMES } from '@/lib/data/flat-ownership'
 import { getTowerAllocations, AllocatedUnit } from './tower-actions'
 
 const FLOORS = 10
@@ -46,11 +47,15 @@ function buildGrid(allocations: AllocatedUnit[]): FlatCell[][] {
   return rows
 }
 
-const STATUS_STYLES: Record<FlatStatus, string> = {
-  available:   'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100',
-  allocated:   'bg-red-50 border-red-400 text-red-800 hover:bg-red-100 cursor-pointer',
-  amenity:     'bg-zinc-100 border-zinc-300 text-zinc-400 cursor-default',
-  commercial:  'bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100',
+const AMENITY_STYLE = 'bg-zinc-200 border-zinc-400 text-zinc-600 cursor-default'
+const COMMERCIAL_STYLE = 'bg-orange-200 border-orange-500 text-orange-900 hover:bg-orange-300'
+
+// Level Up Buildcon = green, Balaji Hospitality = blue. Interior stays same when booked; border turns red.
+function ownerStyle(unitNo: string) {
+  const owner = getOwnerTypeForFlat(unitNo)
+  return owner === 'LANDOWNER'
+    ? 'bg-blue-700 border-blue-900 text-white hover:bg-blue-800'
+    : 'bg-green-700 border-green-900 text-white hover:bg-green-800'
 }
 
 interface TowerViewProps {
@@ -99,21 +104,29 @@ export function TowerView({ initialAllocations, showHeader = true }: TowerViewPr
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-6 text-sm">
+      <div className="flex flex-wrap items-center gap-6 text-sm">
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded border-2 bg-emerald-50 border-emerald-300" />
-          <span className="text-zinc-600">Available</span>
+          <div className="w-5 h-5 rounded border-2 bg-green-700 border-green-900" />
+          <span className="text-zinc-600">{OWNER_NAMES.DEVELOPER} (available)</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded border-2 bg-red-50 border-red-400" />
-          <span className="text-zinc-600">Allocated</span>
+          <div className="w-5 h-5 rounded border-2 bg-blue-700 border-blue-900" />
+          <span className="text-zinc-600">{OWNER_NAMES.LANDOWNER} (available)</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded border-2 bg-orange-50 border-orange-300" />
+          <div className="w-5 h-5 rounded border-[3px] bg-green-700 border-red-600" />
+          <span className="text-zinc-600">Sold ({OWNER_NAMES.DEVELOPER})</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded border-[3px] bg-blue-700 border-red-600" />
+          <span className="text-zinc-600">Sold ({OWNER_NAMES.LANDOWNER})</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded border-2 bg-orange-200 border-orange-500" />
           <span className="text-zinc-600">Commercial (available)</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded border-2 bg-zinc-100 border-zinc-300" />
+          <div className="w-5 h-5 rounded border-2 bg-zinc-200 border-zinc-400" />
           <span className="text-zinc-600">Amenity</span>
         </div>
       </div>
@@ -145,10 +158,17 @@ export function TowerView({ initialAllocations, showHeader = true }: TowerViewPr
 
                 {/* Flat cells */}
                 {row.map((cell, cellIdx) => {
+                  const baseStyle =
+                    cell.status === 'amenity'
+                      ? AMENITY_STYLE
+                      : cell.status === 'commercial'
+                      ? COMMERCIAL_STYLE
+                      : ownerStyle(cell.unitNo)
+                  const soldBorder = cell.status === 'allocated' ? 'border-red-600 border-[3px]' : ''
                   const inner = (
                     <div
                       key={cell.unitNo}
-                      className={`w-16 h-14 mx-0.5 rounded-lg border-2 flex flex-col items-center justify-center select-none transition-colors ${STATUS_STYLES[cell.status]}`}
+                      className={`w-16 h-14 mx-0.5 rounded-lg border-2 flex flex-col items-center justify-center select-none transition-colors ${baseStyle} ${soldBorder} ${cell.status === 'allocated' ? 'cursor-pointer' : ''}`}
                       onMouseEnter={cell.status === 'allocated' ? (e) => {
                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
                         setTooltip({ unitNo: cell.unitNo, x: rect.left, y: rect.top })

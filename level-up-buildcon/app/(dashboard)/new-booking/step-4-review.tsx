@@ -114,6 +114,13 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting, docum
         {data.txn_or_cheque_no && <Field label="Transaction / Cheque No." value={data.txn_or_cheque_no} />}
         {data.txn_date && <Field label="Transaction Date" value={new Date(data.txn_date).toLocaleDateString()} />}
         {data.payment_mode_detail && <Field label="Payment Details" value={data.payment_mode_detail} />}
+        {(data.additional_parking != null || (data as any).premium_parking != null) && (
+          <>
+            <Separator />
+            <Field label="Paid Parking" value={Number(data.additional_parking) || 0} />
+            <Field label="Premium Parking" value={Number((data as any).premium_parking) || 0} />
+          </>
+        )}
         <Separator />
         {data.payment_plan_type && <Field label="Payment Plan" value={data.payment_plan_type.replace(/([A-Z])/g, ' $1').trim()} />}
         {data.payment_plan_custom_text && (

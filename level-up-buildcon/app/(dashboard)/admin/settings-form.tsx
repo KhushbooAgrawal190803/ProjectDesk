@@ -45,13 +45,13 @@ export function SettingsForm({ settings }: SettingsFormProps) {
             id="serialPrefix"
             value={serialPrefix}
             onChange={(e) => setSerialPrefix(e.target.value)}
-            placeholder="LUBC-"
+            placeholder="LUBC "
             required
             disabled={loading}
             className="max-w-xs"
           />
           <p className="text-sm text-zinc-500">
-            Prefix for booking serial numbers (e.g., LUBC-000001)
+            Prefix for booking serial numbers (e.g., LUBC 01)
           </p>
         </div>
 

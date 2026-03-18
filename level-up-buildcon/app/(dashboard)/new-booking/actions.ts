@@ -10,9 +10,8 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
     const profile = await requireProfile()
     const supabase = await createServiceClient()
 
-    // Normalize and prepare booking data - same as submitBooking
+    // Normalize and prepare booking data (never downgrade PENDING → DRAFT on update)
     const bookingData: any = {
-      status: 'DRAFT',
       created_by: profile.id,
       // Persisted DB enum – for Anandam everything is treated as a flat
       unit_type: 'Flat',
@@ -54,10 +53,11 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
       payment_plan_type: true,
       payment_plan_custom_text: true,
       additional_parking: true,
+      premium_parking: true,
     }
 
     // Map and normalize fields (avoid sending NaN for numeric fields)
-    const numKeys = ['builtup_area', 'super_builtup_area', 'carpet_area', 'rate_per_sqft', 'total_cost', 'gst_amount', 'booking_amount_paid', 'additional_parking']
+    const numKeys = ['builtup_area', 'super_builtup_area', 'carpet_area', 'rate_per_sqft', 'total_cost', 'gst_amount', 'booking_amount_paid', 'additional_parking', 'premium_parking']
     for (const [key, value] of Object.entries(data)) {
       if (fieldMappings[key]) {
         if (numKeys.includes(key)) {
@@ -77,7 +77,7 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
         .update(bookingData)
         .eq('id', draftId)
         .eq('created_by', profile.id)
-        .eq('status', 'DRAFT')
+        .in('status', ['DRAFT', 'PENDING'])
         .select()
         .single()
 
@@ -87,6 +87,8 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
 
       return { success: true, draftId: updated.id }
     } else {
+      // Creating a new draft
+      bookingData.status = 'DRAFT'
       const { data: created, error } = await supabase
         .from('bookings')
         .insert([bookingData])
@@ -113,7 +115,7 @@ export async function getDraft(draftId: string) {
     .select('*')
     .eq('id', draftId)
     .eq('created_by', profile.id)
-    .eq('status', 'DRAFT')
+    .in('status', ['DRAFT', 'PENDING'])
     .single()
 
   if (error) {
@@ -131,7 +133,7 @@ export async function getUserDrafts() {
     .from('bookings')
     .select('*')
     .eq('created_by', profile.id)
-    .eq('status', 'DRAFT')
+    .in('status', ['DRAFT', 'PENDING'])
     .order('updated_at', { ascending: false })
 
   if (error) {
@@ -259,6 +261,7 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
       payment_plan_custom_text: baseData.payment_plan_custom_text || null,
 
       additional_parking: Math.min(5, Math.max(0, Number(baseData.additional_parking) || 0)),
+      premium_parking: Math.min(3, Math.max(0, Number((baseData as any).premium_parking) || 0)),
 
       // System fields
       status: profile.role === 'ADMIN' ? 'SUBMITTED' : 'PENDING',

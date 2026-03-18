@@ -94,7 +94,10 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
     }).format(amount)
   }
 
-  const canEdit = profile.role === 'ADMIN' || profile.role === 'EXECUTIVE'
+  const canEdit =
+    profile.role === 'ADMIN' ||
+    profile.role === 'EXECUTIVE' ||
+    (profile.role === 'ACCOUNTS' && booking.status === 'PENDING' && booking.created_by === profile.id)
 
   const Section = ({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) => (
     <Card className="border-zinc-200 shadow-sm">
@@ -126,7 +129,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-3xl font-semibold text-zinc-900">Booking Details</h1>
               <Badge variant="outline" className="font-mono text-base">
-                {booking.serial_display}
+                {booking.serial_display || '—'}
               </Badge>
               <Badge 
                 variant={booking.status === 'SUBMITTED' ? 'default' : booking.status === 'DRAFT' ? 'outline' : booking.status === 'PENDING' ? 'default' : 'secondary'}
@@ -145,12 +148,21 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
               <ApproveRejectButtons bookingId={booking.id} />
             )}
             {canEdit && (
-              <Link href={`/bookings/${booking.id}/edit`}>
-                <Button className="gap-2">
-                  <Edit className="w-4 h-4" />
-                  Edit
-                </Button>
-              </Link>
+              profile.role === 'ACCOUNTS' ? (
+                <Link href={`/new-booking?draftId=${booking.id}`}>
+                  <Button className="gap-2">
+                    <Edit className="w-4 h-4" />
+                    Edit
+                  </Button>
+                </Link>
+              ) : (
+                <Link href={`/bookings/${booking.id}/edit`}>
+                  <Button className="gap-2">
+                    <Edit className="w-4 h-4" />
+                    Edit
+                  </Button>
+                </Link>
+              )
             )}
             <RevertToDraftButton bookingId={booking.id} canRevert={canEdit} bookingStatus={booking.status} />
             <DeleteBookingButton bookingId={booking.id} canDelete={canEdit} />

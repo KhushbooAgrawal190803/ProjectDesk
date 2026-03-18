@@ -22,9 +22,17 @@ interface Step3PricingPaymentProps {
   onNext: () => void
   onBack: () => void
   availableParking?: number
+  availablePremiumParking?: number
 }
 
-export function Step3PricingPayment({ data, onUpdate, onNext, onBack, availableParking = 27 }: Step3PricingPaymentProps) {
+export function Step3PricingPayment({
+  data,
+  onUpdate,
+  onNext,
+  onBack,
+  availableParking = 27,
+  availablePremiumParking = 9,
+}: Step3PricingPaymentProps) {
   const superBuiltupArea = Number(data.super_builtup_area) || 0
 
   const {
@@ -196,9 +204,9 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack, availableP
         </div>
       </div>
 
-      {/* Additional Parking */}
+      {/* Parking */}
       <div>
-        <h3 className="text-lg font-semibold mb-4">Additional Parking</h3>
+        <h3 className="text-lg font-semibold mb-4">Parking</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="additional_parking">Additional Parking Spaces</Label>
@@ -213,6 +221,22 @@ export function Step3PricingPayment({ data, onUpdate, onNext, onBack, availableP
             </select>
             <p className="text-xs text-zinc-500">
               {availableParking} of 27 parking spaces still available in this project
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="premium_parking">Premium Paid Parking</Label>
+            <select
+              id="premium_parking"
+              {...register('premium_parking')}
+              className="flex h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+            >
+              {[0, 1, 2, 3].map((n) => (
+                <option key={n} value={n}>{n === 0 ? 'None' : `${n} space${n > 1 ? 's' : ''}`}</option>
+              ))}
+            </select>
+            <p className="text-xs text-zinc-500">
+              {availablePremiumParking} of 9 premium parking spaces still available in this project
             </p>
           </div>
         </div>

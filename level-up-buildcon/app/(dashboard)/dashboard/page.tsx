@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { FileText, Users, IndianRupee, TrendingUp, ParkingSquare } from 'lucide-react'
 import { getTowerAllocations } from '@/app/(dashboard)/lookup/tower-actions'
 import { TowerView } from '@/app/(dashboard)/lookup/tower-view'
+import { getOwnerTypeForFlat } from '@/lib/data/flat-ownership'
 
 async function getDashboardStats() {
   const supabase = await createServiceClient()
@@ -29,14 +30,22 @@ async function getDashboardStats() {
     .neq('status', 'DRAFT')
     .is('deleted_at', null)
 
-  // Get total booking amount
+  // Get total booking amount + owner tallies
   const { data: bookingsData } = await supabase
     .from('bookings')
-    .select('booking_amount_paid')
+    .select('booking_amount_paid, unit_no')
     .neq('status', 'DRAFT')
     .is('deleted_at', null)
 
   const totalAmount = bookingsData?.reduce((sum, b) => sum + (b.booking_amount_paid || 0), 0) || 0
+
+  const ownerTotals = { DEVELOPER: { count: 0, amount: 0 }, LANDOWNER: { count: 0, amount: 0 } } as const
+  for (const b of bookingsData || []) {
+    const owner = getOwnerTypeForFlat((b as any).unit_no) || 'DEVELOPER'
+    const amt = Number((b as any).booking_amount_paid) || 0
+    ;(ownerTotals as any)[owner].count += 1
+    ;(ownerTotals as any)[owner].amount += amt
+  }
 
   // Get active users count
   const { count: activeUsers } = await supabase
@@ -59,20 +68,25 @@ async function getDashboardStats() {
   // Parking availability
   const { data: parkingData } = await supabase
     .from('bookings')
-    .select('additional_parking')
+    .select('additional_parking, premium_parking')
     .neq('status', 'DRAFT')
     .is('deleted_at', null)
   const bookedParking = (parkingData || []).reduce((s, b) => s + (Number(b.additional_parking) || 0), 0)
   const availableParking = Math.max(0, 27 - bookedParking)
+  const bookedPremiumParking = (parkingData || []).reduce((s, b) => s + (Number((b as any).premium_parking) || 0), 0)
+  const availablePremiumParking = Math.max(0, 9 - bookedPremiumParking)
 
   return {
     totalBookings: totalBookings || 0,
     weekBookings: weekBookings || 0,
     totalAmount,
+    ownerTotals,
     activeUsers: activeUsers || 0,
     recentBookings: recentBookings || [],
     availableParking,
     bookedParking,
+    availablePremiumParking,
+    bookedPremiumParking,
   }
 }
 
@@ -105,7 +119,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
           <Card className="border-zinc-200 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-sm font-medium text-zinc-600">
@@ -161,13 +175,46 @@ export default async function DashboardPage() {
           <Card className="border-zinc-200 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-sm font-medium text-zinc-600">
+                Sales (Level Up Buildcon)
+              </CardTitle>
+              <FileText className="w-4 h-4 text-zinc-400" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">{stats.ownerTotals.DEVELOPER.count}</div>
+              <p className="text-xs text-zinc-500 mt-1">{formatCurrency(stats.ownerTotals.DEVELOPER.amount)} booked</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-zinc-200 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-sm font-medium text-zinc-600">
+                Sales (Balaji Hospitality)
+              </CardTitle>
+              <FileText className="w-4 h-4 text-zinc-400" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">{stats.ownerTotals.LANDOWNER.count}</div>
+              <p className="text-xs text-zinc-500 mt-1">{formatCurrency(stats.ownerTotals.LANDOWNER.amount)} booked</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-zinc-200 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-sm font-medium text-zinc-600">
                 Parking Available
               </CardTitle>
               <ParkingSquare className="w-4 h-4 text-zinc-400" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-semibold">{stats.availableParking} <span className="text-base font-normal text-zinc-400">/ 27</span></div>
-              <p className="text-xs text-zinc-500 mt-1">{stats.bookedParking} spaces booked</p>
+              <div className="text-2xl font-semibold">
+                {stats.availableParking} <span className="text-base font-normal text-zinc-400">/ 27</span>
+              </div>
+              <p className="text-xs text-zinc-500 mt-1">
+                {stats.bookedParking} paid booked · {stats.bookedPremiumParking} premium booked
+              </p>
+              <p className="text-xs text-zinc-500">
+                Premium available: {stats.availablePremiumParking} / 9
+              </p>
             </CardContent>
           </Card>
         </div>

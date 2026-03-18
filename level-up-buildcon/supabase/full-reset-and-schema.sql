@@ -34,7 +34,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TYPE user_role AS ENUM ('STAFF', 'EXECUTIVE', 'ACCOUNTS', 'ADMIN');
 CREATE TYPE user_status AS ENUM ('PENDING', 'ACTIVE', 'DISABLED');
-CREATE TYPE booking_status AS ENUM ('DRAFT', 'SUBMITTED', 'EDITED');
+CREATE TYPE booking_status AS ENUM ('DRAFT', 'PENDING', 'SUBMITTED', 'EDITED');
 CREATE TYPE unit_category AS ENUM ('Residential', 'Commercial');
 CREATE TYPE unit_type AS ENUM ('Flat', 'Villa', 'Plot', 'Shop', 'Office', 'Other');
 CREATE TYPE payment_mode AS ENUM ('Cash', 'Cheque', 'NEFT_RTGS', 'UPI');
@@ -58,14 +58,14 @@ CREATE INDEX idx_profiles_status ON profiles(status);
 CREATE TABLE settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   allow_self_signup BOOLEAN NOT NULL DEFAULT false,
-  serial_prefix TEXT NOT NULL DEFAULT 'LUBC-',
+  serial_prefix TEXT NOT NULL DEFAULT 'LUBC ',
   default_project_location TEXT NOT NULL DEFAULT 'Ranchi, Jharkhand',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 INSERT INTO settings (allow_self_signup, serial_prefix, default_project_location)
-VALUES (false, 'LUBC-', 'Ranchi, Jharkhand');
+VALUES (false, 'LUBC ', 'Ranchi, Jharkhand');
 
 CREATE TABLE bookings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -103,6 +103,8 @@ CREATE TABLE bookings (
   payment_mode_detail TEXT,
   txn_or_cheque_no TEXT,
   txn_date DATE,
+  additional_parking INTEGER NOT NULL DEFAULT 0,
+  premium_parking INTEGER NOT NULL DEFAULT 0,
   payment_plan_type payment_plan_type NOT NULL,
   payment_plan_custom_text TEXT,
   status booking_status NOT NULL DEFAULT 'DRAFT',
@@ -236,19 +238,18 @@ DECLARE
   next_serial INTEGER;
 BEGIN
   IF NEW.serial_no IS NULL AND NEW.status = 'SUBMITTED' THEN
-    IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status = 'DRAFT') THEN
+    IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND (OLD.status = 'DRAFT' OR OLD.status = 'PENDING')) THEN
       -- Compute the next serial based only on active (non-deleted) submitted bookings
       SELECT COALESCE(MAX(serial_no), 0) + 1
       INTO next_serial
       FROM bookings
       WHERE deleted_at IS NULL
-        AND status = 'SUBMITTED';
+        AND status IN ('SUBMITTED', 'EDITED');
 
       SELECT serial_prefix INTO prefix FROM settings LIMIT 1;
 
       NEW.serial_no := next_serial;
-      -- Serial display with 4 digits: 0000–9999
-      NEW.serial_display := prefix || LPAD(NEW.serial_no::TEXT, 4, '0');
+      NEW.serial_display := prefix || LPAD(NEW.serial_no::TEXT, 2, '0');
       NEW.submitted_at := NOW();
     END IF;
   END IF;

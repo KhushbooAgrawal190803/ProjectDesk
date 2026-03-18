@@ -11,7 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TYPE user_role AS ENUM ('STAFF', 'EXECUTIVE', 'ADMIN');
 CREATE TYPE user_status AS ENUM ('PENDING', 'ACTIVE', 'DISABLED');
-CREATE TYPE booking_status AS ENUM ('DRAFT', 'SUBMITTED', 'EDITED');
+CREATE TYPE booking_status AS ENUM ('DRAFT', 'PENDING', 'SUBMITTED', 'EDITED');
 CREATE TYPE unit_category AS ENUM ('Residential', 'Commercial');
 CREATE TYPE unit_type AS ENUM ('Flat', 'Villa', 'Plot', 'Shop', 'Office', 'Other');
 CREATE TYPE payment_mode AS ENUM ('Cash', 'Cheque', 'NEFT_RTGS', 'UPI');
@@ -44,7 +44,7 @@ CREATE INDEX idx_profiles_status ON profiles(status);
 CREATE TABLE settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   allow_self_signup BOOLEAN NOT NULL DEFAULT false,
-  serial_prefix TEXT NOT NULL DEFAULT 'LUBC-',
+  serial_prefix TEXT NOT NULL DEFAULT 'LUBC ',
   default_project_location TEXT NOT NULL DEFAULT 'Ranchi, Jharkhand',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -52,7 +52,7 @@ CREATE TABLE settings (
 
 -- Insert default settings
 INSERT INTO settings (allow_self_signup, serial_prefix, default_project_location)
-VALUES (false, 'LUBC-', 'Ranchi, Jharkhand');
+VALUES (false, 'LUBC ', 'Ranchi, Jharkhand');
 
 -- =============================================
 -- BOOKINGS TABLE
@@ -267,18 +267,27 @@ CREATE OR REPLACE FUNCTION generate_serial_number()
 RETURNS TRIGGER AS $$
 DECLARE
   prefix TEXT;
+  next_serial INTEGER;
 BEGIN
   -- Generate serial number if:
   -- 1. Inserting with status='SUBMITTED' and serial_no is null, OR
   -- 2. Updating from DRAFT to SUBMITTED and serial_no is null
+  -- 3. Updating from PENDING to SUBMITTED (admin approval) and serial_no is null
   IF NEW.serial_no IS NULL AND NEW.status = 'SUBMITTED' THEN
-    IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status = 'DRAFT') THEN
+    IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND (OLD.status = 'DRAFT' OR OLD.status = 'PENDING')) THEN
       -- Get the prefix from settings
       SELECT serial_prefix INTO prefix FROM settings LIMIT 1;
       
-      -- Generate next serial number
-      NEW.serial_no := nextval('booking_serial_seq');
-      NEW.serial_display := prefix || LPAD(NEW.serial_no::TEXT, 6, '0');
+      -- Generate next serial number based on existing active serials
+      SELECT COALESCE(MAX(serial_no), 0) + 1
+      INTO next_serial
+      FROM bookings
+      WHERE deleted_at IS NULL
+        AND status IN ('SUBMITTED', 'EDITED')
+        AND serial_no IS NOT NULL;
+
+      NEW.serial_no := next_serial;
+      NEW.serial_display := prefix || LPAD(NEW.serial_no::TEXT, 2, '0');
       NEW.submitted_at := NOW();
     END IF;
   END IF;

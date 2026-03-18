@@ -56,28 +56,26 @@ export async function getSlabsWithStats(): Promise<SlabWithStats[]> {
     .from('booking_payment_slabs')
     .select('booking_id, slab_id, amount_due, amount_received')
 
-  const bookingIds = new Set((bookings || []).map((b: any) => b.id))
-  const paymentMap = new Map<number, { due: number; received: number }>()
+  const bookingList = bookings || []
+  const bookingIds = new Set(bookingList.map((b: any) => b.id))
+  const bookingTotalCostMap = new Map<string, number>(bookingList.map((b: any) => [b.id, Number(b.total_cost) || 0]))
+  // Sum amount_received per (booking_id, slab_id) for partial payments
+  const receivedByBookingSlab = new Map<string, number>()
   for (const p of payments || []) {
-    // Ignore payments for bookings that are no longer active (e.g. deleted)
     if (!bookingIds.has(p.booking_id)) continue
-    const cur = paymentMap.get(p.slab_id) || { due: 0, received: 0 }
-    paymentMap.set(p.slab_id, {
-      due: cur.due + Number(p.amount_due),
-      received: cur.received + Number(p.amount_received),
-    })
+    const key = `${p.booking_id}:${p.slab_id}`
+    receivedByBookingSlab.set(key, (receivedByBookingSlab.get(key) ?? 0) + Number(p.amount_received))
   }
 
-  const total = (bookings || []).length
+  const total = bookingList.length
 
   return (slabs || []).map((s: any) => {
-    const pm = paymentMap.get(s.id) || { due: 0, received: 0 }
-    const paidCount = (payments || []).filter(
-      (p: any) =>
-        bookingIds.has(p.booking_id) &&
-        p.slab_id === s.id &&
-        Number(p.amount_received) >= Number(p.amount_due)
-    ).length
+    let paidCount = 0
+    for (const b of bookingList) {
+      const due = (bookingTotalCostMap.get(b.id) ?? 0) * Number(s.percentage) / 100
+      const received = receivedByBookingSlab.get(`${b.id}:${s.id}`) ?? 0
+      if (received >= due) paidCount++
+    }
     return {
       id: s.id,
       sr_no: s.sr_no,
@@ -119,6 +117,7 @@ export async function getSlabBookings(slabId: number): Promise<ReminderBooking[]
 
   const payMap = new Map((payments || []).map((p: any) => [p.booking_id, p]))
 
+  // Amount due per slab = (booking total_cost × slab percentage) / 100. Always from booking total.
   return (bookings || []).map((b: any) => {
     const totalCost = Number(b.total_cost) || 0
     const amountDue = (totalCost * Number(slab.percentage)) / 100
@@ -132,7 +131,7 @@ export async function getSlabBookings(slabId: number): Promise<ReminderBooking[]
       unit_no: b.unit_no,
       project_name: b.project_name,
       total_cost: totalCost,
-      amount_due: p ? Number(p.amount_due) : amountDue,
+      amount_due: amountDue,
       amount_received: p ? Number(p.amount_received) : 0,
       received_at: p?.received_at || null,
       last_reminder_sent_at: p?.last_reminder_sent_at || null,

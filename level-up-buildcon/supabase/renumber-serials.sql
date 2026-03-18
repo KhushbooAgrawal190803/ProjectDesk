@@ -3,7 +3,7 @@
 -- Run this in Supabase SQL Editor AFTER you have run:
 --   DELETE FROM bookings WHERE deleted_at IS NOT NULL;
 -- This assigns serial_no 1, 2, 3, ... to remaining submitted/edited bookings
--- and updates serial_display (e.g. LUBC-0001, LUBC-0002) to match.
+-- and updates serial_display (e.g. LUBC 01, LUBC 02) to match.
 -- =============================================
 
 WITH ordered AS (
@@ -17,6 +17,6 @@ WITH ordered AS (
 UPDATE bookings b
 SET
   serial_no = o.new_serial,
-  serial_display = (SELECT serial_prefix FROM settings LIMIT 1) || LPAD(o.new_serial::TEXT, 4, '0')
+  serial_display = (SELECT serial_prefix FROM settings LIMIT 1) || LPAD(o.new_serial::TEXT, 2, '0')
 FROM ordered o
 WHERE b.id = o.id;

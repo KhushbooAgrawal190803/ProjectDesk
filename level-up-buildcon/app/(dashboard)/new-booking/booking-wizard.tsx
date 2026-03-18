@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,10 +28,18 @@ const STEPS = [
 interface BookingWizardProps {
   drafts: Booking[]
   prefilledUnit?: string | null
+  preselectedDraftId?: string | null
   availableParking?: number
+  availablePremiumParking?: number
 }
 
-export function BookingWizard({ drafts, prefilledUnit, availableParking = 27 }: BookingWizardProps) {
+export function BookingWizard({
+  drafts,
+  prefilledUnit,
+  preselectedDraftId = null,
+  availableParking = 27,
+  availablePremiumParking = 9,
+}: BookingWizardProps) {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState(1)
   const [formData, setFormData] = useState<Partial<BookingFormData>>({
@@ -44,6 +52,7 @@ export function BookingWizard({ drafts, prefilledUnit, availableParking = 27 }: 
     unit_type: 'Residential',
     payment_mode: 'UPI',
     additional_parking: 0,
+    premium_parking: 0,
     ...(prefilledUnit ? { unit_no: prefilledUnit } : {}),
   })
   const [draftId, setDraftId] = useState<string | undefined>()
@@ -55,6 +64,15 @@ export function BookingWizard({ drafts, prefilledUnit, availableParking = 27 }: 
   const [documents, setDocuments] = useState<Record<string, UploadedDoc>>({})
   const [formKey, setFormKey] = useState(0)
   const [draftLoaded, setDraftLoaded] = useState(false)
+
+  // Auto-load a pending/draft booking when navigated via /new-booking?draftId=...
+  // (Used for Accounts editing their own PENDING bookings)
+  useEffect(() => {
+    if (preselectedDraftId && !draftLoaded) {
+      handleLoadDraft(preselectedDraftId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preselectedDraftId])
 
   const updateFormData = (data: Partial<BookingFormData>) => {
     setFormData((prev) => ({ ...prev, ...data }))
@@ -90,7 +108,7 @@ export function BookingWizard({ drafts, prefilledUnit, availableParking = 27 }: 
         'coapplicant_pan', 'coapplicant_aadhaar',
         'rate_per_sqft', 'total_cost', 'gst_amount',
         'booking_amount_paid', 'payment_mode', 'payment_mode_detail',
-        'txn_or_cheque_no', 'txn_date', 'additional_parking',
+        'txn_or_cheque_no', 'txn_date', 'additional_parking', 'premium_parking',
       ]
       const sanitized: Record<string, any> = {}
       for (const key of formFields) {
@@ -280,6 +298,7 @@ export function BookingWizard({ drafts, prefilledUnit, availableParking = 27 }: 
                 onNext={() => goToStep(4)}
                 onBack={() => goToStep(2)}
                 availableParking={availableParking}
+                availablePremiumParking={availablePremiumParking}
               />
             )}
             {currentStep === 4 && (
@@ -398,6 +417,7 @@ export function BookingWizard({ drafts, prefilledUnit, availableParking = 27 }: 
                     unit_type: 'Residential',
                     payment_mode: 'UPI',
                     additional_parking: 0,
+                    premium_parking: 0,
                   })
                   setDraftId(undefined)
                   setCurrentStep(1)

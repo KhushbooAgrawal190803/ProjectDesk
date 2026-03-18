@@ -188,7 +188,7 @@ function createPDF(content, isCompanyCopy = true) {
 
 // Test data
 const testBooking = {
-  serial_display: 'LUBC-000001',
+  serial_display: 'LUBC 01',
   status: 'CONFIRMED',
   submitted_at: new Date().toISOString(),
   project_name: 'Ranchi Residential Complex',

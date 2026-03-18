@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { step1Schema, Step1Data } from '@/lib/validations/booking'
 import { getFlatAreas, isFlatAreaLookupProject, isCommercialFlat, isAmenityFlat, COMMERCIAL_FLAT_AREA } from '@/lib/data/flat-areas'
+import { getOwnerNameForFlat } from '@/lib/data/flat-ownership'
 import { checkUnitAvailability } from './actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -96,6 +97,8 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
       setUnitSizeLabel('3 BHK')
     }
   }, [unitNo, unitCategory])
+
+  const ownerName = getOwnerNameForFlat(unitNo) || null
 
   // Validate flat number against the selected category
   useEffect(() => {
@@ -274,6 +277,12 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
               <p className="text-sm text-zinc-600">
                 Unit size:&nbsp;
                 <span className="font-medium">{unitSizeLabel}</span>
+              </p>
+            )}
+            {ownerName && !flatError && (
+              <p className="text-sm text-zinc-600">
+                Owner:&nbsp;
+                <span className="font-medium">{ownerName}</span>
               </p>
             )}
             {errors.unit_no && (

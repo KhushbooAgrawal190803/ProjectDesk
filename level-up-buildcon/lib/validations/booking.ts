@@ -52,6 +52,7 @@ export const step3Schema = z.object({
   payment_plan_type: z.enum(['ConstructionLinked', 'DownPayment', 'PossessionLinked', 'Custom']).optional(),
   payment_plan_custom_text: optionalString,
   additional_parking: z.coerce.number().min(0).max(5).optional().default(0),
+  premium_parking: z.coerce.number().min(0).max(3).optional().default(0),
 }) as any
 
 export const bookingSchema = z.object({
