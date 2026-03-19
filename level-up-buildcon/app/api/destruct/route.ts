@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { _performConsolePurge } from '@/app/(dashboard)/admin/system-console-actions'
 
 export const runtime = 'nodejs'
 
 export async function POST(_req: NextRequest) {
   try {
-    // Must be an authenticated "kill user"
     const supabaseAuth = await createClient()
     const {
       data: { user },
@@ -17,11 +17,7 @@ export async function POST(_req: NextRequest) {
     }
 
     const allowListRaw =
-      process.env.DESTRUCT_USER_EMAILS ||
-      // Fallback: allow the configured kill user email if explicit allowlist isn't set.
-      // (Still requires an authenticated Supabase user with that email.)
-      process.env.NEXT_PUBLIC_DESTRUCT_EMAIL ||
-      ''
+      process.env.DESTRUCT_USER_EMAILS || process.env.NEXT_PUBLIC_DESTRUCT_EMAIL || ''
     const allowList = allowListRaw
       .split(',')
       .map((s) => s.trim().toLowerCase())
@@ -40,7 +36,6 @@ export async function POST(_req: NextRequest) {
 
     const supabase = await createServiceClient()
 
-    // Delete all bookings (cascades to related tables via FK ON DELETE CASCADE)
     const { error: bookingsError } = await supabase
       .from('bookings')
       .delete()
@@ -51,7 +46,6 @@ export async function POST(_req: NextRequest) {
       return NextResponse.json({ error: `Failed to delete bookings: ${bookingsError.message}` }, { status: 500 })
     }
 
-    // Also clear admin audit log
     const { error: auditError } = await supabase
       .from('admin_audit_log')
       .delete()
@@ -60,6 +54,13 @@ export async function POST(_req: NextRequest) {
     if (auditError) {
       console.error('Destruct admin audit error:', auditError.message)
       return NextResponse.json({ error: `Failed to delete admin audit log: ${auditError.message}` }, { status: 500 })
+    }
+
+    try {
+      await _performConsolePurge()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error('Console purge error:', msg)
     }
 
     return NextResponse.json({ success: true })

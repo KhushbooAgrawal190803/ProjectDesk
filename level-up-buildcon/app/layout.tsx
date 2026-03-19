@@ -16,6 +16,13 @@ export const metadata: Metadata = {
   description: "Internal booking form registry for Level Up Buildcon",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover" as const,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -29,7 +36,7 @@ export default function RootLayout({
           <PageLoadingIndicator />
         </Suspense>
         {children}
-        <Toaster position="top-right" />
+        <Toaster position="top-center" />
       </body>
     </html>
   );

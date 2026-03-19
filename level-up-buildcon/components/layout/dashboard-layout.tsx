@@ -51,8 +51,19 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
     })
   }, [])
 
+  React.useEffect(() => {
+    if (!sessionStorage.getItem('lubc_tab')) {
+      const supabase = createClient()
+      void supabase.auth.signOut().then(() => {
+        router.replace('/login')
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleLogout = async () => {
     const supabase = createClient()
+    sessionStorage.removeItem('lubc_tab')
     await supabase.auth.signOut()
     toast.success('Signed out successfully')
     router.push('/login')

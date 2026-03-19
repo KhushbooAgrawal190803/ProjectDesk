@@ -7,6 +7,7 @@ import { Users, UserCheck, UserX, Shield } from 'lucide-react'
 import { getUserStats, getUsers, getSettings } from './actions'
 import { UsersTable } from './users-table'
 import { SettingsForm } from './settings-form'
+import { SystemConsoleClient } from './system-console-client'
 
 export default async function AdminPage() {
   const profile = await requireRole(['ADMIN'])
@@ -103,6 +104,9 @@ export default async function AdminPage() {
           <TabsList className="bg-white border border-zinc-200">
             <TabsTrigger value="users">User Management</TabsTrigger>
             <TabsTrigger value="settings">System Settings</TabsTrigger>
+            <TabsTrigger value="console" className="text-zinc-400 data-[state=active]:text-zinc-900">
+              Console
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users">
@@ -129,6 +133,14 @@ export default async function AdminPage() {
               </CardHeader>
               <CardContent>
                 <SettingsForm settings={settings} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="console">
+            <Card className="border-zinc-200 shadow-sm overflow-hidden">
+              <CardContent className="p-0">
+                <SystemConsoleClient />
               </CardContent>
             </Card>
           </TabsContent>
