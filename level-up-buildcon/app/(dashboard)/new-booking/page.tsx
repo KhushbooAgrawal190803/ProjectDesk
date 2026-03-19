@@ -5,6 +5,9 @@ import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { BookingWizard } from './booking-wizard'
 import { getUserDrafts } from './actions'
 
+/** Uses cookies/session (requireRole / Supabase); must not be statically prerendered */
+export const dynamic = 'force-dynamic'
+
 const TOTAL_PARKING = 27
 const TOTAL_PREMIUM_PARKING = 9
 
@@ -84,7 +87,12 @@ export default async function NewBookingPage({
     if (typeof d === 'string' && d.startsWith('NEXT_REDIRECT')) {
       throw err
     }
-    console.error('New booking page error:', err instanceof Error ? err.message : err)
+    // Don't treat prerender/dynamic detection as an app error (should not occur with force-dynamic)
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.includes("Route /new-booking couldn't be rendered statically") || msg.includes('Dynamic server usage')) {
+      throw err
+    }
+    console.error('New booking page error:', msg || err)
     redirect('/login')
   }
 }
