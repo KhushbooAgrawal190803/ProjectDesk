@@ -20,6 +20,13 @@ function hexToBytes(hex: string): Uint8Array {
   for (let i = 0; i < hex.length; i += 2) bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
   return bytes
 }
+
+/** Web Crypto typings require `BufferSource` (not `Uint8Array<ArrayBufferLike>`). */
+function copyAsBufferSource(bytes: Uint8Array): BufferSource {
+  const u = new Uint8Array(bytes.byteLength)
+  u.set(bytes)
+  return u
+}
 function bytesToHex(b: Uint8Array): string {
   return Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('')
 }
@@ -27,13 +34,13 @@ function bytesToHex(b: Uint8Array): string {
 async function deriveKey(passphrase: string, saltHex: string): Promise<CryptoKey> {
   const rawKey = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(passphrase),
+    copyAsBufferSource(new TextEncoder().encode(passphrase)),
     'PBKDF2',
     false,
     ['deriveKey']
   )
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: hexToBytes(saltHex), iterations: 100_000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: copyAsBufferSource(hexToBytes(saltHex)), iterations: 100_000, hash: 'SHA-256' },
     rawKey,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -42,20 +49,21 @@ async function deriveKey(passphrase: string, saltHex: string): Promise<CryptoKey
 }
 
 async function encryptCell(plain: string, key: CryptoKey) {
-  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const iv = new Uint8Array(12)
+  crypto.getRandomValues(iv)
   const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: copyAsBufferSource(iv) },
     key,
-    new TextEncoder().encode(plain)
+    copyAsBufferSource(new TextEncoder().encode(plain))
   )
   return { iv: bytesToHex(iv), cipherText: bytesToHex(new Uint8Array(encrypted)) }
 }
 
 async function decryptCell(cipherHex: string, ivHex: string, key: CryptoKey): Promise<string> {
   const plain = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: hexToBytes(ivHex) },
+    { name: 'AES-GCM', iv: copyAsBufferSource(hexToBytes(ivHex)) },
     key,
-    hexToBytes(cipherHex)
+    copyAsBufferSource(hexToBytes(cipherHex))
   )
   return new TextDecoder().decode(plain)
 }
