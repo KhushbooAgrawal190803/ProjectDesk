@@ -212,16 +212,33 @@ export async function getSettings() {
 
   const supabase = await createServiceClient()
 
-  const { data, error } = await supabase
-    .from('settings')
-    .select('*')
-    .single()
+  const { data: existing, error } = await supabase.from('settings').select('*').maybeSingle()
 
   if (error) {
     throw new Error(`Failed to fetch settings: ${error.message}`)
   }
 
-  return data
+  if (existing) return existing
+
+  // Fresh / partial DB: no settings row would crash the admin page (.single()).
+  const { data: created, error: insertError } = await supabase
+    .from('settings')
+    .insert({
+      allow_self_signup: false,
+      serial_prefix: 'LUBC ',
+      default_project_location: 'Ranchi, Jharkhand',
+      forgot_password_email: 'agkhushboo43@gmail.com',
+    })
+    .select('*')
+    .single()
+
+  if (insertError || !created) {
+    throw new Error(
+      `No settings row and could not create one: ${insertError?.message ?? 'unknown error'}. Run your Supabase schema/seed migrations.`,
+    )
+  }
+
+  return created
 }
 
 export async function updateSettings(settings: {
