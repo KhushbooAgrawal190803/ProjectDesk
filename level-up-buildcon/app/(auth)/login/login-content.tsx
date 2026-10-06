@@ -38,6 +38,39 @@ export default function LoginContent() {
         return
       }
 
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, status, role')
+        .eq('id', data.user.id)
+        .single()
+
+      if (profileError || !profile) {
+        await supabase.auth.signOut()
+        const isPermissionError = profileError?.message?.includes('permission denied')
+        toast.error('Cannot load your account', {
+          description: isPermissionError
+            ? 'Database table permissions are missing. Run supabase/migrations/003_grant_table_permissions.sql in the Supabase SQL Editor, then try again.'
+            : 'Your login works but no profile row exists yet. Add an ACTIVE profile for this user in Supabase.',
+        })
+        return
+      }
+
+      if (profile.status !== 'ACTIVE') {
+        await supabase.auth.signOut()
+        toast.error('Account not active', {
+          description: 'Your profile status is not ACTIVE. Contact an admin.',
+        })
+        return
+      }
+
+      if (profile.role !== 'EXECUTIVE' && profile.role !== 'ADMIN') {
+        await supabase.auth.signOut()
+        toast.error('Access denied', {
+          description: 'This account does not have staff access.',
+        })
+        return
+      }
+
       await supabase
         .from('profiles')
         .update({ last_login: new Date().toISOString() })

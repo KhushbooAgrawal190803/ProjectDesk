@@ -43,6 +43,13 @@ export async function requireProfile(): Promise<Profile> {
   try {
     return await requireActiveProfile()
   } catch {
+    // Auth cookie without a readable profile (missing row or table grants) used to
+    // loop with proxy's login → dashboard redirect. Clear the stale session.
+    const user = await getCurrentUser()
+    if (user) {
+      const supabase = await createClient()
+      await supabase.auth.signOut()
+    }
     redirect('/login')
   }
 }

@@ -10,7 +10,9 @@
    - `anon` `public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (server only, never expose to browser)
 5. Copy [`.env.example`](../.env.example) to `level-up-buildcon/.env.local` and fill values.
-6. Create the first admin user via Supabase **Authentication → Users → Add user**, then insert a profile row:
+6. If login works but `/dashboard` is blank or stuck, run [`migrations/003_grant_table_permissions.sql`](./migrations/003_grant_table_permissions.sql) once in the SQL Editor (missing table grants cause Postgres error `42501` on `profiles`).
+
+7. Create the first admin user via Supabase **Authentication → Users → Add user**, then insert a profile row:
 
 ```sql
 INSERT INTO profiles (id, full_name, email, role, status)
@@ -25,9 +27,20 @@ VALUES (
 
 Alternatively, use the Admin UI after temporarily inserting your profile with service role SQL.
 
-## Legacy migrations
+## Which SQL file do I use?
 
-Files under `supabase/migration-*.sql` and older schemas are **archived history** from before the security refactor. Do not run them on a fresh project — use `schema.sql` only.
+| File | Purpose | When to run |
+|------|---------|-------------|
+| **`schema.sql`** | Full schema for a **new** Supabase project | Once, on a blank project |
+| `migrations/001_add_builtup_and_payment_slabs.sql` | Adds columns/tables from an older pre-V2 install | Only if that old DB never had them |
+| `migrations/002_remove_dispatch_console_email.sql` | Removes dispatch/console/email leftovers | Once, on a DB that ran the old V2 `schema.sql` |
+| `migrations/003_grant_table_permissions.sql` | Fixes `permission denied for table profiles` | Once, if login works but dashboard/profile fails |
+
+**Do not combine these into one mega-file.** Each migration targets a specific database state. Running the wrong one on the wrong DB can fail or cause damage. Fresh projects only need `schema.sql` (which now includes the grants from 003).
+
+## Legacy / obsolete files (do not run)
+
+Everything else in `supabase/` (`migration-*.sql`, `full-reset-and-schema.sql`, `reset-database.sql`, `clear-all-data.sql`, etc.) is **archived history** from before the security refactor. They are kept for reference only — the app does not use them. Safe to ignore or delete locally; they are not needed for deployment.
 
 ## Existing V2 database (one-time cleanup)
 

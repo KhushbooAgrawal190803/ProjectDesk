@@ -25,11 +25,9 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (hasSession && (pathname === '/login' || pathname === '/signup')) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
-  }
+  // Do not auto-redirect /login → /dashboard when a cookie exists. Cookie presence
+  // does not mean a profiles row exists; bouncing back caused a redirect loop
+  // (dashboard → login via requireProfile, login → dashboard via proxy).
 
   return NextResponse.next()
 }

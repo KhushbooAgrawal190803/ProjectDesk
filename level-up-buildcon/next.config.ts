@@ -10,6 +10,12 @@ const nextConfigDir = path.dirname(fileURLToPath(import.meta.url));
  */
 const nextConfig: NextConfig = {
   serverExternalPackages: ['archiver'],
+  // Document uploads use a Server Action (FormData). Default limit is 1 MB.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '12mb',
+    },
+  },
   ...(process.env.VERCEL
     ? {}
     : {
