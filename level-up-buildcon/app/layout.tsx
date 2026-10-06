@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { NavigationEvents } from "@/components/navigation-events";
 import { PageLoadingIndicator } from "@/components/page-loading-indicator";
 import { Suspense } from "react";
 
-const inter = Inter({
+const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-jakarta",
 });
 
 export const metadata: Metadata = {
@@ -30,7 +30,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased bg-zinc-50`}>
+      <body className={`${plusJakarta.variable} font-sans antialiased`}>
         <Suspense fallback={null}>
           <NavigationEvents />
           <PageLoadingIndicator />

@@ -2,7 +2,6 @@
 
 import React, { ReactNode } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -30,6 +29,8 @@ import {
 import { Profile } from '@/lib/types/database'
 import { toast } from 'sonner'
 import NProgress from 'nprogress'
+import { AnandamLogo } from '@/components/brand/anandam-logo'
+import { cn } from '@/lib/utils'
 
 interface DashboardLayoutProps {
   children: ReactNode
@@ -82,25 +83,22 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <header className="bg-white/90 backdrop-blur border-b border-zinc-200 sticky top-0 z-50">
-        <div className="w-full px-3 md:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link href="/dashboard" className="flex items-center gap-3 md:gap-4 hover:opacity-80 transition-opacity">
-            <div className="relative w-12 h-12 md:w-16 md:h-16 flex-shrink-0 overflow-hidden rounded-xl">
-              <Image src="/anandam-logo.png" alt="Anandam - Level Up Buildcon" fill className="object-cover" priority />
-            </div>
-            <div className="hidden sm:block">
-              <h1 className="text-base md:text-lg font-semibold text-zinc-900 whitespace-nowrap">Level Up Buildcon</h1>
-            </div>
+      <header className="sticky top-0 z-50 border-b border-zinc-200/80 bg-white/95 backdrop-blur-sm">
+        <div className="mx-auto flex h-[4.25rem] w-full max-w-[1600px] items-center justify-between px-4 md:px-6 lg:px-8">
+          <Link href="/dashboard" className="transition-opacity hover:opacity-85">
+            <AnandamLogo />
           </Link>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="h-10 gap-3 px-3">
-                <Avatar className="w-8 h-8">
-                  <AvatarFallback className="bg-zinc-900 text-white text-sm">{getInitials(profile.full_name)}</AvatarFallback>
+                <Avatar className="size-8">
+                  <AvatarFallback className="bg-zinc-900 text-sm text-white">
+                    {getInitials(profile.full_name)}
+                  </AvatarFallback>
                 </Avatar>
-                <div className="hidden md:block text-left">
-                  <div className="text-sm font-medium">{profile.full_name}</div>
+                <div className="hidden text-left md:block">
+                  <div className="text-sm font-medium text-zinc-900">{profile.full_name}</div>
                   <div className="text-xs text-zinc-500">{profile.role}</div>
                 </div>
               </Button>
@@ -109,17 +107,17 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
               <DropdownMenuLabel>
                 <div className="flex flex-col">
                   <span className="font-medium">{profile.full_name}</span>
-                  <span className="text-xs text-zinc-500 font-normal">{profile.email}</span>
+                  <span className="text-xs font-normal text-zinc-500">{profile.email}</span>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem>
-                <Settings className="w-4 h-4 mr-2" />
+                <Settings className="mr-2 size-4" />
                 Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-red-600">
-                <LogOut className="w-4 h-4 mr-2" />
+              <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-600">
+                <LogOut className="mr-2 size-4" />
                 Sign Out
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -127,25 +125,25 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
         </div>
       </header>
 
-      <nav className="bg-white border-b border-zinc-200">
-        <div className="w-full px-4 md:px-6 lg:px-8">
-          <div className="flex items-center justify-start gap-0.5 overflow-x-auto scrollbar-hide">
+      <nav className="sticky top-[4.25rem] z-40 border-b border-zinc-200/80 bg-white">
+        <div className="mx-auto w-full max-w-[1600px] px-4 md:px-6 lg:px-8">
+          <div className="scrollbar-hide -mb-px flex items-center gap-1 overflow-x-auto">
             {navItems.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
               return (
-                <Link key={item.href} href={item.href} prefetch className="nav-link-transition flex-shrink-0">
-                  <Button
-                    variant="ghost"
-                    className={`h-11 md:h-12 px-3 md:px-5 rounded-none border-b-2 transition-all duration-150 font-medium text-sm whitespace-nowrap ${
+                <Link key={item.href} href={item.href} prefetch className="shrink-0">
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-2 border-b-2 px-3 py-3.5 text-sm font-medium transition-colors md:px-4',
                       isActive
                         ? 'border-zinc-900 text-zinc-900'
-                        : 'border-transparent text-zinc-600 hover:text-zinc-900 hover:border-zinc-200'
-                    }`}
+                        : 'border-transparent text-zinc-500 hover:border-zinc-200 hover:text-zinc-800'
+                    )}
                   >
-                    <Icon className="w-4 h-4 md:mr-2" />
-                    <span className="hidden md:inline ml-2">{item.label}</span>
-                  </Button>
+                    <Icon className="size-4 shrink-0 opacity-80" />
+                    <span className="whitespace-nowrap">{item.label}</span>
+                  </span>
                 </Link>
               )
             })}
@@ -153,7 +151,7 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
         </div>
       </nav>
 
-      <main className="w-full px-4 md:px-6 lg:px-8 max-w-[1600px] mx-auto py-6 md:py-8">{children}</main>
+      <main className="mx-auto w-full max-w-[1600px] px-4 py-6 md:px-6 md:py-8 lg:px-8">{children}</main>
     </div>
   )
 }

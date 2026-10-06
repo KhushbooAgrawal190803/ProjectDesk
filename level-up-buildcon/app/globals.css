@@ -7,7 +7,7 @@
 }
 
 #nprogress .bar {
-  background: #18181b;
+  background: #27272a;
   position: fixed;
   z-index: 9999;
   top: 0;
@@ -22,7 +22,7 @@
   right: 0px;
   width: 100px;
   height: 100%;
-  box-shadow: 0 0 10px #18181b, 0 0 5px #18181b;
+  box-shadow: 0 0 10px #27272a, 0 0 5px #27272a;
   opacity: 1;
   transform: rotate(3deg) translate(0px, -4px);
 }
@@ -32,8 +32,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -74,7 +74,7 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  --background: oklch(0.985 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);

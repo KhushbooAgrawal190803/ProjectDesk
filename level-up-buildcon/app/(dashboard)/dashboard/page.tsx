@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation'
+import type { ReactNode } from 'react'
 import { requireStaffPage } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
@@ -12,17 +12,15 @@ import { getOwnerTypeForFlat } from '@/lib/data/flat-ownership'
 async function getDashboardStats() {
   const supabase = await createClient()
 
-  // Get total bookings
   const { count: totalBookings } = await supabase
     .from('bookings')
     .select('*', { count: 'exact', head: true })
     .neq('status', 'DRAFT')
     .is('deleted_at', null)
 
-  // Get this week's bookings
   const oneWeekAgo = new Date()
   oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
-  
+
   const { count: weekBookings } = await supabase
     .from('bookings')
     .select('*', { count: 'exact', head: true })
@@ -30,7 +28,6 @@ async function getDashboardStats() {
     .neq('status', 'DRAFT')
     .is('deleted_at', null)
 
-  // Get total booking amount + owner tallies
   const { data: bookingsData } = await supabase
     .from('bookings')
     .select('booking_amount_paid, unit_no')
@@ -47,13 +44,11 @@ async function getDashboardStats() {
     ;(ownerTotals as any)[owner].amount += amt
   }
 
-  // Get active users count
   const { count: activeUsers } = await supabase
     .from('profiles')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'ACTIVE')
 
-  // Get recent bookings
   const { data: recentBookings } = await supabase
     .from('bookings')
     .select(`
@@ -65,7 +60,6 @@ async function getDashboardStats() {
     .order('submitted_at', { ascending: false })
     .limit(10)
 
-  // Parking availability
   const { data: parkingData } = await supabase
     .from('bookings')
     .select('additional_parking, premium_parking')
@@ -90,6 +84,29 @@ async function getDashboardStats() {
   }
 }
 
+function StatTile({
+  label,
+  value,
+  sub,
+  icon: Icon,
+}: {
+  label: string
+  value: ReactNode
+  sub?: string
+  icon: React.ComponentType<{ className?: string }>
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-200/80 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
+        <Icon className="size-4 shrink-0 text-zinc-400" />
+      </div>
+      <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900">{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-zinc-500">{sub}</p>}
+    </div>
+  )
+}
+
 export default async function DashboardPage() {
   const profile = await requireStaffPage()
 
@@ -98,138 +115,58 @@ export default async function DashboardPage() {
     getTowerAllocations(),
   ])
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
       maximumFractionDigits: 0,
     }).format(amount)
-  }
 
   return (
     <DashboardLayout profile={profile}>
-      <div className="space-y-8">
-        {/* Page Header */}
+      <div className="flex min-h-[calc(100vh-9rem)] flex-col gap-5">
         <div>
-          <h1 className="text-3xl font-semibold text-zinc-900">Dashboard</h1>
-          <p className="text-zinc-600 mt-1">Welcome back, {profile.full_name}</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Dashboard</h1>
+          <p className="mt-0.5 text-sm text-zinc-500">Welcome back, {profile.full_name}</p>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
-          <Card className="border-zinc-200 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium text-zinc-600">
-                Total Bookings
-              </CardTitle>
-              <FileText className="w-4 h-4 text-zinc-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold">{stats.totalBookings}</div>
-              <p className="text-xs text-zinc-500 mt-1">All time</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-zinc-200 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium text-zinc-600">
-                This Week
-              </CardTitle>
-              <TrendingUp className="w-4 h-4 text-zinc-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold">{stats.weekBookings}</div>
-              <p className="text-xs text-zinc-500 mt-1">Last 7 days</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-zinc-200 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium text-zinc-600">
-                Total Booking Amount
-              </CardTitle>
-              <IndianRupee className="w-4 h-4 text-zinc-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold">{formatCurrency(stats.totalAmount)}</div>
-              <p className="text-xs text-zinc-500 mt-1">All bookings</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-zinc-200 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium text-zinc-600">
-                Active Users
-              </CardTitle>
-              <Users className="w-4 h-4 text-zinc-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold">{stats.activeUsers}</div>
-              <p className="text-xs text-zinc-500 mt-1">Team members</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-zinc-200 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium text-zinc-600">
-                Sales (Level Up Buildcon)
-              </CardTitle>
-              <FileText className="w-4 h-4 text-zinc-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold">{stats.ownerTotals.DEVELOPER.count}</div>
-              <p className="text-xs text-zinc-500 mt-1">{formatCurrency(stats.ownerTotals.DEVELOPER.amount)} booked</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-zinc-200 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium text-zinc-600">
-                Sales (Balaji Hospitality)
-              </CardTitle>
-              <FileText className="w-4 h-4 text-zinc-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold">{stats.ownerTotals.LANDOWNER.count}</div>
-              <p className="text-xs text-zinc-500 mt-1">{formatCurrency(stats.ownerTotals.LANDOWNER.amount)} booked</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-zinc-200 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium text-zinc-600">
-                Parking Available
-              </CardTitle>
-              <ParkingSquare className="w-4 h-4 text-zinc-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold">
-                {stats.availableParking} <span className="text-base font-normal text-zinc-400">/ 27</span>
-              </div>
-              <p className="text-xs text-zinc-500 mt-1">
-                {stats.bookedParking} paid booked · {stats.bookedPremiumParking} premium booked
-              </p>
-              <p className="text-xs text-zinc-500">
-                Premium available: {stats.availablePremiumParking} / 9
-              </p>
-            </CardContent>
-          </Card>
+        {/* Compact stats — always fills one row on laptop+ */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+          <StatTile label="Total Bookings" value={stats.totalBookings} sub="All time" icon={FileText} />
+          <StatTile label="This Week" value={stats.weekBookings} sub="Last 7 days" icon={TrendingUp} />
+          <StatTile label="Total Amount" value={formatCurrency(stats.totalAmount)} sub="All bookings" icon={IndianRupee} />
+          <StatTile label="Level Up Buildcon" value={stats.ownerTotals.DEVELOPER.count} sub={`${formatCurrency(stats.ownerTotals.DEVELOPER.amount)} booked`} icon={FileText} />
+          <StatTile label="Balaji Hospitality" value={stats.ownerTotals.LANDOWNER.count} sub={`${formatCurrency(stats.ownerTotals.LANDOWNER.amount)} booked`} icon={FileText} />
+          <StatTile
+            label="Parking"
+            value={
+              <>
+                {stats.availableParking}
+                <span className="text-base font-normal text-zinc-400"> / 27</span>
+              </>
+            }
+            sub={`Premium ${stats.availablePremiumParking}/9`}
+            icon={ParkingSquare}
+          />
+          <StatTile label="Team" value={stats.activeUsers} sub="Active users" icon={Users} />
         </div>
 
-        {/* Tower View */}
-        <Card className="border-zinc-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Anandam — Tower View</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <TowerView initialAllocations={towerAllocations} showHeader={false} />
-          </CardContent>
-        </Card>
+        {/* Main: tower dominates, activity on the side */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 xl:grid-cols-12">
+          <Card className="flex flex-col border-zinc-200 shadow-sm xl:col-span-8">
+            <CardHeader className="shrink-0 border-b border-zinc-100 pb-4">
+              <CardTitle className="text-lg font-semibold">Anandam — Tower View</CardTitle>
+            </CardHeader>
+            <CardContent className="flex min-h-[32rem] flex-1 flex-col p-4 sm:p-6">
+              <TowerView initialAllocations={towerAllocations} showHeader={false} size="large" />
+            </CardContent>
+          </Card>
 
-        {/* Recent Activity */}
-        <RecentBookings bookings={stats.recentBookings} />
+          <div className="min-w-0 xl:col-span-4">
+            <RecentBookings bookings={stats.recentBookings} />
+          </div>
+        </div>
       </div>
     </DashboardLayout>
   )
 }
-
