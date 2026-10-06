@@ -168,7 +168,9 @@ export async function checkUnitAvailability(
 
     if (error) {
       console.error('Unit check error:', error.message)
-      return { available: true } // fail open
+      // Fail-open: allows submit when DB is unreachable — risks double-booking.
+      // Prefer fail-closed + partial unique index on (project_name, unit_no) in future.
+      return { available: true }
     }
 
     if (data && data.length > 0) {
@@ -263,7 +265,8 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
       additional_parking: Math.min(5, Math.max(0, Number(baseData.additional_parking) || 0)),
       premium_parking: Math.min(3, Math.max(0, Number((baseData as any).premium_parking) || 0)),
 
-      // System fields
+      // ADMIN skips approval queue (immediate SUBMITTED → serial trigger fires).
+      // EXECUTIVE/ACCOUNTS go to PENDING until admin approveBooking().
       status: profile.role === 'ADMIN' ? 'SUBMITTED' : 'PENDING',
       created_by: profile.id,
       submitted_at: new Date().toISOString(),

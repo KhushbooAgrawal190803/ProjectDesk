@@ -85,6 +85,8 @@ export async function setSlabPayment(
 
   if (!booking || !slabRow) throw new Error('Booking or slab not found')
   const totalCost = Number(booking.total_cost) || 0
+  // Construction-linked due amount: percentage of total_cost, recomputed on each write
+  // so edits to total_cost don't leave stale amount_due on existing slab rows.
   const amountDue = (totalCost * Number(slabRow.percentage)) / 100
 
   const row = {

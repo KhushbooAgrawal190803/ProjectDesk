@@ -16,7 +16,9 @@ export async function getCurrentProfile(): Promise<Profile | null> {
   const user = await getCurrentUser()
   if (!user) return null
 
-  // 2. Use service role to fetch profile (bypasses RLS completely)
+  // Service role bypasses RLS so profile lookup never fails due to policy
+  // recursion or missing grants. Authorization still happens in requireRole()
+  // on each server action — this fetch only resolves identity + role.
   const supabase = await createServiceClient()
   const { data: profile, error } = await supabase
     .from('profiles')

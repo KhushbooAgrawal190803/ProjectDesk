@@ -7,6 +7,9 @@ export function proxy(request: NextRequest) {
   // Cookie name pattern: sb-<project-ref>-auth-token
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
   const projectRef = supabaseUrl.split('//')[1]?.split('.')[0] || ''
+  // Cookie presence only — does NOT validate JWT expiry or signature.
+  // Real session verification happens in requireProfile() via supabase.auth.getUser().
+  // Kept lightweight after Edge Runtime issues with @supabase/ssr in middleware (see git history).
   const hasSession =
     !!request.cookies.get(`sb-${projectRef}-auth-token`) ||
     !!request.cookies.get(`sb-${projectRef}-auth-token.0`) ||

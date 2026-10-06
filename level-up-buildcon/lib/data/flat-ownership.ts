@@ -5,7 +5,9 @@ export const OWNER_NAMES: Record<OwnerType, string> = {
   LANDOWNER: 'Balaji Hospitality',
 }
 
-// Flats owned by the Land Owner (Balaji Hospitality). All other known flats default to Developer.
+// Revenue-attribution rule for Anandam JV: these unit numbers belong to Balaji Hospitality
+// (landowner); all other valid flats accrue to Level Up Buildcon (developer).
+// Stored in code — not DB — because ownership is fixed for this single tower project.
 const LANDOWNER_FLATS = new Set<string>([
   // 2nd floor
   '207',
