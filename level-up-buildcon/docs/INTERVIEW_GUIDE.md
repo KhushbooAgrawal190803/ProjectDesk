@@ -309,7 +309,7 @@ Supporting points:
 **Files:** server.ts, schema.sql
 
 **Q34:** How is the schema managed?  
-**Answer:** `schema.sql` is the canonical fresh-install file; older `migration-*.sql` files are archived history. A V2-installed database gets the one-time `migrations/002_*` cleanup.  
+**Answer:** `schema.sql` is the canonical fresh-install file. Numbered scripts under `supabase/migrations/` are one-time patches for existing databases (e.g. `002_*` V2 cleanup, `003_*` table grants).  
 **Files:** supabase/*.sql
 
 **Q35:** Why is admin_id nullable in admin_audit_log after migration?  

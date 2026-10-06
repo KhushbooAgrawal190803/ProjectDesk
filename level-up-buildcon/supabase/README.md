@@ -38,10 +38,6 @@ Alternatively, use the Admin UI after temporarily inserting your profile with se
 
 **Do not combine these into one mega-file.** Each migration targets a specific database state. Running the wrong one on the wrong DB can fail or cause damage. Fresh projects only need `schema.sql` (which now includes the grants from 003).
 
-## Legacy / obsolete files (do not run)
-
-Everything else in `supabase/` (`migration-*.sql`, `full-reset-and-schema.sql`, `reset-database.sql`, `clear-all-data.sql`, etc.) is **archived history** from before the security refactor. They are kept for reference only — the app does not use them. Safe to ignore or delete locally; they are not needed for deployment.
-
 ## Existing V2 database (one-time cleanup)
 
 A project already initialized with the previous V2 `schema.sql` still has the removed dispatch, System Console, payment-reminder and legacy `booking_files` objects. Do **not** rerun `schema.sql` over it. Instead:

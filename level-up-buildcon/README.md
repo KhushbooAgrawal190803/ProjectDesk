@@ -33,7 +33,7 @@ Open `http://localhost:3000`.
 2. Run **`supabase/schema.sql`** in the SQL Editor (single canonical file).
 3. Create an auth user and insert an ADMIN profile — see [supabase/README.md](./supabase/README.md).
 
-Legacy `migration-*.sql` files are archived history; do not run on new projects. A database created from the earlier V2 schema needs the one-time cleanup in `supabase/migrations/002_remove_dispatch_console_email.sql`.
+Use `supabase/schema.sql` for new projects. Existing databases may need one-time scripts in `supabase/migrations/` (see `supabase/README.md`).
 
 ## Scripts
 

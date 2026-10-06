@@ -162,11 +162,8 @@ shadcn/ui primitives and UX loaders. **Interview: LOW**
 ### `supabase/schema.sql`
 Canonical fresh-install schema: tables, RLS, guard triggers, serial trigger, KYC storage bucket. **Interview: MUST UNDERSTAND**
 
-### `supabase/migrations/002_remove_dispatch_console_email.sql`
-One-time cleanup for databases created from the earlier V2 schema. **Interview: LOW**
-
-### `supabase/migration-*.sql`, `full-reset-and-schema.sql`, etc.
-Archived history — do not run. **Interview: LOW**
+### `supabase/migrations/*.sql`
+One-time patches for existing databases (`001` built-up/payment slabs, `002` V2 cleanup, `003` table grants). Fresh installs only need `schema.sql`. **Interview: LOW**
 
 ---
 
