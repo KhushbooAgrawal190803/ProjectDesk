@@ -1,12 +1,12 @@
 import { redirect } from 'next/navigation'
-import { requireProfile } from '@/lib/auth/get-user'
+import { requireStaffPage } from '@/lib/auth/get-user'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Download, FileArchive, FileText } from 'lucide-react'
 
 export default async function DownloadsPage() {
-  const profile = await requireProfile()
+  const profile = await requireStaffPage()
   if (!profile) {
     redirect('/login')
   }

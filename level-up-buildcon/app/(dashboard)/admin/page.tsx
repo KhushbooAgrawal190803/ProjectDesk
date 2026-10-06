@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { requireRole } from '@/lib/auth/get-user'
+import { requireAdminPage } from '@/lib/auth/get-user'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -7,10 +7,9 @@ import { Users, UserCheck, UserX, Shield } from 'lucide-react'
 import { getUserStats, getUsers, getSettings } from './actions'
 import { UsersTable } from './users-table'
 import { SettingsForm } from './settings-form'
-import { SystemConsoleClient } from './system-console-client'
 
 export default async function AdminPage() {
-  const profile = await requireRole(['ADMIN'])
+  const profile = await requireAdminPage()
   if (!profile) {
     redirect('/login')
   }
@@ -86,11 +85,6 @@ export default async function AdminPage() {
                 </div>
                 <div className="w-px h-8 bg-zinc-200" />
                 <div>
-                  <div className="font-semibold">{stats.accountsCount}</div>
-                  <div className="text-xs text-zinc-500">Accts</div>
-                </div>
-                <div className="w-px h-8 bg-zinc-200" />
-                <div>
                   <div className="font-semibold">{stats.adminCount}</div>
                   <div className="text-xs text-zinc-500">Admin</div>
                 </div>
@@ -104,9 +98,6 @@ export default async function AdminPage() {
           <TabsList className="bg-white border border-zinc-200">
             <TabsTrigger value="users">User Management</TabsTrigger>
             <TabsTrigger value="settings">System Settings</TabsTrigger>
-            <TabsTrigger value="console" className="text-zinc-400 data-[state=active]:text-zinc-900">
-              Console
-            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users">
@@ -133,14 +124,6 @@ export default async function AdminPage() {
               </CardHeader>
               <CardContent>
                 <SettingsForm settings={settings} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="console">
-            <Card className="border-zinc-200 shadow-sm overflow-hidden">
-              <CardContent className="p-0">
-                <SystemConsoleClient />
               </CardContent>
             </Card>
           </TabsContent>

@@ -72,6 +72,8 @@ Supabase with PostgreSQL, Supabase Auth, Storage buckets, RLS policies.
 
 ## Decision: Service Role Client for Server Actions
 
+> **Superseded (Oct 2026):** server code now uses the user-scoped `createClient()` + RLS everywhere. The service role remains only in `admin/actions.ts` → `createUser` (Supabase Auth Admin API). The section below records the original pre-refactor decision.
+
 ### Problem
 Server needs reliable DB access; RLS complicates server-side queries; profile fetch must work for all roles.
 
@@ -241,30 +243,24 @@ Hardcoded `LANDOWNER_FLATS` Set in `lib/data/flat-ownership.ts`; all other flats
 
 ---
 
-## Decision: Encrypted System Console (Admin Workbook)
+## Decision: Remove Messaging, Dispatch and the System Console
 
 ### Problem
-Admins need shared encrypted spreadsheet-like notes without storing plaintext in DB.
-
-### Options
-- Plaintext in DB (bad)
-- Client-side encryption with shared passphrase
-- External tool (Google Sheets)
+The app had grown an encrypted admin workbook (System Console), SMTP payment reminders, and an upload → approve → email/WhatsApp document dispatch workflow. Each added secrets, service-role code paths and tables outside the core booking job.
 
 ### Current choice
-Client-side encryption (Web Crypto); DB stores `cipher_text` + `iv` per cell; shared `SYSTEM_CONSOLE_PASSPHRASE` verified server-side; KDF salt in `system_console_meta`.
+Removed all three. Documents follow one path: ProjectDesk generates the PDF → an authorized employee downloads it. Password resets are sent by an admin through Supabase Auth.
 
 ### Why it makes sense
-- Passphrase never stored in DB
-- RLS enabled with no policies → service role only
-- Version field for wipe detection
+- Fewer secrets (no SMTP, Twilio or console passphrase)
+- Service role shrinks to a single call site (Auth user creation)
+- Less schema and RLS surface to reason about
 
 ### Tradeoffs
-- Shared passphrase = shared secret among all admins
-- Plaintext compare on server for passphrase verification
-- Changing passphrase invalidates existing cells
+- No automated customer notifications; staff share documents themselves
+- Shared admin notes must live outside the app
 
-**Evidence:** `migration-system-console.sql`, `system-console-actions.ts`, `system-console-client.tsx`, git `abb5459`.
+**Evidence:** [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md); old code on `archive/pre-security-refactor`.
 
 ---
 
@@ -308,7 +304,7 @@ Redirect unauthenticated users from dashboard routes.
 
 ### Tradeoffs
 - Not a security boundary
-- `lib/supabase/middleware.ts` has full session logic but unused
+- No session refresh in proxy (the unused `lib/supabase/middleware.ts` was deleted)
 
 **Evidence:** git `5e4cb83`, `739606f`, `proxy.ts`.
 

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
-import { requireProfile } from '@/lib/auth/get-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { requireStaffPage } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { RecentBookings } from './recent-bookings'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,7 +10,7 @@ import { TowerView } from '@/app/(dashboard)/lookup/tower-view'
 import { getOwnerTypeForFlat } from '@/lib/data/flat-ownership'
 
 async function getDashboardStats() {
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
   // Get total bookings
   const { count: totalBookings } = await supabase
@@ -91,10 +91,7 @@ async function getDashboardStats() {
 }
 
 export default async function DashboardPage() {
-  const profile = await requireProfile()
-  if (!profile) {
-    redirect('/login')
-  }
+  const profile = await requireStaffPage()
 
   const [stats, towerAllocations] = await Promise.all([
     getDashboardStats(),

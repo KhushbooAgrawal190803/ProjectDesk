@@ -1,14 +1,14 @@
 'use server'
 
-import { requireRole } from '@/lib/auth/get-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/get-user'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { UserRole, UserStatus } from '@/lib/types/database'
 
 export async function getUsers() {
-  await requireRole(['ADMIN'])
+  await requireAdmin()
 
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('profiles')
@@ -23,9 +23,9 @@ export async function getUsers() {
 }
 
 export async function getUserStats() {
-  await requireRole(['ADMIN'])
+  await requireAdmin()
 
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
   const { count: totalUsers } = await supabase
     .from('profiles')
@@ -45,24 +45,22 @@ export async function getUserStats() {
     .from('profiles')
     .select('role')
 
-  const accountsCount = roleBreakdown?.filter(p => p.role === 'ACCOUNTS').length || 0
-  const executiveCount = roleBreakdown?.filter(p => p.role === 'EXECUTIVE').length || 0
-  const adminCount = roleBreakdown?.filter(p => p.role === 'ADMIN').length || 0
+  const executiveCount = roleBreakdown?.filter((p) => p.role === 'EXECUTIVE').length || 0
+  const adminCount = roleBreakdown?.filter((p) => p.role === 'ADMIN').length || 0
 
   return {
     totalUsers: totalUsers || 0,
     activeUsers: activeUsers || 0,
     pendingUsers: pendingUsers || 0,
-    accountsCount,
     executiveCount,
     adminCount,
   }
 }
 
 export async function approveUser(userId: string) {
-  const profile = await requireRole(['ADMIN'])
+  const profile = await requireAdmin()
 
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
   const { error } = await supabase
     .from('profiles')
@@ -86,9 +84,12 @@ export async function approveUser(userId: string) {
 }
 
 export async function changeUserRole(userId: string, role: UserRole) {
-  const profile = await requireRole(['ADMIN'])
+  const profile = await requireAdmin()
+  if (role !== 'EXECUTIVE' && role !== 'ADMIN') {
+    throw new Error('Invalid role')
+  }
 
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
   const { error } = await supabase
     .from('profiles')
@@ -113,9 +114,9 @@ export async function changeUserRole(userId: string, role: UserRole) {
 }
 
 export async function changeUserStatus(userId: string, status: UserStatus) {
-  const profile = await requireRole(['ADMIN'])
+  const profile = await requireAdmin()
 
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
   const { error } = await supabase
     .from('profiles')
@@ -145,12 +146,18 @@ export async function createUser(data: {
   role: UserRole
   password: string
 }) {
-  const profile = await requireRole(['ADMIN'])
+  const profile = await requireAdmin()
 
   if (!data.password || data.password.length < 6) {
     throw new Error('Password must be at least 6 characters')
   }
+  if (data.role !== 'EXECUTIVE') {
+    throw new Error('Only executive accounts can be created from the admin panel')
+  }
 
+  // The only service-role use in the app: creating (and on failure, deleting)
+  // a Supabase Auth user requires the Auth Admin API. requireAdmin() above is
+  // the authorization check; the service client bypasses RLS from here on.
   const supabase = await createServiceClient()
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -192,10 +199,11 @@ export async function createUser(data: {
 }
 
 export async function sendPasswordReset(email: string) {
-  await requireRole(['ADMIN'])
+  await requireAdmin()
 
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
+  // Supabase Auth sends this email itself; ProjectDesk has no mail server.
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/reset-password`,
   })
@@ -208,47 +216,26 @@ export async function sendPasswordReset(email: string) {
 }
 
 export async function getSettings() {
-  await requireRole(['ADMIN'])
+  await requireAdmin()
 
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
-  const { data: existing, error } = await supabase.from('settings').select('*').maybeSingle()
+  const { data, error } = await supabase.from('settings').select('*').single()
 
-  if (error) {
-    throw new Error(`Failed to fetch settings: ${error.message}`)
+  if (error || !data) {
+    throw new Error('Settings row is missing. Run supabase/schema.sql, which seeds it.')
   }
 
-  if (existing) return existing
-
-  // Fresh / partial DB: no settings row would crash the admin page (.single()).
-  const { data: created, error: insertError } = await supabase
-    .from('settings')
-    .insert({
-      allow_self_signup: false,
-      serial_prefix: 'LUBC ',
-      default_project_location: 'Ranchi, Jharkhand',
-      forgot_password_email: 'agkhushboo43@gmail.com',
-    })
-    .select('*')
-    .single()
-
-  if (insertError || !created) {
-    throw new Error(
-      `No settings row and could not create one: ${insertError?.message ?? 'unknown error'}. Run your Supabase schema/seed migrations.`,
-    )
-  }
-
-  return created
+  return data
 }
 
 export async function updateSettings(settings: {
   serial_prefix?: string
   default_project_location?: string
-  forgot_password_email?: string
 }) {
-  await requireRole(['ADMIN'])
+  await requireAdmin()
 
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
   const { data: existing, error: fetchError } = await supabase
     .from('settings')
@@ -261,7 +248,10 @@ export async function updateSettings(settings: {
 
   const { error } = await supabase
     .from('settings')
-    .update(settings)
+    .update({
+      serial_prefix: settings.serial_prefix,
+      default_project_location: settings.default_project_location,
+    })
     .eq('id', existing.id)
 
   if (error) {

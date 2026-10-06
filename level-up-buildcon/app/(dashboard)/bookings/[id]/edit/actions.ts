@@ -1,125 +1,92 @@
 'use server'
 
-import { requireRole } from '@/lib/auth/get-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { requireStaff } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { BookingFormData } from '@/lib/validations/booking'
+import { parseBookingDraft, type BookingFormData } from '@/lib/validations/booking'
+import { assertCanEditBooking } from '@/lib/auth/permissions'
+import { derivePricingFields, toNum } from '@/lib/booking/calculations'
+import {
+  checkUnitAvailability as queryUnitAvailability,
+  isUnitConflictError,
+  UNIT_CONFLICT_MESSAGE,
+} from '@/lib/booking/availability'
+
+const EDITABLE_FIELDS = [
+  'project_name', 'project_location', 'project_address', 'rera_regn_no', 'building_permit_no',
+  'unit_category', 'unit_no', 'floor_no', 'builtup_area', 'super_builtup_area', 'carpet_area',
+  'applicant_name', 'applicant_father_or_spouse', 'applicant_mobile', 'applicant_email',
+  'applicant_pan', 'applicant_aadhaar', 'applicant_address',
+  'coapplicant_name', 'coapplicant_relationship', 'coapplicant_mobile', 'coapplicant_pan', 'coapplicant_aadhaar',
+  'rate_per_sqft', 'total_cost', 'gst_amount', 'booking_amount_paid', 'payment_mode', 'payment_mode_detail',
+  'txn_or_cheque_no', 'txn_date', 'payment_plan_type', 'payment_plan_custom_text',
+  'additional_parking', 'premium_parking',
+] as const
 
 export async function updateBooking(bookingId: string, data: Partial<BookingFormData>) {
-  try {
-    const profile = await requireRole(['ADMIN'])
-    const supabase = await createServiceClient()
-
-    // Normalize and prepare booking data
-    const updateData: any = {}
-
-    // Only include fields that are provided
-    const fieldMappings: { [key: string]: boolean } = {
-      project_name: true,
-      project_location: true,
-      rera_regn_no: true,
-      unit_category: true,
-      unit_type: true,
-      unit_type_other_text: true,
-      unit_no: true,
-      floor_no: true,
-      builtup_area: true,
-      super_builtup_area: true,
-      carpet_area: true,
-      applicant_name: true,
-      applicant_father_or_spouse: true,
-      applicant_mobile: true,
-      applicant_email: true,
-      applicant_pan: true,
-      applicant_aadhaar: true,
-      applicant_address: true,
-      coapplicant_name: true,
-      coapplicant_relationship: true,
-      coapplicant_mobile: true,
-      coapplicant_pan: true,
-      coapplicant_aadhaar: true,
-      basic_sale_price: true,
-      other_charges: true,
-      total_cost: true,
-      total_cost_override_reason: true,
-      booking_amount_paid: true,
-      payment_mode: true,
-      payment_mode_detail: true,
-      txn_or_cheque_no: true,
-      txn_date: true,
-      payment_plan_type: true,
-      payment_plan_custom_text: true,
-    }
-
-    // Map and normalize fields
-    for (const [key, value] of Object.entries(data)) {
-      if (fieldMappings[key]) {
-        // Convert numeric fields
-        if (['builtup_area', 'super_builtup_area', 'carpet_area', 'basic_sale_price', 'other_charges', 'total_cost', 'booking_amount_paid'].includes(key)) {
-          updateData[key] = value ? parseFloat(value as any) : null
-        } else if (value === '' || value === undefined) {
-          // Convert empty strings and undefined to null
-          updateData[key] = null
-        } else {
-          updateData[key] = value
-        }
-      }
-    }
-
-    // Update status to EDITED if it was SUBMITTED
-    const { data: booking, error: fetchError } = await supabase
-      .from('bookings')
-      .select('status')
-      .eq('id', bookingId)
-      .single()
-
-    if (fetchError) {
-      throw new Error(`Failed to fetch booking: ${fetchError.message}`)
-    }
-
-    if (booking.status === 'SUBMITTED') {
-      updateData.status = 'EDITED'
-    }
-
-    console.log('Updating booking with data:', {
-      bookingId,
-      updatedFields: Object.keys(updateData),
-      adminId: profile.id,
-    })
-
-    const { data: updated, error } = await supabase
-      .from('bookings')
-      .update(updateData)
-      .eq('id', bookingId)
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Update error:', error.message)
-      throw new Error(`Failed to update booking: ${error.message}`)
-    }
-
-    // Log the edit action
-    const { error: auditError } = await supabase
-      .from('booking_audit_log')
-      .insert({
-        booking_id: bookingId,
-        changed_by: profile.id,
-        action: 'EDITED',
-        diff_json: updateData,
-      })
-
-    if (auditError) {
-      console.error('Audit log error:', auditError.message)
-      throw new Error(`Failed to log changes: ${auditError.message}`)
-    }
-
-    revalidatePath(`/bookings/${bookingId}`)
-    revalidatePath('/bookings')
-
-    return { success: true, bookingId }
-  } catch (error: any) {
-    console.error('Update booking error:', error.message)
-    throw error
+  const parsed = parseBookingDraft(data)
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid booking data')
   }
+
+  const profile = await requireStaff()
+  const supabase = await createClient()
+
+  const { data: existing, error: fetchError } = await supabase
+    .from('bookings')
+    .select('id, status, created_by, deleted_at, project_name, unit_no')
+    .eq('id', bookingId)
+    .single()
+
+  if (fetchError || !existing) throw new Error('Booking not found')
+  assertCanEditBooking(profile, existing)
+
+  const updateData: Record<string, unknown> = {}
+  for (const key of EDITABLE_FIELDS) {
+    const value = parsed.data[key as keyof BookingFormData]
+    if (value === undefined) continue
+    if (['builtup_area', 'super_builtup_area', 'carpet_area', 'rate_per_sqft', 'total_cost', 'gst_amount', 'booking_amount_paid'].includes(key)) {
+      updateData[key] = toNum(value)
+    } else if (value === '') {
+      updateData[key] = null
+    } else {
+      updateData[key] = value
+    }
+  }
+
+  const pricing = derivePricingFields({ ...existing, ...parsed.data })
+  updateData.rate_per_sqft = pricing.rate_per_sqft
+  updateData.total_cost = pricing.total_cost
+  updateData.gst_amount = pricing.gst_amount
+
+  const nextProject = (updateData.project_name as string) ?? existing.project_name
+  const nextUnit = (updateData.unit_no as string) ?? existing.unit_no
+  if (nextProject && nextUnit) {
+    const availability = await queryUnitAvailability(supabase, nextProject, nextUnit, bookingId)
+    if ('error' in availability) throw new Error(availability.error)
+    if (!availability.available) throw new Error(availability.message)
+  }
+
+  if (existing.status === 'SUBMITTED') {
+    updateData.status = 'EDITED'
+  }
+
+  const { error } = await supabase.from('bookings').update(updateData).eq('id', bookingId)
+
+  if (error) {
+    if (isUnitConflictError(error)) throw new Error(UNIT_CONFLICT_MESSAGE)
+    throw new Error(`Failed to update booking: ${error.message}`)
+  }
+
+  await supabase.from('booking_audit_log').insert({
+    booking_id: bookingId,
+    changed_by: profile.id,
+    action: 'EDITED',
+    diff_json: updateData,
+  })
+
+  revalidatePath(`/bookings/${bookingId}`)
+  revalidatePath('/bookings')
+
+  return { success: true, bookingId }
 }

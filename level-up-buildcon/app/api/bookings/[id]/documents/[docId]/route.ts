@@ -1,21 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireProfile } from '@/lib/auth/get-user'
+import { requireStaff } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
+import { assertCanViewBooking } from '@/lib/auth/permissions'
+import { jsonAuthError } from '@/lib/api/auth-response'
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string; docId: string }> }
 ) {
   try {
     const { id, docId } = await params
-    const profile = await requireProfile()
-    if (!profile) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
+    const profile = await requireStaff()
     const supabase = await createClient()
 
-    // Fetch the document record
+    const { data: booking, error: bookingError } = await supabase
+      .from('bookings')
+      .select('id, status, created_by, deleted_at')
+      .eq('id', id)
+      .single()
+
+    if (bookingError || !booking) {
+      return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
+    }
+
+    assertCanViewBooking(profile, booking)
+
     const { data: doc, error } = await supabase
       .from('booking_documents')
       .select('*')
@@ -27,7 +36,6 @@ export async function GET(
       return NextResponse.json({ error: 'Document not found' }, { status: 404 })
     }
 
-    // Get signed URL and redirect to it
     const { data: signedData } = await supabase.storage
       .from('booking-documents')
       .createSignedUrl(doc.file_path, 3600)
@@ -37,8 +45,9 @@ export async function GET(
     }
 
     return NextResponse.redirect(signedData.signedUrl)
-  } catch (error: any) {
-    console.error('Document download error:', error.message)
+  } catch (error) {
+    const authResp = jsonAuthError(error)
+    if (authResp) return authResp
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

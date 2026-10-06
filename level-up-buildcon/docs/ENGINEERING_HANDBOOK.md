@@ -1,7 +1,9 @@
 # ProjectDesk — Engineering Handbook
 
-**Version:** Baseline audit — October 4, 2026  
-**Repository:** `/ProjectDesk/level-up-buildcon/`
+**Version:** Post security-refactor — October 2026  
+**Repository:** `/ProjectDesk/level-up-buildcon/`  
+**Pre-refactor snapshot:** git branch `archive/pre-security-refactor`  
+**Refactor changelog:** [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md)
 
 This handbook documents the **current state** of ProjectDesk as verified against source code. Sections labeled **RECOMMENDED** describe future improvements, not existing behavior.
 
@@ -25,9 +27,8 @@ This handbook documents the **current state** of ProjectDesk as verified against
 
 | Role | Typical user |
 |------|--------------|
-| **EXECUTIVE** | Sales staff — lookup bookings, view tower availability, download PDFs |
-| **ACCOUNTS** | Finance team — payment tracking, reminders, dispatch documents |
-| **ADMIN** | System administrators — user management, booking approval, settings, destructive ops |
+| **EXECUTIVE** | Sales staff — create/edit bookings, lookup, tower view, PDFs, payment slab tracking |
+| **ADMIN** | System administrators — everything executives can do, plus approve/reject bookings, delete/restore, user management, admin settings |
 
 Users are internal staff only. There is no customer-facing portal.
 
@@ -37,7 +38,7 @@ Users are internal staff only. There is no customer-facing portal.
 - Track unit availability across a multi-floor tower
 - Generate standardized booking confirmation PDFs (company + customer copies)
 - Split revenue attribution between **Level Up Buildcon** (developer) and **Balaji Hospitality** (landowner) by flat number
-- Track construction-linked payment slabs and send payment reminders
+- Track construction-linked payment slabs
 - Admin approval workflow before bookings receive official serial numbers
 
 ### Primary workflows
@@ -46,8 +47,8 @@ Users are internal staff only. There is no customer-facing portal.
 2. **Create booking** (4-step wizard) → save draft → submit → (if non-admin) **PENDING** → admin **approve** → **SUBMITTED** + serial (`LUBC 01`, etc.)
 3. **Lookup** unit in tower grid or search by name/mobile/serial
 4. **Download PDFs** per booking or bulk
-5. **Accounts** — view financials, record slab payments, send reminders
-6. **Admin** — manage users, settings, encrypted console workbook
+5. **Payments** — view financials, record slab payments (EXECUTIVE + ADMIN)
+6. **Admin** — manage users, settings (ADMIN only)
 
 ### Information managed
 
@@ -55,10 +56,8 @@ Users are internal staff only. There is no customer-facing portal.
 - Booking records (project, unit, applicant PII, pricing, payment plan, parking)
 - KYC documents (PAN, Aadhaar uploads)
 - Payment slab progress per booking
-- Dispatch documents (sealed copies to customers)
 - Audit logs (booking changes, admin actions)
 - System settings (serial prefix, signup policy)
-- Encrypted admin console cells
 
 ### What it does NOT do (verified)
 
@@ -67,17 +66,17 @@ Users are internal staff only. There is no customer-facing portal.
 - No automated RERA compliance workflow beyond PDF declaration text
 - No multi-project generalization (Anandam-centric flat maps hardcoded)
 - No real-time collaboration / websockets
-- No automated test suite
-- No signup UI (disabled; admins create users)
-- Lockdown feature exists in code but is **disabled**
+- No customer signup UI (disabled; admins create users)
+- No outbound messaging: no email, SMS, or WhatsApp (only Supabase Auth's own password-reset email, triggered by an admin)
+- No document dispatch workflow or stored PDFs — PDFs are generated on demand and downloaded by staff
 
-### Important engineering challenges (actual)
+### Important engineering challenges (current)
 
-1. **Authorization** — service role bypasses RLS; every server action must enforce roles
-2. **PII/financial data protection** — IDOR gaps on PDF/document APIs
-3. **Data integrity** — unit double-booking prevention is app-only, fails open
-4. **Auditability** — booking_audit_log and admin_audit_log exist but destruct wipes admin log
-5. **Schema evolution** — many conflicting SQL migration files
+1. **Authorization** — centralized in `lib/auth/permissions.ts`; service role used only by Admin → Create User (Auth Admin API)
+2. **PII/financial data protection** — PDF/document APIs require staff auth + resource checks
+3. **Data integrity** — fail-closed availability + partial unique index on active unit holds
+4. **Auditability** — booking_audit_log and admin_audit_log; no emergency wipe paths
+5. **Schema baseline** — use `supabase/schema.sql` for fresh installs; legacy migration files are historical only
 
 ---
 
@@ -99,7 +98,6 @@ See [ENGINEERING_DECISIONS.md](./ENGINEERING_DECISIONS.md) for rationale.
 | **jsPDF** | ^4.1 | PDF generation | Yes |
 | **pdfkit** | ^0.17 | test scripts only | Review — likely remove |
 | **archiver** | ^7 | ZIP for PDF downloads | Yes |
-| **nodemailer** | ^8 | Payment reminders, dispatch email | Yes |
 | **zustand** | ^5 | Client state (wizard) | Yes |
 | **date-fns** | ^4.1 | Date formatting | Yes |
 | **framer-motion** | ^12 | UI animations | Yes |
@@ -130,7 +128,7 @@ Internal Staff (Browser)
 ┌───────────────────────────────────────┐
 │  Business Logic                       │
 │  • Booking lifecycle                  │
-│  • Payment slabs / reminders          │
+│  • Payment slab tracking              │
 │  • PDF generation (jsPDF)             │
 │  • Owner split (static flat map)      │
 └───────────────────────────────────────┘
@@ -139,14 +137,12 @@ Internal Staff (Browser)
 ┌───────────────────────────────────────┐
 │  Supabase                             │
 │  • Auth (JWT sessions, cookies)       │
-│  • PostgreSQL (RLS defined, often     │
-│    bypassed via service role key)     │
-│  • Storage (booking-documents,        │
-│    dispatch-documents buckets)        │
+│  • PostgreSQL (RLS enforced; service  │
+│    role only for Auth user creation)  │
+│  • Storage (booking-documents: KYC)   │
 └───────────────────────────────────────┘
-        │
-        ├──► SMTP (nodemailer) — optional
-        └──► WhatsApp API — optional (dispatch)
+
+No other external services.
 ```
 
 ---
@@ -159,11 +155,10 @@ Internal Staff (Browser)
 - **UI:** Email/password form, logo, forgot password link
 - **Code:** `app/(auth)/login/login-content.tsx`
 - **Data:** Supabase Auth session; updates `profiles.last_login`
-- **Actions:** Sign in; hidden destruct trigger; sets `sessionStorage.lubc_tab`
-- **Backend flow:** Client → `signInWithPassword` → optional POST `/api/destruct` → redirect
-- **Security:** Supabase Auth; destruct env vars in NEXT_PUBLIC — **PROBLEM**
-- **Failure modes:** Invalid credentials → toast; destruct failure → blocks login
-- **Improvements:** Remove client-side destruct; server-only secrets
+- **Actions:** Sign in; sets `sessionStorage.lubc_tab` for tab-guard UX
+- **Backend flow:** Client → `signInWithPassword` → redirect to dashboard
+- **Security:** Supabase Auth only; no destructive login triggers
+- **Failure modes:** Invalid credentials → toast
 
 ## `/dashboard`
 - **Purpose:** Executive overview — stats, owner split, parking, tower, recent bookings
@@ -171,7 +166,7 @@ Internal Staff (Browser)
 - **Code:** `dashboard/page.tsx`, `tower-view.tsx`, `recent-bookings.tsx`
 - **Data:** Booking counts, amounts, 10 recent bookings, tower allocations, parking totals
 - **Actions:** Navigate to booking detail; tower cell → new booking or detail
-- **Backend flow:** RSC → multiple Supabase queries via service client → render
+- **Backend flow:** RSC → multiple Supabase queries via authenticated client (RLS) → render
 - **Security:** All active users see aggregate stats including owner split
 - **Failure modes:** Missing env → throw on createClient
 - **Improvements:** SQL aggregates instead of full-table scan
@@ -191,12 +186,11 @@ Internal Staff (Browser)
 - **Code:** `bookings/[id]/page.tsx` + action buttons
 - **Data:** Booking, creator, audit log, documents
 - **Actions:** Download PDFs, approve/reject (ADMIN+PENDING), edit, delete, revert
-- **Security:** Approve/reject ADMIN-only; delete/revert shown to canEdit but server ADMIN-only — **PROBLEM**
-- **Improvements:** Align UI with server permissions
+- **Security:** Approve/reject/delete buttons shown only to ADMIN; server enforces via `lib/auth/permissions.ts`
 
 ## `/bookings/[id]/edit`
 - **Purpose:** Edit submitted booking fields
-- **User:** ADMIN, EXECUTIVE (page); ADMIN only (save action) — **MISMATCH**
+- **User:** EXECUTIVE + ADMIN (page and save); executives cannot edit another user's PENDING booking
 - **Code:** `edit/page.tsx`, `booking-edit-form.tsx`, `edit/actions.ts`
 
 ## `/bookings/deleted`
@@ -205,12 +199,12 @@ Internal Staff (Browser)
 
 ## `/new-booking`
 - **Purpose:** 4-step wizard: project/unit → applicant → pricing → review
-- **User:** ADMIN, ACCOUNTS, EXECUTIVE (page); nav shows ADMIN only
+- **User:** EXECUTIVE + ADMIN
 - **Code:** `booking-wizard.tsx`, step components, `actions.ts`, `document-actions.ts`
 - **Data:** Drafts, parking availability, flat areas from static map
 - **Actions:** Save draft, submit, upload KYC, check unit availability
-- **Backend flow:** Step UI → saveDraft/submitBooking → service client → bookings + audit
-- **Security:** Ownership on drafts; unit check fail-open — **PROBLEM**
+- **Backend flow:** Step UI → saveDraft/submitBooking → authenticated client (RLS) → bookings + audit
+- **Security:** Ownership on drafts; unit check fail-closed; DB unique index on active holds
 - **Calculations:** `total_cost = rate_per_sqft × super_builtup_area`; `gst = booking_amount_paid × 0.05`
 
 ## `/lookup`
@@ -222,20 +216,23 @@ Internal Staff (Browser)
 - **User:** Any ACTIVE user
 - **Code:** Links to `/api/bookings/bulk-download?kind=...`
 
-## `/accounts`
-- **Purpose:** Financial overview + payment reminders
-- **User:** ACCOUNTS, ADMIN
-- **Code:** `accounts/page.tsx`, reminder/dispatch clients
-- **Note:** Dispatch pending UI not fully wired (`pendingDispatches = []`)
+## `/accounts` (nav: Payments)
+- **Purpose:** Booking financials + payment slab tracking (record received amounts)
+- **User:** EXECUTIVE + ADMIN
+- **Code:** `accounts/page.tsx`, `payment-schedule-client.tsx`, `payment-slab-actions.ts`
 
 ## `/admin`
-- **Purpose:** Users, settings, system console
+- **Purpose:** Users, settings
 - **User:** ADMIN only
-- **Code:** `admin/page.tsx`, `actions.ts`, `system-console-*`
+- **Code:** `admin/page.tsx`, `actions.ts`, `users-table.tsx`, `settings-form.tsx`
 
-## `/admin/destruct`
-- **Purpose:** Delete all bookings
-- **User:** No page-level auth; server action requires ADMIN + password — **PROBLEM**
+## `/forgot-password`
+- **Purpose:** Informational — tells users to ask an admin, who sends a Supabase Auth reset link from User Management
+- **User:** Public
+
+---
+
+**Removed (Oct 2026 refactor):** `/admin/destruct`, `/api/destruct`, `/api/bootstrap-admin`, lockdown, ACCOUNTS role; later, email/WhatsApp messaging, the dispatch workflow, the Admin System Console, and `/api/forgot-password`. See [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md).
 
 ---
 
@@ -243,13 +240,13 @@ Internal Staff (Browser)
 
 | Feature | User sees | System does internally |
 |---------|-----------|------------------------|
-| Login | Email/password form | Supabase Auth; profile last_login; optional destruct API |
+| Login | Email/password form | Supabase Auth; profile last_login |
 | Logout | Sign out menu | Clear session + sessionStorage |
 | Tab guard | Auto logout if no sessionStorage flag | Client-only UX check |
 | Dashboard stats | Cards: bookings, amount, users, parking | COUNT/SUM queries; owner split via flat-ownership Set |
 | Tower view | Color-coded grid by floor | Query Anandam bookings; static floor/unit layout |
 | New booking wizard | 4 steps with validation | Draft INSERT/UPDATE; submit sets PENDING or SUBMITTED |
-| Unit availability | Toast if unit taken | SELECT bookings by project+unit; fail-open on error |
+| Unit availability | Toast if unit taken | SELECT bookings by project+unit; fail-closed on error; DB unique index |
 | Booking approval | Approve/Reject buttons | ADMIN updates status; trigger assigns serial on SUBMITTED |
 | Serial numbers | `LUBC 01` display | PostgreSQL trigger MAX+1 + settings prefix |
 | Soft delete | Booking disappears from list | Sets deleted_at; clears serial |
@@ -259,13 +256,10 @@ Internal Staff (Browser)
 | KYC upload | File picker per doc type | Storage upload + booking_documents row |
 | Payment slabs | Slab list with stats | JOIN bookings × payment_slabs × booking_payment_slabs |
 | Record slab payment | Form per booking/slab | Upsert booking_payment_slabs; amount_due = total × % |
-| Payment reminders | Send email button | nodemailer to applicant_email |
-| Dispatch upload | Upload sealed PDF | Storage + PENDING record |
-| Dispatch approve | Admin approves | Email + WhatsApp with signed URL → SENT |
-| User management | Table of users | ADMIN CRUD on profiles + Supabase Auth admin API |
-| Settings | Serial prefix, signup flag | UPDATE settings table |
-| System console | Encrypted spreadsheet | Client Web Crypto; server stores ciphertext |
-| Forgot password | Email form | Logs admin audit entry; no self-service reset link |
+| User management | Table of users | ADMIN CRUD on profiles (RLS); `createUser` uses Supabase Auth admin API |
+| Password reset | Admin "Send password reset" | Supabase Auth `resetPasswordForEmail` → `/reset-password` |
+| Settings | Serial prefix, default location | UPDATE settings table |
+| Forgot password | Info page | Directs user to an admin; no backend call |
 | Owner split | Dashboard developer/landowner totals | Static LANDOWNER_FLATS Set lookup O(1) |
 | Parking tracking | Available/booked counts | Sum additional_parking (max 27) and premium (max 9) |
 
@@ -286,14 +280,11 @@ profiles ───────────────────────�
     ▼                                            ▼
 bookings ◄────────────────────────────── admin_audit_log
     │
-    ├──► booking_files (legacy PDF storage)
     ├──► booking_documents (KYC)
-    ├──► booking_dispatch_documents
     ├──► booking_payment_slabs ──► payment_slabs (reference, 14 rows)
     └──► booking_audit_log
 
 settings (singleton config)
-system_console_meta (singleton) ──► system_console_cells (encrypted grid)
 ```
 
 ## Core Tables Summary
@@ -310,12 +301,12 @@ Full column detail in subagent database report and `supabase/schema.sql` + migra
 - **Purpose:** Central booking record (draft through submitted)
 - **Sensitive:** applicant PII, PAN, Aadhaar, financial amounts
 - **Read:** all active users (RLS + app)
-- **Write:** creator for drafts; ADMIN/EXECUTIVE per RLS; app uses service role
+- **Write:** creator for drafts; ADMIN/EXECUTIVE per RLS + `enforce_booking_write_rules` trigger
 
 ### `booking_payment_slabs`
 - **Purpose:** Per-booking construction-linked payment progress
 - **Invariant (app):** `amount_due = total_cost × slab.percentage / 100`
-- **Write:** ACCOUNTS, ADMIN
+- **Write:** EXECUTIVE, ADMIN (no deletes)
 
 ### `payment_slabs`
 - **Purpose:** Reference table — 14 construction milestones totaling 100%
@@ -331,8 +322,8 @@ Full column detail in subagent database report and `supabase/schema.sql` + migra
 
 | Issue | Severity |
 |-------|----------|
-| No UNIQUE on (project_name, unit_no) for active bookings | MEDIUM |
-| schema.sql lags migrations (ACCOUNTS role, soft delete, etc.) | MEDIUM |
+| ~~No UNIQUE on active unit holds~~ | **FIXED** — `idx_bookings_active_unit_unique` in `schema.sql` |
+| Legacy migration files vs canonical schema | Use `supabase/schema.sql` for fresh installs |
 | Conflicting serial number migrations | MEDIUM |
 | MAX(serial_no)+1 trigger — O(n) scan | LOW at scale |
 | Nullable booking fields after consolidated migration | LOW — allows incomplete submits |
@@ -344,10 +335,7 @@ Full column detail in subagent database report and `supabase/schema.sql` + migra
 
 Full audit: [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)
 
-**Critical immediate attention:**
-1. `/api/bootstrap-admin` — unauthenticated
-2. IDOR on PDF/document APIs
-3. NEXT_PUBLIC destruct/kill phrase env vars
+**Post-refactor (Oct 2026):** Bootstrap/destruct removed; IDOR fixed on PDF/document routes; permissions centralized in `lib/auth/permissions.ts`. Remaining items in [TECHNICAL_DEBT.md](./TECHNICAL_DEBT.md).
 
 ---
 
@@ -358,7 +346,7 @@ Full audit: [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)
 | Employee | name, email, role | Admin create / Auth | profiles | Admin UI |
 | Customer | name, mobile, PAN, Aadhaar, address | Booking wizard | bookings, booking_documents | PDF API IDOR, logs |
 | Financial | total_cost, payments | Wizard, accounts | bookings, booking_payment_slabs | All-bookings list, PDFs |
-| Secrets | service role, SMTP | env | Vercel/host only | Misconfigured NEXT_PUBLIC |
+| Secrets | service role key | env | Vercel/host only | Misconfigured NEXT_PUBLIC |
 
 **Least privilege gap:** EXECUTIVE can download all PDFs with full PII — confirm business requirement.
 
@@ -370,14 +358,14 @@ Full audit: [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)
 
 | Invariant | Enforced where | Gap |
 |-----------|----------------|-----|
-| Unit not double-booked | `checkUnitAvailability` (app) | Fail-open; no DB constraint; race possible |
+| Unit not double-booked | `checkUnitAvailability` + `idx_bookings_active_unit_unique` | Fail-closed app check; DB enforces active holds |
 | PENDING → SUBMITTED only by admin approve | `approveBooking` | OK server-side |
 | Serial on SUBMITTED only | DB trigger | OK |
 | Serial cleared on soft delete | `deleteBooking` | OK |
 | Slab amount_due = total × percentage | `setSlabPayment` | Recalculated on write; not verified on read |
 | Parking max 27 additional, 9 premium | `submitBooking` clamp | Client + server clamp |
-| total_cost = rate × area | Client useEffect only | Server accepts manual total_cost |
-| GST = 5% of booking_amount_paid | Client useEffect only | Server accepts manual gst_amount |
+| total_cost = rate × area | Client useEffect + `lib/booking/calculations.ts` on submit | Server validates/recalculates on submit |
+| GST = 5% of booking_amount_paid | Client useEffect + server calculations | Server validates on submit |
 | Owner split totals | Dashboard reduce | Display only; not financial ledger |
 
 ## Currency / Rounding
@@ -404,8 +392,7 @@ Full audit: [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)
 - **Purpose:** Gate server pages/actions to active users
 - **Input:** none (reads cookies)
 - **Output:** Profile or redirect to /login
-- **Algorithm:** getUser → service client fetch profile → status check
-- **Security:** Service role bypasses RLS for profile fetch
+- **Algorithm:** getUser → authenticated client fetches own profile (RLS) → status check
 - **Complexity:** O(1) DB + O(1) auth
 
 ## `submitBooking(data, draftId?)` — `new-booking/actions.ts`
@@ -469,7 +456,6 @@ Full audit: [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)
 User → Login Form
   → supabase.auth.signInWithPassword
   → UPDATE profiles.last_login
-  → [if destruct match] POST /api/destruct
   → sessionStorage.lubc_tab = 1
   → redirect /dashboard
 ```
@@ -522,12 +508,10 @@ Admin → Users table → Approve
 | DB query fails in unit check | Returns available:true | **Bad** — fail open |
 | Auth expires mid-session | requireProfile redirects login | OK |
 | Authorization fails | redirect('/login') not 403 | Confusing |
-| Email fails | console.warn; returns false | Silent skip |
 | PDF generation fails | 500 JSON error | OK |
 | Concurrent booking edit | Last write wins | No merge/conflict UI |
 | Double submit | Possible duplicate without draftId | Partial risk |
 | Missing env vars | throw Error with message | OK for server.ts |
-| Destruct partial failure | Bookings deleted but console purge catch logged | Partial success |
 
 ---
 
@@ -552,7 +536,6 @@ Admin → Users table → Approve
 - Owner split classification for known flats
 - Soft delete / restore serial behavior
 - Zod schema server-side validation (once added)
-- Payment reminder email formatting
 
 ### P2 — Nice to have
 - PDF snapshot tests (layout smoke)
@@ -568,8 +551,8 @@ Admin → Users table → Approve
 | Separation of concerns | PARTIALLY | lib/ split good; actions mix auth+DB+logic |
 | Single responsibility | PARTIALLY | Large PDF generator file |
 | DRY | PARTIALLY | Duplicate PDF layout between company/customer |
-| Least privilege | VIOLATES | Service role everywhere; IDOR on APIs |
-| Defense in depth | VIOLATES | RLS exists but bypassed |
+| Least privilege | USES WELL | Service role only for Auth user creation; IDOR fixed |
+| Defense in depth | USES WELL | App permission checks + RLS + guard triggers |
 | Server/client boundaries | USES WELL | Secrets server-side (except NEXT_PUBLIC destruct) |
 | Validation boundaries | VIOLATES | Client-only Zod |
 | Database constraints | PARTIALLY | UNIQUE serial; missing unit uniqueness |
@@ -617,7 +600,7 @@ The following non-obvious areas received **WHY** comments in source (see git dif
 
 | File | Comment topic |
 |------|---------------|
-| `lib/auth/get-user.ts` | Why service role for profile |
+| `lib/auth/get-user.ts` | Auth gates and error types |
 | `new-booking/actions.ts` | Fail-open unit check; role-based status |
 | `lib/data/flat-ownership.ts` | Business rule for landowner flats |
 | `proxy.ts` | Cookie check vs session validation |
@@ -632,7 +615,7 @@ The following non-obvious areas received **WHY** comments in source (see git dif
 | `5e4cb83` | Removed @supabase/ssr from Edge middleware; deleted exposed set-env.ps1 |
 | `739606f` | Renamed middleware → proxy for Next.js 16 |
 | `89e0917` | Booking approvals, slab due calc, owner split, serial reset |
-| `abb5459` | System console workbook added |
+| `abb5459` | System console workbook added (since removed) |
 | `4b1a15c` | Login kill user + parking save |
 | `5839e04` | Lockdown feature disabled |
 

@@ -5,6 +5,8 @@
 
 **Interview importance:** LOW | MEDIUM | HIGH | MUST UNDERSTAND
 
+> Historical note: the destruct/bootstrap/lockdown code, the ACCOUNTS role, email/WhatsApp messaging, the document dispatch workflow and the Admin System Console have been removed. See [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md); the old code is on branch `archive/pre-security-refactor`.
+
 ---
 
 ## Entry & Configuration
@@ -12,242 +14,136 @@
 ### `package.json`
 | | |
 |---|---|
-| **Responsibility** | Dependencies and scripts |
-| **Why** | Standard Node project manifest |
-| **Key exports** | Scripts: dev, build, start, lint |
-| **Dependencies** | next@16.1.6, react@19, @supabase/*, jspdf, archiver, nodemailer, zod, zustand |
-| **Security** | Declares server-external packages indirectly via next.config |
+| **Responsibility** | Dependencies and scripts (dev, build, start, lint, test) |
+| **Dependencies** | next@16, react@19, @supabase/*, jspdf, archiver, zod, react-hook-form, zustand |
 | **Interview** | MEDIUM |
 
 ### `next.config.ts`
 | | |
 |---|---|
-| **Responsibility** | Next.js config: serverExternalPackages, turbopack root (local only) |
-| **Why** | Prevent Edge bundling of nodemailer/pdfkit/archiver |
-| **Interview** | MEDIUM |
+| **Responsibility** | `serverExternalPackages: ['archiver']`, turbopack root (local only) |
+| **Interview** | LOW |
 
 ### `proxy.ts`
 | | |
 |---|---|
 | **Responsibility** | Next.js 16 proxy (route protection via cookie check) |
-| **Why** | Redirect unauthenticated users from dashboard paths |
-| **Exports** | `proxy()`, `config.matcher` |
-| **Dependents** | Next.js runtime (automatic) |
-| **Side effects** | HTTP redirects |
-| **Security** | Cookie presence only — not JWT validation |
+| **Security** | Cookie presence only — UX gate; real auth is in pages/actions/routes |
 | **Interview** | HIGH |
 
-### `tsconfig.json`, `eslint.config.mjs`, `components.json`, `postcss.config.mjs`
-Config only — **Interview: LOW**
+### `vitest.config.ts`
+Unit test config. **Interview: LOW**
 
 ---
 
 ## `app/` — Routes
 
-### `app/page.tsx`
-Root redirect: auth → `/dashboard`, else `/login`. **Interview: LOW**
-
-### `app/layout.tsx`
-Root layout: fonts, Toaster, NavigationEvents. **Interview: LOW**
+### `app/page.tsx`, `app/layout.tsx`
+Root redirect and root layout. **Interview: LOW**
 
 ### `app/(auth)/login/page.tsx` + `login-content.tsx`
-| | |
-|---|---|
-| **Responsibility** | Email/password login via Supabase |
-| **Side effects** | Auth session, last_login update, optional `/api/destruct`, sessionStorage `lubc_tab` |
-| **Security** | Destruct trigger via NEXT_PUBLIC env — HIGH concern |
-| **Interview** | HIGH |
+Email/password login via Supabase Auth; updates `last_login`; sets `sessionStorage.lubc_tab`. **Interview: HIGH**
 
 ### `app/(auth)/signup/page.tsx`
-Redirects to login (disabled). **Interview: LOW**
+Redirects to login (self-signup disabled). **Interview: LOW**
 
 ### `app/(auth)/forgot-password/page.tsx`
-Posts to `/api/forgot-password`. **Interview: MEDIUM**
+Static notice: ask an administrator to send a reset link. No backend call. **Interview: LOW**
 
 ### `app/(auth)/reset-password/page.tsx`
-Client Supabase password update after email link. **Interview: MEDIUM**
+Client Supabase password update after the Supabase Auth reset link. **Interview: MEDIUM**
 
-### `app/(dashboard)/dashboard/page.tsx`
-| | |
-|---|---|
-| **Responsibility** | Stats, owner split, parking, tower view, recent bookings |
-| **Data** | Multiple booking/profile aggregations |
-| **Complexity** | O(n) scans over all bookings |
-| **Interview** | HIGH |
+### `app/(dashboard)/dashboard/page.tsx` + `recent-bookings.tsx`
+Stats, owner split, parking, tower view, recent bookings. O(n) scans. **Interview: HIGH**
 
-### `app/(dashboard)/dashboard/recent-bookings.tsx`
-Recent booking list UI component. **Interview: LOW**
-
-### `app/(dashboard)/bookings/page.tsx`
-Full booking registry with URL filters. **Interview: HIGH**
-
-### `app/(dashboard)/bookings/bookings-table.tsx`
-Client table with search/filter UI. **Interview: MEDIUM**
+### `app/(dashboard)/bookings/page.tsx` + `bookings-table.tsx`
+Booking registry with URL filters. **Interview: HIGH**
 
 ### `app/(dashboard)/bookings/actions.ts`
-| | |
-|---|---|
-| **Responsibility** | deleteBooking, restoreBooking, revertToDraft, approveBooking, rejectBooking |
-| **Auth** | ADMIN only |
-| **Side effects** | Soft delete, audit log, revalidatePath |
-| **Interview** | MUST UNDERSTAND |
+deleteBooking, restoreBooking, revertToDraft, approveBooking, rejectBooking — ADMIN only; audit log. **Interview: MUST UNDERSTAND**
 
-### `app/(dashboard)/bookings/[id]/page.tsx`
-Booking detail: pricing, docs, audit, action buttons. **Interview: HIGH**
+### `app/(dashboard)/bookings/[id]/page.tsx` + `*-button.tsx`
+Booking detail; approve/reject, delete, revert, download PDFs. **Interview: HIGH**
 
-### `app/(dashboard)/bookings/[id]/edit/page.tsx` + `booking-edit-form.tsx` + `actions.ts`
-Admin edit flow; page allows EXECUTIVE, action ADMIN-only. **Interview: HIGH**
+### `app/(dashboard)/bookings/[id]/edit/*`
+Edit flow for EXECUTIVE + ADMIN, gated by `canEditBooking`. **Interview: HIGH**
 
-### `app/(dashboard)/bookings/[id]/*-button.tsx`
-Approve, reject, delete, revert, download PDFs — client triggers. **Interview: MEDIUM**
+### `app/(dashboard)/bookings/deleted/*`
+Admin trash bin + restore. **Interview: MEDIUM**
 
-### `app/(dashboard)/bookings/deleted/page.tsx` + `restore-button.tsx`
-Admin trash bin. **Interview: MEDIUM**
+### `app/(dashboard)/new-booking/*`
+4-step wizard (`booking-wizard.tsx`, `step-1…4`), `actions.ts` (saveDraft, submitBooking, availability, server Zod), `document-actions.ts` + `document-upload.tsx` (KYC upload). **Interview: MUST UNDERSTAND**
 
-### `app/(dashboard)/new-booking/page.tsx` + `booking-wizard.tsx`
-4-step booking wizard entry. **Interview: MUST UNDERSTAND**
-
-### `app/(dashboard)/new-booking/step-1-project-unit.tsx`
-Project/unit selection; flat area lookup. **Interview: HIGH**
-
-### `app/(dashboard)/new-booking/step-2-applicant.tsx`
-Applicant/co-applicant form. **Interview: MEDIUM**
-
-### `app/(dashboard)/new-booking/step-3-pricing-payment.tsx`
-Rate × area, GST 5%, parking counts. **Interview: MUST UNDERSTAND**
-
-### `app/(dashboard)/new-booking/step-4-review.tsx`
-Review and submit. **Interview: MEDIUM**
-
-### `app/(dashboard)/new-booking/actions.ts`
-| | |
-|---|---|
-| **Responsibility** | saveDraft, submitBooking, checkUnitAvailability, drafts CRUD |
-| **Auth** | requireProfile |
-| **Side effects** | DB writes, audit log |
-| **Security** | Fail-open unit check; no server Zod |
-| **Interview** | MUST UNDERSTAND |
-
-### `app/(dashboard)/new-booking/document-upload.tsx` + `document-actions.ts`
-KYC upload to Supabase storage. **Interview: HIGH**
-
-### `app/(dashboard)/lookup/page.tsx` + `lookup-client.tsx` + `tower-view.tsx` + `tower-actions.ts`
+### `app/(dashboard)/lookup/*`
 Quick search + Anandam tower grid. **Interview: HIGH**
 
 ### `app/(dashboard)/downloads/page.tsx`
 Links to bulk PDF API. **Interview: MEDIUM**
 
-### `app/(dashboard)/accounts/page.tsx` + client components
-Financial overview, payment reminders; dispatch UI partially wired. **Interview: HIGH**
+### `app/(dashboard)/accounts/page.tsx` (nav: Payments)
+Tabs: Booking Financials, Payment Slabs (`payment-schedule-client.tsx`). **Interview: HIGH**
 
 ### `app/(dashboard)/accounts/payment-slab-actions.ts`
-Slab payment recording; getPaymentSlabs unauthenticated. **Interview: HIGH**
-
-### `app/(dashboard)/accounts/reminder-actions.ts`
-Payment reminder emails. **Interview: MEDIUM**
-
-### `app/(dashboard)/accounts/dispatch-actions.ts`
-Dispatch document upload/approve/email/WhatsApp. **Interview: HIGH**
+getPaymentSlabs, getBookingsForSlab, setSlabPayment (`amount_due = total × %`). Staff only. **Interview: HIGH**
 
 ### `app/(dashboard)/admin/page.tsx` + `users-table.tsx` + `settings-form.tsx`
-User management, settings, console tab. **Interview: HIGH**
+User management and settings (ADMIN). **Interview: HIGH**
 
 ### `app/(dashboard)/admin/actions.ts`
-User CRUD, settings, password reset. **Interview: HIGH**
+User CRUD, settings, admin-sent password reset. Only `createUser` uses the service role (Auth Admin API). **Interview: MUST UNDERSTAND**
 
-### `app/(dashboard)/admin/system-console-client.tsx` + `system-console-actions.ts`
-Encrypted admin workbook. **Interview: HIGH**
-
-### `app/(dashboard)/admin/destruct/page.tsx` + `destruct-actions.ts`
-Wipe all bookings. **Interview: HIGH**
-
-### `app/(dashboard)/locked/*`
-Disabled lockdown feature. **Interview: LOW**
-
-### `app/(dashboard)/template.tsx`
-Dashboard fade-in + NProgress. **Interview: LOW**
-
-### `app/**/loading.tsx`
-Skeleton loaders. **Interview: LOW**
+### `app/(dashboard)/template.tsx`, `**/loading.tsx`, `admin/error.tsx`
+Transitions, skeletons, error boundary. **Interview: LOW**
 
 ---
 
 ## `app/api/` — Route Handlers
 
-### `app/api/bootstrap-admin/route.ts`
-**CRITICAL:** Unauthenticated admin creation. **Interview: MUST UNDERSTAND**
-
-### `app/api/destruct/route.ts`
-Wipe bookings + audit + console. Email allowlist auth. **Interview: MUST UNDERSTAND**
-
-### `app/api/forgot-password/route.ts`
-Admin notification for password reset requests. **Interview: MEDIUM**
-
 ### `app/api/bookings/[id]/download/route.ts`
-Single booking PDF ZIP. IDOR risk. **Interview: MUST UNDERSTAND**
+Single booking PDF ZIP (company + customer). Auth + `assertCanViewBooking` / `assertCanDownloadPdfs`. **Interview: MUST UNDERSTAND**
 
 ### `app/api/bookings/bulk-download/route.ts`
-All bookings PDF ZIP. Performance bottleneck. **Interview: MUST UNDERSTAND**
+All bookings PDF ZIP. Performance bottleneck. **Interview: HIGH**
 
 ### `app/api/bookings/[id]/documents/[docId]/route.ts`
-Signed URL redirect for KYC. IDOR risk. **Interview: HIGH**
-
-### `app/api/dispatch-documents/[id]/route.ts`
-Signed URL for dispatch docs; ACCOUNTS/ADMIN. **Interview: MEDIUM**
+Short-lived signed URL redirect for KYC files after booking/document checks. **Interview: HIGH**
 
 ---
 
 ## `lib/` — Shared Logic
 
 ### `lib/auth/get-user.ts`
-| | |
-|---|---|
-| **Responsibility** | getCurrentUser, getCurrentProfile, requireAuth, requireProfile, requireRole |
-| **Side effects** | redirect('/login') |
-| **Security** | Service role for profile fetch |
-| **Interview** | MUST UNDERSTAND |
+getCurrentUser, getCurrentProfile, requireProfile, requireStaff, requireAdmin (+ `*Page` variants). **Interview: MUST UNDERSTAND**
 
-### `lib/auth/lockdown.ts` + `lockdown-config.ts`
-Commented-out lockdown feature. **Interview: LOW**
+### `lib/auth/permissions.ts` (+ `.test.ts`)
+Pure permission rules: isAdmin, canEditBooking, canViewBooking, assert* helpers. **Interview: MUST UNDERSTAND**
+
+### `lib/auth/errors.ts`, `lib/api/auth-response.ts`
+UnauthorizedError/ForbiddenError and their HTTP mapping. **Interview: MEDIUM**
 
 ### `lib/supabase/client.ts`
-Browser Supabase client. **Interview: MEDIUM**
+Browser Supabase client (anon key). **Interview: MEDIUM**
 
 ### `lib/supabase/server.ts`
-createClient (cookie), createServiceClient (service role). **Interview: MUST UNDERSTAND**
+`createClient()` (cookie session, RLS) and `createServiceClient()` (service role, server only). **Interview: MUST UNDERSTAND**
 
-### `lib/supabase/middleware.ts`
-Full session proxy logic — **unused**. **Interview: MEDIUM**
-
-### `lib/supabase/soft-delete.ts`
-Soft delete helpers (if used). **Interview: LOW**
+### `lib/booking/availability.ts` + `calculations.ts` (+ tests)
+Fail-closed unit availability; total cost / GST / slab math. **Interview: HIGH**
 
 ### `lib/types/database.ts`
-TypeScript interfaces mirroring DB. **Interview: HIGH**
+TypeScript interfaces mirroring the DB. **Interview: HIGH**
 
 ### `lib/validations/booking.ts`
-Zod schemas — client only currently. **Interview: HIGH**
+Zod schemas used client and server side. **Interview: HIGH**
 
 ### `lib/pdf/generator.ts`
 generateCompanyPDF, generateCustomerPDF (jsPDF). **Interview: HIGH**
 
-### `lib/email.ts`
-Nodemailer sendEmail, dispatch HTML template. **Interview: MEDIUM**
-
-### `lib/whatsapp.ts`
-WhatsApp dispatch messages. **Interview: LOW**
-
-### `lib/data/flat-areas.ts`
-Static Anandam flat → area map. **Interview: HIGH**
-
-### `lib/data/flat-ownership.ts`
-Developer vs landowner flat classification. **Interview: HIGH**
-
-### `lib/server-env.ts`
-Env var loading for system console passphrase. **Interview: MEDIUM**
+### `lib/data/flat-areas.ts`, `lib/data/flat-ownership.ts`
+Static Anandam flat → area map; developer vs landowner classification. **Interview: HIGH**
 
 ### `lib/utils.ts`
-cn() tailwind merge helper. **Interview: LOW**
+`cn()` helper. **Interview: LOW**
 
 ---
 
@@ -256,51 +152,40 @@ cn() tailwind merge helper. **Interview: LOW**
 ### `components/layout/dashboard-layout.tsx`
 Shell: nav filtered by role, logout, tab guard. **Interview: HIGH**
 
-### `components/ui/*`
-shadcn/ui primitives (button, card, dialog, form, table, etc.). **Interview: LOW**
-
-### `components/navigation-events.tsx`, `loading-bar.tsx`, `page-loading-indicator.tsx`
-UX loading indicators. **Interview: LOW**
+### `components/ui/*`, loading indicators
+shadcn/ui primitives and UX loaders. **Interview: LOW**
 
 ---
 
 ## `supabase/` — SQL
 
 ### `supabase/schema.sql`
-Baseline schema — **lags migrations**. **Interview: HIGH**
+Canonical fresh-install schema: tables, RLS, guard triggers, serial trigger, KYC storage bucket. **Interview: MUST UNDERSTAND**
 
-### `supabase/migration-*.sql`, `full-reset-and-schema.sql`
-Incremental schema changes — see ENGINEERING_HANDBOOK Data Model. **Interview: HIGH**
+### `supabase/migrations/002_remove_dispatch_console_email.sql`
+One-time cleanup for databases created from the earlier V2 schema. **Interview: LOW**
 
----
-
-## Test / Script Files (Non-production)
-
-| File | Purpose |
-|------|---------|
-| `test-pdf-generator.js` | PDF dev test |
-| `test-pdfkit.js` | pdfkit experiment |
-| `test-*.pdf` | Sample output |
-
-**No automated test suite exists.**
+### `supabase/migration-*.sql`, `full-reset-and-schema.sql`, etc.
+Archived history — do not run. **Interview: LOW**
 
 ---
 
 ## Dependency Graph (Simplified)
 
 ```
-pages (RSC)
-  → requireProfile / requireRole (get-user.ts)
-  → createServiceClient (server.ts)
-  → PostgreSQL via Supabase
+pages (RSC) / server actions
+  → requireProfile / requireStaff / requireAdmin (get-user.ts)
+  → lib/auth/permissions.ts
+  → createClient (server.ts) → PostgreSQL via RLS
+  → createServiceClient only in admin createUser
 
 client components
-  → createClient (client.ts)
-  → server actions (actions.ts)
+  → createClient (client.ts) for auth session
+  → server actions
 
 API routes
-  → requireProfile + createServiceClient
-  → lib/pdf, lib/email
+  → requireStaff + permission asserts + createClient
+  → lib/pdf, archiver
 
 proxy.ts
   → cookie check → redirect (no Supabase call)
@@ -310,14 +195,12 @@ proxy.ts
 
 ## Files by Interview Priority (Study Order)
 
-**Must understand first:**
-1. `lib/auth/get-user.ts`
+1. `lib/auth/get-user.ts` + `lib/auth/permissions.ts`
 2. `lib/supabase/server.ts`
-3. `new-booking/actions.ts`
-4. `bookings/actions.ts`
-5. `lib/pdf/generator.ts`
-6. `lib/data/flat-ownership.ts`
-7. `proxy.ts`
-8. `app/api/bootstrap-admin/route.ts` (as anti-pattern)
-9. `supabase/schema.sql` + role migration
-10. `components/layout/dashboard-layout.tsx`
+3. `supabase/schema.sql` (RLS, triggers)
+4. `new-booking/actions.ts`
+5. `bookings/actions.ts`
+6. `app/api/bookings/[id]/download/route.ts` + `lib/pdf/generator.ts`
+7. `lib/data/flat-ownership.ts`
+8. `proxy.ts`
+9. `components/layout/dashboard-layout.tsx`

@@ -1,14 +1,14 @@
 'use server'
 
-import { requireProfile } from '@/lib/auth/get-user'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { requireStaff } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
 import { DocumentType } from '@/lib/types/database'
 
 export async function uploadDocument(
   formData: FormData
 ): Promise<{ success: boolean; documentId?: string; error?: string }> {
   try {
-    const profile = await requireProfile()
+    const profile = await requireStaff()
     const supabase = await createClient()
 
     const file = formData.get('file') as File
@@ -85,7 +85,7 @@ export async function uploadDocument(
 
 export async function deleteDocument(documentId: string) {
   try {
-    const profile = await requireProfile()
+    const profile = await requireStaff()
     const supabase = await createClient()
 
     // Get the document to find the file path
@@ -121,8 +121,8 @@ export async function deleteDocument(documentId: string) {
 
 export async function linkDocumentsToBooking(documentIds: string[], bookingId: string) {
   try {
-    const profile = await requireProfile()
-    const supabase = await createServiceClient()
+    const profile = await requireStaff()
+    const supabase = await createClient()
 
     for (const docId of documentIds) {
       const { error } = await supabase
@@ -144,7 +144,7 @@ export async function linkDocumentsToBooking(documentIds: string[], bookingId: s
 }
 
 export async function getBookingDocuments(bookingId: string) {
-  const profile = await requireProfile()
+  const profile = await requireStaff()
   const supabase = await createClient()
 
   const { data, error } = await supabase
@@ -158,7 +158,7 @@ export async function getBookingDocuments(bookingId: string) {
 }
 
 export async function getDraftDocuments(draftId?: string) {
-  const profile = await requireProfile()
+  const profile = await requireStaff()
   const supabase = await createClient()
 
   // Fetch documents that belong to this draft or are unlinked (uploaded by this user)

@@ -157,7 +157,6 @@ export function UsersTable({ users }: UsersTableProps) {
     const colors: Record<string, string> = {
       ADMIN: 'bg-purple-600 text-white',
       EXECUTIVE: 'bg-blue-600 text-white',
-      ACCOUNTS: 'bg-emerald-600 text-white',
     }
     return <Badge className={colors[role] || 'bg-zinc-600 text-white'}>{role}</Badge>
   }
@@ -299,7 +298,6 @@ export function UsersTable({ users }: UsersTableProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="EXECUTIVE">Executive</SelectItem>
-                    <SelectItem value="ACCOUNTS">Accounts</SelectItem>
                     <SelectItem value="ADMIN">Admin</SelectItem>
                   </SelectContent>
                 </Select>
@@ -340,7 +338,6 @@ export function UsersTable({ users }: UsersTableProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="EXECUTIVE">Executive</SelectItem>
-                  <SelectItem value="ACCOUNTS">Accounts</SelectItem>
                   <SelectItem value="ADMIN">Admin</SelectItem>
                 </SelectContent>
               </Select>

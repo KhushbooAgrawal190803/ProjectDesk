@@ -1,22 +1,27 @@
 # ProjectDesk — Security Audit
 
-**Audit date:** October 4, 2026  
+**Audit date:** October 4, 2026 (pre-refactor baseline)  
+**Refactor completed:** October 2026 — see [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md) for current behavior  
+**Pre-refactor snapshot:** git branch `archive/pre-security-refactor`
+
+> **How to read this document:** Findings below describe the **pre-refactor** codebase. Items marked **FIXED** in [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md) are resolved on `main`. Use this file for historical context and threat modeling; use the handbook + refactor doc for current architecture.
+
 **Scope:** Static analysis of `/level-up-buildcon` repository only. No production exploitation.  
 **Classification legend:** CRITICAL | HIGH | MEDIUM | LOW | INFORMATIONAL
 
 ---
 
-## Executive Summary
+## Executive Summary (historical — pre-refactor)
 
-ProjectDesk is an **internal** sales/booking system. Authentication uses Supabase Auth; authorization is enforced primarily in **server actions and API routes** via `requireProfile()` / `requireRole()`, with most database access through the **Supabase service role** (bypassing RLS).
+ProjectDesk is an **internal** sales/booking system. Authentication uses Supabase Auth; authorization was enforced primarily in **server actions and API routes** via `requireProfile()` / `requireRole()`, with most database access through the **Supabase service role** (bypassing RLS).
 
-The most serious findings are:
+The most serious **pre-refactor** findings were:
 
-1. **Unauthenticated admin bootstrap endpoint** with hardcoded credentials
-2. **Broken object-level authorization (IDOR)** on booking PDFs, KYC documents, and some document server actions
-3. **Destructive operations** reachable via login with env-configured triggers
-4. **Service-role-heavy architecture** — any missed auth check is a full data bypass
-5. **Proxy (middleware) only checks cookie presence**, not session validity
+1. **Unauthenticated admin bootstrap endpoint** — **FIXED** (route removed)
+2. **Broken object-level authorization (IDOR)** on PDF/document APIs — **FIXED** (resource checks in API routes)
+3. **Destructive login triggers** — **FIXED** (entire destruct system removed)
+4. **Service-role-heavy architecture** — **FIXED** (all paths use `createClient()` + RLS; service role remains only in Admin → Create User for the Auth Admin API)
+5. **Proxy (middleware) only checks cookie presence**, not session validity — **OPEN** (acceptable for internal app; pages re-validate)
 
 ---
 
@@ -94,7 +99,7 @@ Hardcoded values in source:
 | **Current protection** | Per-function `requireProfile` / `requireRole` (inconsistent) |
 | **Recommended mitigation** | Defense in depth: use anon/authenticated client + RLS for reads; reserve service role for admin-only ops; audit all `'use server'` exports |
 
-Known gaps:
+Known gaps (pre-refactor; both since fixed — `getPaymentSlabs()` requires staff, console/destruct code removed):
 - `getPaymentSlabs()` — **no auth**
 - `_performConsolePurge()` — exported, no auth (called from authenticated destruct API)
 
@@ -110,9 +115,9 @@ Known gaps:
 | **Attack scenario** | Set `sb-{ref}-auth-token` cookie manually → access protected routes until page-level `getUser()` fails |
 | **Impact** | Limited — server components still call Supabase `getUser()` |
 | **Current protection** | Page-level `requireProfile()` validates session |
-| **Recommended mitigation** | Use Supabase session refresh in proxy (see unused `lib/supabase/middleware.ts` pattern) or accept cookie-check as UX-only gate |
+| **Recommended mitigation** | Use Supabase session refresh in proxy (`@supabase/ssr` `updateSession` pattern) or accept cookie-check as UX-only gate |
 
-Note: `lib/supabase/middleware.ts` exists but is **not wired** — full session validation code is dead.
+Note: the unused `lib/supabase/middleware.ts` has been deleted; the cookie check is accepted as a UX-only gate.
 
 ---
 
@@ -209,14 +214,7 @@ Note: `lib/supabase/middleware.ts` exists but is **not wired** — full session 
 
 ### SEC-014 — System Console Passphrase Compared Server-Side in Plaintext
 
-| Field | Detail |
-|-------|--------|
-| **Severity** | **LOW** |
-| **Risk** | Shared passphrase; no rate limiting |
-| **Affected code** | `system-console-actions.ts` → `verifyConsolePassphrase` |
-| **Impact** | Brute force on passphrase if endpoint spammed |
-| **Current protection** | ADMIN role required; encryption keys derived client-side |
-| **Recommended mitigation** | Rate limit; constant-time compare; per-admin keys (future) |
+**Status: RESOLVED — the System Console was removed entirely.**
 
 ---
 
@@ -234,13 +232,7 @@ Note: `lib/supabase/middleware.ts` exists but is **not wired** — full session 
 
 ### SEC-016 — Email/WhatsApp Dispatch Signed URLs (7 Days)
 
-| Field | Detail |
-|-------|--------|
-| **Severity** | **LOW** |
-| **Risk** | Forwarded links remain valid |
-| **Affected code** | `dispatch-actions.ts` |
-| **Impact** | Document access after intended recipient |
-| **Recommended mitigation** | Shorter TTL; one-time tokens |
+**Status: RESOLVED — email, WhatsApp and the dispatch workflow were removed; staff download PDFs directly.**
 
 ---
 
@@ -300,8 +292,7 @@ Note: `lib/supabase/middleware.ts` exists but is **not wired** — full session 
 |------------|----------|---------|------------------|
 | Employee | profiles (name, email, role) | `profiles` | ADMIN for management; self for own profile |
 | Customer PII | name, mobile, PAN, Aadhaar, address | `bookings`, `booking_documents` | Sales/accounts staff involved in booking |
-| Financial | total_cost, booking_amount_paid, slab payments | `bookings`, `booking_payment_slabs` | ACCOUNTS, ADMIN |
-| Credentials | Supabase auth, SMTP, service role | env vars | Server only |
-| Encrypted admin notes | system console cells | `system_console_cells` | ADMIN with passphrase |
+| Financial | total_cost, booking_amount_paid, slab payments | `bookings`, `booking_payment_slabs` | EXECUTIVE, ADMIN |
+| Credentials | Supabase auth, service role key | env vars | Server only |
 
 **Least privilege gap:** EXECUTIVE role can download all PDFs and view all bookings — verify this matches business need.

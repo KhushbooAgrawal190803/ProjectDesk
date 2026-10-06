@@ -1,7 +1,7 @@
 'use server'
 
-import { requireProfile } from '@/lib/auth/get-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { requireStaff } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
 
 export interface AllocatedUnit {
   unit_no: string
@@ -12,30 +12,17 @@ export interface AllocatedUnit {
 }
 
 export async function getTowerAllocations(): Promise<AllocatedUnit[]> {
-  await requireProfile()
-  const supabase = await createServiceClient()
+  await requireStaff()
+  const supabase = await createClient()
 
-  // Base query — fetch all non-draft Anandam bookings
-  let query = supabase
+  const { data } = await supabase
     .from('bookings')
     .select('id, unit_no, applicant_name, serial_display, status')
     .eq('project_name', 'Anandam')
     .neq('status', 'DRAFT')
+    .is('deleted_at', null)
 
-  // Apply soft-delete filter only if the column exists
-  try {
-    const probe = await supabase
-      .from('bookings')
-      .select('deleted_at')
-      .limit(0)
-    if (!probe.error) {
-      query = query.is('deleted_at', null) as typeof query
-    }
-  } catch { /* column doesn't exist — skip filter */ }
-
-  const { data } = await query
-
-  return (data || []).map(b => ({
+  return (data || []).map((b) => ({
     unit_no: String(b.unit_no),
     applicant_name: b.applicant_name,
     serial_display: b.serial_display,

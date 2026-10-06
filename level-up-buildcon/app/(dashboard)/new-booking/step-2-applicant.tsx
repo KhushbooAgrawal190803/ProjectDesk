@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { step2Schema, Step2Data } from '@/lib/validations/booking'
+import { step2Schema, Step2Data, Step2FormValues } from '@/lib/validations/booking'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -35,9 +35,9 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
     handleSubmit,
     setValue,
     formState: { errors },
-  } = useForm<Step2Data>({
-    resolver: zodResolver(step2Schema) as any,
-    defaultValues: { ...data, has_coapplicant: data.has_coapplicant || false } as any,
+  } = useForm<Step2FormValues, unknown, Step2Data>({
+    resolver: zodResolver(step2Schema),
+    defaultValues: { ...data, has_coapplicant: data.has_coapplicant || false },
   })
 
   const handleCoApplicantToggle = (checked: boolean) => {

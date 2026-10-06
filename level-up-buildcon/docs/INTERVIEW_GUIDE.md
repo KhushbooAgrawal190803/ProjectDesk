@@ -14,9 +14,9 @@
 
 > "The business problem is replacing spreadsheet-based booking tracking for an internal sales and accounts team. Executives submit bookings that go into a PENDING queue; admins approve to SUBMITTED status, which triggers a PostgreSQL function to assign serial numbers like LUBC 01.
 >
-> The stack is Next.js 16 App Router with Server Actions, TypeScript, Tailwind, and Supabase. Most server logic uses the Supabase service role with explicit requireRole checks — that's the main architectural tradeoff I can discuss in depth.
+> The stack is Next.js 16 App Router with Server Actions, TypeScript, Tailwind, and Supabase. Authorization is centralized in a permissions module and enforced again by Postgres RLS and guard triggers; the service role is used only to create Auth users.
 >
-> Key features: a tower grid showing unit availability with owner split between developer and landowner, jsPDF-generated company and customer PDFs, payment slab tracking against 14 construction milestones, and an encrypted admin console for sensitive notes.
+> Key features: a tower grid showing unit availability with owner split between developer and landowner, jsPDF-generated company and customer PDFs that staff download on demand, and payment slab tracking against 14 construction milestones.
 >
 > The primary engineering challenge wasn't scale — it's maybe 25 internal users — it was **correct authorization and PII protection** for booking and payment data. The security audit found IDOR gaps on PDF APIs that I'd fix first."
 
@@ -26,10 +26,10 @@
 
 1. **Browser** — React 19, shadcn UI, client forms with Zod + react-hook-form
 2. **Next.js proxy** — cookie presence check (Next.js 16 renamed middleware)
-3. **Server Components / Actions** — requireProfile/requireRole gates
-4. **Service client** — bypasses RLS; all auth in application layer
-5. **Supabase** — Auth JWT cookies, PostgreSQL with RLS (backup layer), Storage for KYC
-6. **External** — optional SMTP (nodemailer), optional WhatsApp for dispatch
+3. **Server Components / Actions** — requireStaff/requireAdmin gates + `lib/auth/permissions.ts`
+4. **Authenticated Supabase client** — RLS applies; service role only for Auth user creation
+5. **Supabase** — Auth JWT cookies, PostgreSQL with RLS + guard triggers, Storage for KYC
+6. **External** — none (no email/SMS/WhatsApp; Supabase Auth sends its own reset emails)
 
 Draw the diagram from ENGINEERING_HANDBOOK Part 2.
 
@@ -42,7 +42,7 @@ Draw the diagram from ENGINEERING_HANDBOOK Part 2.
 NOT: "We designed for 10,000 concurrent users."
 
 Supporting points:
-- Service role pattern requires discipline on every action
+- Authorization enforced twice: app permission checks and database RLS
 - PII in PDFs and KYC documents
 - Financial slab calculations must be correct
 - Unit double-booking prevention
@@ -74,21 +74,19 @@ Supporting points:
 
 **Tradeoff:** Code change needed for ownership updates vs DB column
 
-### 3. Encrypted System Console
+### 3. Scope reduction
 
-**Why interesting:** Client-side encryption with server storing only ciphertext; shared passphrase model.
+**Why interesting:** Removing an encrypted admin workbook, SMTP reminders and an email/WhatsApp dispatch workflow cut secrets, tables and service-role usage to the minimum.
 
-**Files:** `system-console-client.tsx`, `system-console-actions.ts`, `migration-system-console.sql`
+**Files:** `docs/SECURITY_REFACTOR.md`, `supabase/migrations/002_remove_dispatch_console_email.sql`
 
-**Security:** RLS enabled, no policies — service role only; passphrase verified server-side
-
-**Tradeoff:** Shared secret among admins; version field for wipe detection
+**Tradeoff:** No automated customer notifications; simpler, smaller attack surface
 
 ---
 
 ## Difficult Technical Decisions
 
-1. **Service role everywhere** — speed vs defense-in-depth
+1. **Service role everywhere → RLS-first** — originally speed over defense-in-depth; refactored to user-scoped client + RLS
 2. **Approval workflow** — admin bottleneck vs data quality
 3. **jsPDF vs Puppeteer** — serverless compatibility vs layout ease
 4. **Proxy cookie check** — Edge runtime issues led to simplified gate
@@ -100,7 +98,7 @@ Supporting points:
 
 - Edge Runtime broke Supabase middleware → simplified to proxy cookie check
 - Next.js 16 renamed middleware.ts → proxy.ts
-- Nodemailer/pdfkit bundled into Edge → serverExternalPackages fix
+- Nodemailer/pdfkit bundled into Edge → serverExternalPackages fix (both since removed)
 - Serial number format changed multiple times (LUBC 01 vs R-/C- vs LUBC/001/R/unit)
 - Lockdown feature built then disabled
 - Vercel build issues with Web Crypto typings and env loading
@@ -109,7 +107,7 @@ Supporting points:
 
 ## Security Discussion (How to Answer)
 
-"I performed a static security audit. The architecture uses Supabase service role on the server with explicit requireRole checks — RLS is a backup, not primary enforcement. I found IDOR on PDF download APIs where any authenticated user can access any booking by UUID — that's P0 to fix with role and ownership checks. There's also an unauthenticated bootstrap-admin endpoint that should never be in production. I would not claim the system is fully hardened until those are addressed."
+"I performed a static security audit and then refactored. Originally the server used the Supabase service role with app-level checks, there was IDOR on PDF download APIs, and an unauthenticated bootstrap-admin endpoint. Now authorization is centralized in a permissions module, every route checks the specific booking, all queries run as the user under RLS with guard triggers, and the service role is used only to create Auth users. I also removed features — email, WhatsApp dispatch, an encrypted admin workbook — that added secrets and attack surface without being core to the job."
 
 ---
 
@@ -169,8 +167,8 @@ Supporting points:
 
 ### Authentication & Authorization
 
-**Q1:** Why does `getCurrentProfile` use the service role instead of the user's Supabase client?  
-**Answer:** Bypasses RLS to reliably fetch profile regardless of policy recursion issues. Tradeoff: app must enforce auth.  
+**Q1:** Which Supabase client does `getCurrentProfile` use, and why?  
+**Answer:** The user-scoped client; RLS lets users read their own profile. It used the service role before the refactor, which meant every action had to be perfect on its own.  
 **Files:** `lib/auth/get-user.ts`  
 **Tests:** Auth model understanding
 
@@ -198,12 +196,12 @@ Supporting points:
 **Answer:** Disabled — `/signup` redirects to login; admins create users via admin panel.  
 **Files:** `signup/page.tsx`, `admin/actions.ts`
 
-**Q8:** What roles exist and what can ACCOUNTS do that EXECUTIVE cannot?  
-**Answer:** ACCOUNTS: accounts page, slab payments, dispatch upload. EXECUTIVE: lookup/downloads but not accounts.  
-**Files:** `dashboard-layout.tsx`, role checks
+**Q8:** What roles exist?  
+**Answer:** EXECUTIVE and ADMIN only (ACCOUNTS was merged away). Admins additionally approve/reject, delete/restore, manage users and settings.  
+**Files:** `lib/auth/permissions.ts`, `dashboard-layout.tsx`
 
 **Q9:** If I know booking UUID, can I download PDFs?  
-**Answer:** YES — current code only checks requireProfile. Known IDOR.  
+**Answer:** Only if you are active staff and permitted to view that booking (e.g. not someone else's draft) — `assertCanDownloadPdfs`. This was an IDOR before the refactor.  
 **Files:** `api/bookings/[id]/download/route.ts`
 
 **Q10:** What does `/api/bootstrap-admin` do and why is it dangerous?  
@@ -274,9 +272,9 @@ Supporting points:
 **Answer:** Construction-linked milestones from 20% at agreement to 5% at handover — seeded in schema.  
 **Files:** `supabase/schema.sql`
 
-**Q26:** What happens if payment reminder email fails?  
-**Answer:** sendEmail returns false; logged; no retry.  
-**Files:** `lib/email.ts`, reminder-actions
+**Q26:** Does the app email customers about due payments?  
+**Answer:** No. Payment reminders (and all SMTP code) were removed; staff track slab status on the Payments page.  
+**Files:** `accounts/payment-schedule-client.tsx`
 
 ### PDF / Documents
 
@@ -307,11 +305,11 @@ Supporting points:
 **Files:** schema.sql
 
 **Q33:** Does RLS protect server actions?  
-**Answer:** No — service role bypasses RLS entirely.  
-**Files:** server.ts
+**Answer:** Yes — server actions use the user-scoped client, so RLS and guard triggers apply. Only `createUser` uses the service role.  
+**Files:** server.ts, schema.sql
 
-**Q34:** What's wrong with schema.sql vs production?  
-**Answer:** Lags migrations — missing ACCOUNTS role, soft delete, documents tables, etc.  
+**Q34:** How is the schema managed?  
+**Answer:** `schema.sql` is the canonical fresh-install file; older `migration-*.sql` files are archived history. A V2-installed database gets the one-time `migrations/002_*` cleanup.  
 **Files:** supabase/*.sql
 
 **Q35:** Why is admin_id nullable in admin_audit_log after migration?  
@@ -325,8 +323,8 @@ Supporting points:
 **Files:** actions.ts pattern
 
 **Q37:** What external services does the app depend on?  
-**Answer:** Supabase (required), SMTP (optional), WhatsApp (optional).  
-**Files:** email.ts, whatsapp.ts
+**Answer:** Supabase only (Auth, PostgreSQL, Storage), hosted on Vercel.  
+**Files:** `.env.example`
 
 **Q38:** How is owner split calculated on dashboard?  
 **Answer:** Iterate all bookings; getOwnerTypeForFlat(unit_no); sum amounts. O(n).  
@@ -336,37 +334,29 @@ Supporting points:
 **Answer:** Static TypeScript map in flat-areas.ts — not database.  
 **Files:** `lib/data/flat-areas.ts`
 
-**Q40:** What is the system console?  
-**Answer:** Encrypted 100×100 grid workbook for admin notes; client-side crypto.  
-**Files:** system-console-*
+**Q40:** Why was the System Console removed?  
+**Answer:** An encrypted shared workbook was outside the booking job, needed a shared passphrase secret and service-role-only tables. Removing it shrank the attack surface.  
+**Files:** docs/SECURITY_REFACTOR.md
 
 ### Security / Destructive Ops
 
-**Q41:** How many ways can all bookings be deleted?  
-**Answer:** Three — login destruct API, admin destruct page, bootstrap compromise.  
-**Files:** destruct route, destruct-actions, login
+**Q41:** How can all bookings be deleted?  
+**Answer:** They can't through the app. The destruct/kill-switch paths were removed; admins only soft-delete individual bookings, and audit rows block hard deletes (`ON DELETE RESTRICT`).  
+**Files:** bookings/actions.ts, schema.sql
 
-**Q42:** Why is NEXT_PUBLIC_SYSTEM_CONSOLE_KILL_PHRASE a problem?  
-**Answer:** Exposed in client bundle; can trigger destruct from login.  
-**Files:** login-content.tsx
+**Q42:** Why was NEXT_PUBLIC_SYSTEM_CONSOLE_KILL_PHRASE a problem?  
+**Answer:** It was exposed in the client bundle and could trigger destruct from login. Removed.  
+**Files:** docs/SECURITY_REFACTOR.md
 
-**Q43:** Does destruct leave audit trail?  
-**Answer:** Deletes admin_audit_log too — no trail of destruct itself.  
-**Files:** destruct route
-
-**Q44:** How is console data encrypted?  
-**Answer:** Client Web Crypto; server stores cipher_text + iv; passphrase not stored in DB.  
-**Files:** system-console-client.tsx
-
-**Q45:** Are dispatch signed URLs safe to forward?  
-**Answer:** Valid 7 days; recipient can share — time-limited exposure.  
-**Files:** dispatch-actions.ts
+**Q45:** How do customers receive their booking documents?  
+**Answer:** Staff download the generated PDF and share it themselves. The email/WhatsApp dispatch workflow (with 7-day signed links) was removed.  
+**Files:** `api/bookings/[id]/download/route.ts`
 
 ### Testing / Quality
 
 **Q46:** What tests exist?  
-**Answer:** None automated — only manual pdf test scripts.  
-**Files:** test-pdf*.js
+**Answer:** Vitest unit tests for permissions, booking calculations and fail-closed availability (`npm test`).  
+**Files:** `lib/**/*.test.ts`
 
 **Q47:** What would you test first?  
 **Answer:** Authorization on server actions; approve/reject transitions; IDOR fixes.  
@@ -389,8 +379,8 @@ Supporting points:
 **Files:** dashboard page, step-3, submitBooking clamp
 
 **Q52:** How does forgot password work?  
-**Answer:** Not self-service — notifies admin via audit log entry.  
-**Files:** forgot-password route
+**Answer:** Not self-service. The page tells users to contact an admin, who clicks "Send password reset" in User Management; Supabase Auth emails the link to `/reset-password`.  
+**Files:** `admin/actions.ts` → `sendPasswordReset`, `reset-password/page.tsx`
 
 **Q53:** What's the proxy matcher exclude?  
 **Answer:** Static assets, _next, images — standard Next.js pattern.  
@@ -414,14 +404,14 @@ Supporting points:
 - Files: `proxy.ts`, `get-user.ts`, `server.ts`, `dashboard-layout.tsx`
 
 ### Day 2 — Database
-- Read schema.sql + migration-roles-restructure.sql
+- Read schema.sql (RLS policies, guard triggers, serial trigger)
 - Draw ER diagram from handbook
 - Understand serial trigger and payment slabs
 
 ### Day 3 — Authentication & Authorization
 - Read SECURITY_AUDIT.md
-- Map every requireRole call
-- Understand service role tradeoff
+- Read `lib/auth/permissions.ts` and map every requireStaff/requireAdmin call
+- Understand why the service role is limited to `createUser`
 
 ### Day 4 — Booking Workflow
 - Walk wizard: step-1 through step-4
@@ -434,10 +424,9 @@ Supporting points:
 - flat-ownership.ts + dashboard aggregations
 
 ### Day 6 — Admin, PDF, Security Edge Cases
-- PDF generator + download APIs
-- bootstrap-admin (anti-pattern)
-- system console encryption model
-- destruct paths
+- PDF generator + download APIs (permission checks)
+- Admin user management (only service-role call site)
+- SECURITY_REFACTOR.md — what was removed and why
 
 ### Day 7 — Performance, Testing, Interview Practice
 - PERFORMANCE_AND_COMPLEXITY.md

@@ -1,114 +1,100 @@
 'use server'
 
-import { requireProfile } from '@/lib/auth/get-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { requireStaff } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { BookingFormData } from '@/lib/validations/booking'
+import { parseBookingDraft, parseBookingSubmit, type BookingFormData } from '@/lib/validations/booking'
+import {
+  checkUnitAvailability as queryUnitAvailability,
+  isUnitConflictError,
+  UNIT_CONFLICT_MESSAGE,
+} from '@/lib/booking/availability'
+import { clampParking, derivePricingFields, toNum } from '@/lib/booking/calculations'
+import { assertCanEditOwnDraft, submitStatusForRole } from '@/lib/auth/permissions'
+
+const DRAFT_FIELDS = [
+  'project_name', 'project_location', 'project_address', 'rera_regn_no', 'building_permit_no',
+  'unit_category', 'unit_no', 'floor_no', 'builtup_area', 'super_builtup_area', 'carpet_area',
+  'applicant_name', 'applicant_father_or_spouse', 'applicant_mobile', 'applicant_email',
+  'applicant_pan', 'applicant_aadhaar', 'applicant_address',
+  'coapplicant_name', 'coapplicant_relationship', 'coapplicant_mobile', 'coapplicant_pan', 'coapplicant_aadhaar',
+  'rate_per_sqft', 'total_cost', 'gst_amount', 'booking_amount_paid', 'payment_mode', 'payment_mode_detail',
+  'txn_or_cheque_no', 'txn_date', 'payment_plan_type', 'payment_plan_custom_text',
+  'additional_parking', 'premium_parking',
+] as const
+
+const NUMERIC_FIELDS = new Set([
+  'builtup_area', 'super_builtup_area', 'carpet_area', 'rate_per_sqft', 'total_cost',
+  'gst_amount', 'booking_amount_paid', 'additional_parking', 'premium_parking',
+])
+
+function mapDraftFields(data: Partial<BookingFormData>): Record<string, unknown> {
+  const bookingData: Record<string, unknown> = { unit_type: 'Flat' }
+  for (const key of DRAFT_FIELDS) {
+    const value = data[key as keyof BookingFormData]
+    if (value === undefined) continue
+    if (NUMERIC_FIELDS.has(key)) {
+      bookingData[key] = toNum(value)
+    } else if (value === '') {
+      bookingData[key] = null
+    } else {
+      bookingData[key] = value
+    }
+  }
+  return bookingData
+}
 
 export async function saveDraft(data: Partial<BookingFormData>, draftId?: string) {
-  try {
-    const profile = await requireProfile()
-    const supabase = await createServiceClient()
-
-    // Normalize and prepare booking data (never downgrade PENDING → DRAFT on update)
-    const bookingData: any = {
-      created_by: profile.id,
-      // Persisted DB enum – for Anandam everything is treated as a flat
-      unit_type: 'Flat',
-    }
-
-    // Only include fields that are provided in the partial data
-    const fieldMappings: { [key: string]: boolean } = {
-      project_name: true,
-      project_location: true,
-      project_address: true,
-      rera_regn_no: true,
-      building_permit_no: true,
-      unit_category: true,
-      unit_no: true,
-      floor_no: true,
-      builtup_area: true,
-      super_builtup_area: true,
-      carpet_area: true,
-      applicant_name: true,
-      applicant_father_or_spouse: true,
-      applicant_mobile: true,
-      applicant_email: true,
-      applicant_pan: true,
-      applicant_aadhaar: true,
-      applicant_address: true,
-      coapplicant_name: true,
-      coapplicant_relationship: true,
-      coapplicant_mobile: true,
-      coapplicant_pan: true,
-      coapplicant_aadhaar: true,
-      rate_per_sqft: true,
-      total_cost: true,
-      gst_amount: true,
-      booking_amount_paid: true,
-      payment_mode: true,
-      payment_mode_detail: true,
-      txn_or_cheque_no: true,
-      txn_date: true,
-      payment_plan_type: true,
-      payment_plan_custom_text: true,
-      additional_parking: true,
-      premium_parking: true,
-    }
-
-    // Map and normalize fields (avoid sending NaN for numeric fields)
-    const numKeys = ['builtup_area', 'super_builtup_area', 'carpet_area', 'rate_per_sqft', 'total_cost', 'gst_amount', 'booking_amount_paid', 'additional_parking', 'premium_parking']
-    for (const [key, value] of Object.entries(data)) {
-      if (fieldMappings[key]) {
-        if (numKeys.includes(key)) {
-          const n = value != null && value !== '' ? Number(value) : null
-          bookingData[key] = Number.isFinite(n) ? n : null
-        } else if (value === '' || value === undefined) {
-          bookingData[key] = null
-        } else {
-          bookingData[key] = value
-        }
-      }
-    }
-
-    if (draftId) {
-      const { data: updated, error } = await supabase
-        .from('bookings')
-        .update(bookingData)
-        .eq('id', draftId)
-        .eq('created_by', profile.id)
-        .in('status', ['DRAFT', 'PENDING'])
-        .select()
-        .single()
-
-      if (error) {
-        throw new Error(`Failed to update draft: ${error.message}`)
-      }
-
-      return { success: true, draftId: updated.id }
-    } else {
-      // Creating a new draft
-      bookingData.status = 'DRAFT'
-      const { data: created, error } = await supabase
-        .from('bookings')
-        .insert([bookingData])
-        .select()
-        .single()
-
-      if (error) {
-        throw new Error(`Failed to save draft: ${error.message}`)
-      }
-
-      return { success: true, draftId: created.id }
-    }
-  } catch (error: any) {
-    throw error
+  const parsed = parseBookingDraft(data)
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid draft data')
   }
+
+  const profile = await requireStaff()
+  const supabase = await createClient()
+  const bookingData = mapDraftFields(parsed.data)
+
+  if (draftId) {
+    const { data: existing } = await supabase
+      .from('bookings')
+      .select('id, status, created_by, deleted_at')
+      .eq('id', draftId)
+      .single()
+
+    if (!existing || existing.deleted_at) {
+      throw new Error('Draft not found')
+    }
+    assertCanEditOwnDraft(profile, existing)
+
+    const { data: updated, error } = await supabase
+      .from('bookings')
+      .update(bookingData)
+      .eq('id', draftId)
+      .eq('created_by', profile.id)
+      .in('status', ['DRAFT', 'PENDING'])
+      .select()
+      .single()
+
+    if (error) throw new Error(`Failed to update draft: ${error.message}`)
+    return { success: true, draftId: updated.id }
+  }
+
+  bookingData.status = 'DRAFT'
+  bookingData.created_by = profile.id
+
+  const { data: created, error } = await supabase
+    .from('bookings')
+    .insert([bookingData])
+    .select()
+    .single()
+
+  if (error) throw new Error(`Failed to save draft: ${error.message}`)
+  return { success: true, draftId: created.id }
 }
 
 export async function getDraft(draftId: string) {
-  const profile = await requireProfile()
-  const supabase = await createServiceClient()
+  const profile = await requireStaff()
+  const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('bookings')
@@ -116,30 +102,26 @@ export async function getDraft(draftId: string) {
     .eq('id', draftId)
     .eq('created_by', profile.id)
     .in('status', ['DRAFT', 'PENDING'])
+    .is('deleted_at', null)
     .single()
 
-  if (error) {
-    throw new Error('Draft not found')
-  }
-
+  if (error) throw new Error('Draft not found')
   return data
 }
 
 export async function getUserDrafts() {
-  const profile = await requireProfile()
-  const supabase = await createServiceClient()
+  const profile = await requireStaff()
+  const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('bookings')
     .select('*')
     .eq('created_by', profile.id)
     .in('status', ['DRAFT', 'PENDING'])
+    .is('deleted_at', null)
     .order('updated_at', { ascending: false })
 
-  if (error) {
-    return []
-  }
-
+  if (error) return []
   return data
 }
 
@@ -148,196 +130,146 @@ export async function checkUnitAvailability(
   unitNo: string,
   excludeBookingId?: string
 ): Promise<{ available: boolean; message?: string }> {
-  try {
-    const profile = await requireProfile()
-    const supabase = await createServiceClient()
+  await requireStaff()
+  const supabase = await createClient()
+  const result = await queryUnitAvailability(supabase, projectName, unitNo, excludeBookingId)
 
-    let query = supabase
-      .from('bookings')
-      .select('id, serial_display, applicant_name')
-      .eq('project_name', projectName)
-      .eq('unit_no', unitNo)
-      .neq('status', 'DRAFT')
-      .is('deleted_at', null)
-
-    if (excludeBookingId) {
-      query = query.neq('id', excludeBookingId)
-    }
-
-    const { data, error } = await query
-
-    if (error) {
-      console.error('Unit check error:', error.message)
-      // Fail-open: allows submit when DB is unreachable — risks double-booking.
-      // Prefer fail-closed + partial unique index on (project_name, unit_no) in future.
-      return { available: true }
-    }
-
-    if (data && data.length > 0) {
-      const existing = data[0] as any
-      return {
-        available: false,
-        message: `Unit ${unitNo} is already booked (${existing.serial_display || 'Booking'} - ${existing.applicant_name || 'Unknown'})`,
-      }
-    }
-
-    return { available: true }
-  } catch {
-    return { available: true } // fail open
+  if ('error' in result) {
+    return { available: false, message: result.error }
   }
-}
-
-// Coerce to number or null; never send NaN to the DB
-function toNum(v: unknown): number | null {
-  if (v == null || v === '') return null
-  const n = Number(v)
-  return Number.isFinite(n) ? n : null
+  if (!result.available) {
+    return { available: false, message: result.message }
+  }
+  return { available: true }
 }
 
 export async function submitBooking(data: BookingFormData, draftId?: string) {
-  try {
-    const profile = await requireProfile()
-    const supabase = await createServiceClient()
+  const parsed = parseBookingSubmit(data)
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues.map((i) => i.message).join(', '))
+  }
 
-    // Remove UI-only fields
-    const { has_coapplicant, ...baseData } = data as any
+  const profile = await requireStaff()
+  const supabase = await createClient()
+  const baseData = parsed.data
 
-    // Check unit availability before submitting (only if project_name and unit_no are provided)
-    if (baseData.project_name && baseData.unit_no) {
-      const unitCheck = await checkUnitAvailability(
-        baseData.project_name,
-        baseData.unit_no,
-        draftId // exclude current draft from check
-      )
-      if (!unitCheck.available) {
-        throw new Error(unitCheck.message || 'This unit is already booked')
-      }
+  if (baseData.project_name && baseData.unit_no) {
+    const unitCheck = await checkUnitAvailability(
+      baseData.project_name,
+      baseData.unit_no,
+      draftId
+    )
+    if (!unitCheck.available) {
+      throw new Error(unitCheck.message || 'This unit is not available')
+    }
+  }
+
+  const pricing = derivePricingFields(baseData)
+  const parking = clampParking(baseData.additional_parking, baseData.premium_parking)
+
+  const bookingData = {
+    project_name: baseData.project_name || null,
+    project_location: baseData.project_location || 'Ranchi, Jharkhand',
+    project_address: baseData.project_address || null,
+    rera_regn_no: baseData.rera_regn_no || null,
+    building_permit_no: baseData.building_permit_no || null,
+    unit_category: baseData.unit_category || null,
+    unit_type: 'Flat' as const,
+    unit_type_other_text: null,
+    unit_no: baseData.unit_no || null,
+    floor_no: baseData.floor_no || null,
+    builtup_area: toNum(baseData.builtup_area),
+    super_builtup_area: toNum(baseData.super_builtup_area),
+    carpet_area: toNum(baseData.carpet_area),
+    applicant_name: baseData.applicant_name || null,
+    applicant_father_or_spouse: baseData.applicant_father_or_spouse || null,
+    applicant_mobile: baseData.applicant_mobile || null,
+    applicant_email: baseData.applicant_email || null,
+    applicant_pan: baseData.applicant_pan || null,
+    applicant_aadhaar: baseData.applicant_aadhaar || null,
+    applicant_address: baseData.applicant_address || null,
+    coapplicant_name: baseData.coapplicant_name || null,
+    coapplicant_relationship: baseData.coapplicant_relationship || null,
+    coapplicant_mobile: baseData.coapplicant_mobile || null,
+    coapplicant_pan: baseData.coapplicant_pan || null,
+    coapplicant_aadhaar: baseData.coapplicant_aadhaar || null,
+    rate_per_sqft: pricing.rate_per_sqft,
+    total_cost: pricing.total_cost,
+    gst_amount: pricing.gst_amount,
+    booking_amount_paid: pricing.booking_amount_paid,
+    payment_mode: baseData.payment_mode || null,
+    payment_mode_detail: baseData.payment_mode_detail || null,
+    txn_or_cheque_no: baseData.txn_or_cheque_no || null,
+    txn_date: baseData.txn_date || null,
+    payment_plan_type: baseData.payment_plan_type || null,
+    payment_plan_custom_text: baseData.payment_plan_custom_text || null,
+    ...parking,
+    status: submitStatusForRole(profile.role),
+    created_by: profile.id,
+    submitted_at: new Date().toISOString(),
+  }
+
+  let bookingId: string
+
+  if (draftId) {
+    const { data: updated, error } = await supabase
+      .from('bookings')
+      .update(bookingData)
+      .eq('id', draftId)
+      .eq('created_by', profile.id)
+      .in('status', ['DRAFT', 'PENDING'])
+      .select()
+      .maybeSingle()
+
+    if (error) {
+      if (isUnitConflictError(error)) throw new Error(UNIT_CONFLICT_MESSAGE)
+      throw new Error(`Failed to submit booking: ${error.message}`)
     }
 
-    // Normalize and prepare booking data (use toNum so we never send NaN)
-    const bookingData = {
-      // Project & Unit
-      project_name: baseData.project_name || null,
-      project_location: baseData.project_location || 'Ranchi, Jharkhand',
-      project_address: baseData.project_address || null,
-      rera_regn_no: baseData.rera_regn_no || null,
-      building_permit_no: baseData.building_permit_no || null,
-      unit_category: baseData.unit_category || null,
-      // Persisted DB enum – for Anandam everything is treated as a flat
-      unit_type: 'Flat' as const,
-      unit_type_other_text: null,
-      unit_no: baseData.unit_no || null,
-      floor_no: baseData.floor_no || null,
-      builtup_area: toNum(baseData.builtup_area),
-      super_builtup_area: toNum(baseData.super_builtup_area),
-      carpet_area: toNum(baseData.carpet_area),
-      
-      // Applicant
-      applicant_name: baseData.applicant_name || null,
-      applicant_father_or_spouse: baseData.applicant_father_or_spouse || null,
-      applicant_mobile: baseData.applicant_mobile || null,
-      applicant_email: baseData.applicant_email || null,
-      applicant_pan: baseData.applicant_pan || null,
-      applicant_aadhaar: baseData.applicant_aadhaar || null,
-      applicant_address: baseData.applicant_address || null,
-      
-      // Co-applicant
-      coapplicant_name: baseData.coapplicant_name || null,
-      coapplicant_relationship: baseData.coapplicant_relationship || null,
-      coapplicant_mobile: baseData.coapplicant_mobile || null,
-      coapplicant_pan: baseData.coapplicant_pan || null,
-      coapplicant_aadhaar: baseData.coapplicant_aadhaar || null,
-      
-      // Pricing & Payment
-      rate_per_sqft: toNum(baseData.rate_per_sqft),
-      total_cost: toNum(baseData.total_cost),
-      gst_amount: toNum(baseData.gst_amount),
-      booking_amount_paid: toNum(baseData.booking_amount_paid),
-      payment_mode: baseData.payment_mode || null,
-      payment_mode_detail: baseData.payment_mode_detail || null,
-      txn_or_cheque_no: baseData.txn_or_cheque_no || null,
-      txn_date: baseData.txn_date || null,
-      
-      // Payment Plan
-      payment_plan_type: baseData.payment_plan_type || null,
-      payment_plan_custom_text: baseData.payment_plan_custom_text || null,
-
-      additional_parking: Math.min(5, Math.max(0, Number(baseData.additional_parking) || 0)),
-      premium_parking: Math.min(3, Math.max(0, Number((baseData as any).premium_parking) || 0)),
-
-      // ADMIN skips approval queue (immediate SUBMITTED → serial trigger fires).
-      // EXECUTIVE/ACCOUNTS go to PENDING until admin approveBooking().
-      status: profile.role === 'ADMIN' ? 'SUBMITTED' : 'PENDING',
-      created_by: profile.id,
-      submitted_at: new Date().toISOString(),
-    }
-
-    let bookingId: string
-
-    if (draftId) {
-      const { data: updated, error } = await supabase
-        .from('bookings')
-        .update(bookingData)
-        .eq('id', draftId)
-        .eq('created_by', profile.id)
-        .select()
-        .maybeSingle()
-
-      if (error) {
-        throw new Error(`Failed to submit booking: ${error.message}`)
-      }
-
-      if (updated) {
-        bookingId = updated.id
-      } else {
-        // Draft no longer exists, fall back to insert
-        const { data: created, error: insertError } = await supabase
-          .from('bookings')
-          .insert([bookingData])
-          .select()
-          .single()
-
-        if (insertError) {
-          throw new Error(`Failed to submit booking: ${insertError.message}`)
-        }
-
-        bookingId = created.id
-      }
+    if (updated) {
+      bookingId = updated.id
     } else {
-      const { data: created, error } = await supabase
+      const { data: created, error: insertError } = await supabase
         .from('bookings')
         .insert([bookingData])
         .select()
         .single()
 
-      if (error) {
-        throw new Error(`Failed to submit booking: ${error.message}`)
+      if (insertError) {
+        if (isUnitConflictError(insertError)) throw new Error(UNIT_CONFLICT_MESSAGE)
+        throw new Error(`Failed to submit booking: ${insertError.message}`)
       }
-
       bookingId = created.id
     }
+  } else {
+    const { data: created, error } = await supabase
+      .from('bookings')
+      .insert([bookingData])
+      .select()
+      .single()
 
-    // Create audit log entry
-    await supabase
-      .from('booking_audit_log')
-      .insert({
-        booking_id: bookingId,
-        changed_by: profile.id,
-        action: draftId ? 'EDITED' : 'CREATED',
-      })
-
-    revalidatePath('/bookings')
-    revalidatePath('/dashboard')
-    
-    return { success: true, bookingId }
-  } catch (error: any) {
-    throw error
+    if (error) {
+      if (isUnitConflictError(error)) throw new Error(UNIT_CONFLICT_MESSAGE)
+      throw new Error(`Failed to submit booking: ${error.message}`)
+    }
+    bookingId = created.id
   }
+
+  await supabase.from('booking_audit_log').insert({
+    booking_id: bookingId,
+    changed_by: profile.id,
+    action: draftId ? 'EDITED' : 'CREATED',
+  })
+
+  revalidatePath('/bookings')
+  revalidatePath('/dashboard')
+
+  return { success: true, bookingId }
 }
 
 export async function deleteDraft(draftId: string) {
-  const profile = await requireProfile()
-  const supabase = await createServiceClient()
+  const profile = await requireStaff()
+  const supabase = await createClient()
 
   const { error } = await supabase
     .from('bookings')
@@ -346,11 +278,8 @@ export async function deleteDraft(draftId: string) {
     .eq('created_by', profile.id)
     .eq('status', 'DRAFT')
 
-  if (error) {
-    throw new Error('Failed to delete draft')
-  }
+  if (error) throw new Error('Failed to delete draft')
 
   revalidatePath('/new-booking')
   return { success: true }
 }
-

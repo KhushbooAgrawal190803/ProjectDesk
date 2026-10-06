@@ -9,7 +9,7 @@ const nextConfigDir = path.dirname(fileURLToPath(import.meta.url));
  * Vercel: omit — platform sets `outputFileTracingRoot`; `turbopack.root` must match or Next warns.
  */
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['nodemailer', 'pdfkit', 'archiver'],
+  serverExternalPackages: ['archiver'],
   ...(process.env.VERCEL
     ? {}
     : {

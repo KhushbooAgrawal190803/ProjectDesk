@@ -1,32 +1,23 @@
 # ProjectDesk — Technical Debt Register
 
-**Last updated:** October 4, 2026
+**Last updated:** October 2026 (post security-refactor)
 
-Each item: Problem → Files → Why it matters → Risk → Fix → Effort → Priority
-
----
-
-## TD-001 — Unauthenticated Bootstrap Admin Endpoint
-
-**Problem:** `GET /api/bootstrap-admin` creates admin with hardcoded password, no auth.  
-**Affected files:** `app/api/bootstrap-admin/route.ts`  
-**Why it matters:** Single HTTP request = full system compromise.  
-**Risk:** CRITICAL security  
-**Recommended fix:** Delete route or protect with deploy-time secret + remove from production.  
-**Effort:** S  
-**Priority:** P0
+Each item: Problem → Files → Why it matters → Risk → Fix → Effort → Priority  
+**Status:** RESOLVED items were fixed in the Oct 2026 refactor — see [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md).
 
 ---
 
-## TD-002 — IDOR on PDF and Document APIs
+## TD-001 — Unauthenticated Bootstrap Admin Endpoint — **RESOLVED**
 
-**Problem:** Any active user can access any booking's PDFs/KYC by UUID.  
-**Affected files:** `app/api/bookings/[id]/download/route.ts`, `app/api/bookings/[id]/documents/[docId]/route.ts`, `document-actions.ts`  
-**Why it matters:** PAN/Aadhaar and financial data exposure.  
-**Risk:** HIGH security / privacy  
-**Recommended fix:** Authorization check: role + ownership or ACCOUNTS/ADMIN-only.  
-**Effort:** M  
-**Priority:** P0
+**Problem:** `GET /api/bootstrap-admin` created admin with hardcoded password, no auth.  
+**Resolution:** Route deleted. Create first admin via Supabase Dashboard → Authentication → Users, then insert matching `profiles` row (see `supabase/README.md`).
+
+---
+
+## TD-002 — IDOR on PDF and Document APIs — **RESOLVED**
+
+**Problem:** Any active user could access any booking's PDFs/KYC by UUID.  
+**Resolution:** API routes authenticate → load booking → `assertCanViewBooking` / `assertCanDownloadPdfs` before fetch.
 
 ---
 
@@ -38,7 +29,8 @@ Each item: Problem → Files → Why it matters → Risk → Fix → Effort → 
 **Risk:** HIGH security (architectural)  
 **Recommended fix:** Use authenticated client for reads; service role for admin writes only.  
 **Effort:** L  
-**Priority:** P1
+**Priority:** P1  
+**Resolution:** All server paths use `createClient()` + RLS. The service role remains only in `admin/actions.ts` → `createUser` (Supabase Auth Admin API).
 
 ---
 
@@ -81,7 +73,7 @@ Each item: Problem → Files → Why it matters → Risk → Fix → Effort → 
 ## TD-007 — Proxy Cookie-Only Auth Check
 
 **Problem:** `proxy.ts` checks cookie name existence, not JWT validity.  
-**Affected files:** `proxy.ts`, unused `lib/supabase/middleware.ts`  
+**Affected files:** `proxy.ts` (the unused `lib/supabase/middleware.ts` has been deleted)  
 **Why it matters:** Misleading security boundary; stale cookies.  
 **Risk:** LOW (pages re-validate)  
 **Recommended fix:** Integrate Supabase session refresh in proxy or document as UX gate only.  
@@ -170,7 +162,8 @@ Each item: Problem → Files → Why it matters → Risk → Fix → Effort → 
 **Risk:** LOW  
 **Recommended fix:** Wire pending dispatches or remove fetch.  
 **Effort:** S  
-**Priority:** P2
+**Priority:** P2  
+**Resolution:** Dispatch workflow removed entirely (code, API route, table, bucket). The Payments page now shows Booking Financials and Payment Slabs only.
 
 ---
 

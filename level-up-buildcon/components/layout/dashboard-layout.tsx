@@ -15,17 +15,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { 
-  Building2, 
-  LayoutDashboard, 
-  FileText, 
-  Search, 
-  Download, 
-  Settings, 
+import {
+  LayoutDashboard,
+  FileText,
+  Search,
+  Download,
+  Settings,
   LogOut,
   UserCog,
   PlusCircle,
-  Trash2
+  Trash2,
+  Wallet,
 } from 'lucide-react'
 import { Profile } from '@/lib/types/database'
 import { toast } from 'sonner'
@@ -40,14 +40,13 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
 
-  // Initialize NProgress
   React.useEffect(() => {
-    NProgress.configure({ 
+    NProgress.configure({
       showSpinner: false,
       trickleSpeed: 100,
       minimum: 0.08,
       easing: 'ease',
-      speed: 200
+      speed: 200,
     })
   }, [])
 
@@ -71,107 +70,81 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
   }
 
   const allNavItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['EXECUTIVE', 'ACCOUNTS', 'ADMIN'] },
-    { href: '/new-booking', label: 'New Booking', icon: PlusCircle, roles: ['ADMIN'] },
-    { href: '/bookings', label: 'All Bookings', icon: FileText, roles: ['EXECUTIVE', 'ACCOUNTS', 'ADMIN'] },
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['EXECUTIVE', 'ADMIN'] },
+    { href: '/new-booking', label: 'New Booking', icon: PlusCircle, roles: ['EXECUTIVE', 'ADMIN'] },
+    { href: '/bookings', label: 'All Bookings', icon: FileText, roles: ['EXECUTIVE', 'ADMIN'] },
     { href: '/lookup', label: 'Quick Lookup', icon: Search, roles: ['EXECUTIVE', 'ADMIN'] },
     { href: '/downloads', label: 'Downloads', icon: Download, roles: ['EXECUTIVE', 'ADMIN'] },
-    { href: '/accounts', label: 'Accounts', icon: FileText, roles: ['ACCOUNTS', 'ADMIN'] },
+    { href: '/accounts', label: 'Payments', icon: Wallet, roles: ['EXECUTIVE', 'ADMIN'] },
     { href: '/bookings/deleted', label: 'Deleted Bookings', icon: Trash2, roles: ['ADMIN'] },
     { href: '/admin', label: 'Admin', icon: UserCog, roles: ['ADMIN'] },
   ]
 
-  const navItems = allNavItems.filter(item => item.roles.includes(profile.role))
+  const navItems = allNavItems.filter((item) => item.roles.includes(profile.role))
 
-  const getInitials = (name: string) => {
-    return name
+  const getInitials = (name: string) =>
+    name
       .split(' ')
-      .map(n => n[0])
+      .map((n) => n[0])
       .join('')
       .toUpperCase()
       .slice(0, 2)
-  }
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      {/* Header */}
       <header className="bg-white/90 backdrop-blur border-b border-zinc-200 sticky top-0 z-50">
         <div className="w-full px-3 md:px-6 lg:px-8 h-16 flex items-center justify-between">
           <Link href="/dashboard" className="flex items-center gap-3 md:gap-4 hover:opacity-80 transition-opacity">
             <div className="relative w-12 h-12 md:w-16 md:h-16 flex-shrink-0 overflow-hidden rounded-xl">
-              <Image
-                src="/anandam-logo.png"
-                alt="Anandam - Level Up Buildcon"
-                fill
-                className="object-cover"
-                priority
-              />
+              <Image src="/anandam-logo.png" alt="Anandam - Level Up Buildcon" fill className="object-cover" priority />
             </div>
             <div className="hidden sm:block">
-              <h1 className="text-base md:text-lg font-semibold text-zinc-900 whitespace-nowrap">
-                Level Up Buildcon
-              </h1>
+              <h1 className="text-base md:text-lg font-semibold text-zinc-900 whitespace-nowrap">Level Up Buildcon</h1>
             </div>
           </Link>
 
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-10 gap-3 px-3">
-                  <Avatar className="w-8 h-8">
-                    <AvatarFallback className="bg-zinc-900 text-white text-sm">
-                      {getInitials(profile.full_name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="hidden md:block text-left">
-                    <div className="text-sm font-medium">{profile.full_name}</div>
-                    <div className="text-xs text-zinc-500">{profile.role}</div>
-                  </div>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>
-                  <div className="flex flex-col">
-                    <span className="font-medium">{profile.full_name}</span>
-                    <span className="text-xs text-zinc-500 font-normal">{profile.email}</span>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <Settings className="w-4 h-4 mr-2" />
-                  Settings
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-red-600">
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sign Out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-10 gap-3 px-3">
+                <Avatar className="w-8 h-8">
+                  <AvatarFallback className="bg-zinc-900 text-white text-sm">{getInitials(profile.full_name)}</AvatarFallback>
+                </Avatar>
+                <div className="hidden md:block text-left">
+                  <div className="text-sm font-medium">{profile.full_name}</div>
+                  <div className="text-xs text-zinc-500">{profile.role}</div>
+                </div>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>
+                <div className="flex flex-col">
+                  <span className="font-medium">{profile.full_name}</span>
+                  <span className="text-xs text-zinc-500 font-normal">{profile.email}</span>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem>
+                <Settings className="w-4 h-4 mr-2" />
+                Settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} className="text-red-600">
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
-      {/* Navigation */}
       <nav className="bg-white border-b border-zinc-200">
         <div className="w-full px-4 md:px-6 lg:px-8">
           <div className="flex items-center justify-start gap-0.5 overflow-x-auto scrollbar-hide">
             {navItems.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-              
               return (
-                <Link 
-                  key={item.href} 
-                  href={item.href}
-                  prefetch={true}
-                  className="nav-link-transition flex-shrink-0"
-                  onClick={(e) => {
-                    if (!isActive) {
-                      NProgress.start()
-                    }
-                  }}
-                >
+                <Link key={item.href} href={item.href} prefetch className="nav-link-transition flex-shrink-0">
                   <Button
                     variant="ghost"
                     className={`h-11 md:h-12 px-3 md:px-5 rounded-none border-b-2 transition-all duration-150 font-medium text-sm whitespace-nowrap ${
@@ -190,11 +163,7 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
         </div>
       </nav>
 
-      {/* Main Content */}
-      <main className="w-full px-4 md:px-6 lg:px-8 max-w-[1600px] mx-auto py-6 md:py-8">
-        {children}
-      </main>
+      <main className="w-full px-4 md:px-6 lg:px-8 max-w-[1600px] mx-auto py-6 md:py-8">{children}</main>
     </div>
   )
 }
-

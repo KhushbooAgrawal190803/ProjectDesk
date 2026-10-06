@@ -1,25 +1,25 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { Profile } from '@/lib/types/database'
-// import { isLockdownActive } from '@/lib/auth/lockdown'
-// import { isOwner } from '@/lib/auth/lockdown-config'
+import type { Profile } from '@/lib/types/database'
+import { ForbiddenError, UnauthorizedError } from './errors'
+import { assertAdmin, assertStaff, type StaffRole } from './permissions'
 
 export async function getCurrentUser() {
   const supabase = await createClient()
-  const { data: { user }, error } = await supabase.auth.getUser()
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser()
   if (error || !user) return null
   return user
 }
 
+/** Profile via authenticated client — RLS allows users to read their own row. */
 export async function getCurrentProfile(): Promise<Profile | null> {
-  // 1. Verify auth session
   const user = await getCurrentUser()
   if (!user) return null
 
-  // Service role bypasses RLS so profile lookup never fails due to policy
-  // recursion or missing grants. Authorization still happens in requireRole()
-  // on each server action — this fetch only resolves identity + role.
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
   const { data: profile, error } = await supabase
     .from('profiles')
     .select('*')
@@ -30,29 +30,61 @@ export async function getCurrentProfile(): Promise<Profile | null> {
   return profile as Profile
 }
 
-export async function requireAuth() {
-  const user = await getCurrentUser()
-  if (!user) throw new Error('Unauthorized')
-  return user
-}
-
-export async function requireProfile() {
+async function requireActiveProfile(): Promise<Profile> {
   const profile = await getCurrentProfile()
   if (!profile || profile.status !== 'ACTIVE') {
-    redirect('/login')
+    throw new UnauthorizedError()
   }
-  // Lockdown feature temporarily disabled
-  // if (!isOwner(profile.email)) {
-  //   const locked = await isLockdownActive()
-  //   if (locked) redirect('/locked')
-  // }
   return profile
 }
 
-export async function requireRole(roles: string[]) {
+/** Pages: redirect unauthenticated/inactive users to login. */
+export async function requireProfile(): Promise<Profile> {
+  try {
+    return await requireActiveProfile()
+  } catch {
+    redirect('/login')
+  }
+}
+
+/** Pages: staff only; others sent to login. */
+export async function requireStaffPage(): Promise<Profile> {
   const profile = await requireProfile()
-  if (!roles.includes(profile.role)) {
+  if (profile.role !== 'EXECUTIVE' && profile.role !== 'ADMIN') {
     redirect('/login')
   }
   return profile
 }
+
+/** Pages: admin only; others sent to dashboard. */
+export async function requireAdminPage(): Promise<Profile> {
+  const profile = await requireProfile()
+  if (profile.role !== 'ADMIN') {
+    redirect('/dashboard')
+  }
+  return profile
+}
+
+/** Server actions / API: throws UnauthorizedError or ForbiddenError (never redirects). */
+export async function requireStaff(): Promise<Profile> {
+  const profile = await requireActiveProfile()
+  assertStaff(profile)
+  return profile
+}
+
+export async function requireAdmin(): Promise<Profile> {
+  const profile = await requireActiveProfile()
+  assertAdmin(profile)
+  return profile
+}
+
+/** @deprecated Use requireStaff() or requireAdmin() in actions; requireAdminPage() in pages. */
+export async function requireRole(roles: StaffRole[]): Promise<Profile> {
+  const profile = await requireActiveProfile()
+  if (!roles.includes(profile.role as StaffRole)) {
+    throw new ForbiddenError()
+  }
+  return profile
+}
+
+export { ForbiddenError, UnauthorizedError }

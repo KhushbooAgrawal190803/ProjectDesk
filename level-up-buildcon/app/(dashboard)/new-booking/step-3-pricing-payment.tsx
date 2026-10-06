@@ -2,7 +2,7 @@
 
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { step3Schema, Step3Data } from '@/lib/validations/booking'
+import { step3Schema, Step3Data, Step3FormValues } from '@/lib/validations/booking'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -41,8 +41,8 @@ export function Step3PricingPayment({
     watch,
     setValue,
     formState: { errors },
-  } = useForm<Step3Data>({
-    resolver: zodResolver(step3Schema) as any,
+  } = useForm<Step3FormValues, unknown, Step3Data>({
+    resolver: zodResolver(step3Schema),
     defaultValues: data,
   })
 

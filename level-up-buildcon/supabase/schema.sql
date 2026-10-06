@@ -1,15 +1,15 @@
--- =============================================
--- Level Up Buildcon - Database Schema
--- =============================================
+-- =============================================================================
+-- ProjectDesk — Canonical fresh-install schema (EXECUTIVE + ADMIN roles only)
+-- Run this entire file in Supabase SQL Editor on a new project.
+-- =============================================================================
 
--- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- =============================================
+-- -----------------------------------------------------------------------------
 -- ENUMS
--- =============================================
+-- -----------------------------------------------------------------------------
 
-CREATE TYPE user_role AS ENUM ('STAFF', 'EXECUTIVE', 'ADMIN');
+CREATE TYPE user_role AS ENUM ('EXECUTIVE', 'ADMIN');
 CREATE TYPE user_status AS ENUM ('PENDING', 'ACTIVE', 'DISABLED');
 CREATE TYPE booking_status AS ENUM ('DRAFT', 'PENDING', 'SUBMITTED', 'EDITED');
 CREATE TYPE unit_category AS ENUM ('Residential', 'Commercial');
@@ -17,29 +17,28 @@ CREATE TYPE unit_type AS ENUM ('Flat', 'Villa', 'Plot', 'Shop', 'Office', 'Other
 CREATE TYPE payment_mode AS ENUM ('Cash', 'Cheque', 'NEFT_RTGS', 'UPI');
 CREATE TYPE payment_plan_type AS ENUM ('ConstructionLinked', 'DownPayment', 'PossessionLinked', 'Custom');
 
--- =============================================
--- PROFILES TABLE
--- =============================================
+-- -----------------------------------------------------------------------------
+-- PROFILES
+-- -----------------------------------------------------------------------------
 
 CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
-  role user_role NOT NULL DEFAULT 'STAFF',
+  role user_role NOT NULL DEFAULT 'EXECUTIVE',
   status user_status NOT NULL DEFAULT 'PENDING',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_login TIMESTAMPTZ
 );
 
--- Create index for faster lookups
 CREATE INDEX idx_profiles_email ON profiles(email);
 CREATE INDEX idx_profiles_role ON profiles(role);
 CREATE INDEX idx_profiles_status ON profiles(status);
 
--- =============================================
--- SYSTEM SETTINGS TABLE
--- =============================================
+-- -----------------------------------------------------------------------------
+-- SETTINGS (singleton)
+-- -----------------------------------------------------------------------------
 
 CREATE TABLE settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -50,87 +49,69 @@ CREATE TABLE settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Insert default settings
+-- Exactly one settings row; serial generation reads it with LIMIT 1.
+CREATE UNIQUE INDEX idx_settings_singleton ON settings ((true));
+
 INSERT INTO settings (allow_self_signup, serial_prefix, default_project_location)
 VALUES (false, 'LUBC ', 'Ranchi, Jharkhand');
 
--- =============================================
--- BOOKINGS TABLE
--- =============================================
+-- -----------------------------------------------------------------------------
+-- BOOKINGS
+-- -----------------------------------------------------------------------------
 
 CREATE TABLE bookings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  
-  -- Serial number (generated on submit)
   serial_no INTEGER UNIQUE,
   serial_display TEXT,
-  
-  -- Project & Unit Information
-  project_name TEXT NOT NULL,
-  project_location TEXT NOT NULL DEFAULT 'Ranchi, Jharkhand',
+  project_name TEXT,
+  project_location TEXT DEFAULT 'Ranchi, Jharkhand',
+  project_address TEXT,
   rera_regn_no TEXT,
-  unit_category unit_category NOT NULL,
-  unit_type unit_type NOT NULL,
+  building_permit_no TEXT,
+  unit_category unit_category,
+  unit_type unit_type DEFAULT 'Flat',
   unit_type_other_text TEXT,
-  unit_no TEXT NOT NULL,
+  unit_no TEXT,
   floor_no TEXT,
   builtup_area NUMERIC(10, 2),
   super_builtup_area NUMERIC(10, 2),
   carpet_area NUMERIC(10, 2),
-  
-  -- Applicant Information
-  applicant_name TEXT NOT NULL,
-  applicant_father_or_spouse TEXT NOT NULL,
-  applicant_mobile TEXT NOT NULL,
+  applicant_name TEXT,
+  applicant_father_or_spouse TEXT,
+  applicant_mobile TEXT,
   applicant_email TEXT,
   applicant_pan TEXT,
   applicant_aadhaar TEXT,
   applicant_address TEXT,
-  
-  -- Co-applicant (optional)
   coapplicant_name TEXT,
   coapplicant_relationship TEXT,
   coapplicant_mobile TEXT,
   coapplicant_pan TEXT,
   coapplicant_aadhaar TEXT,
-  
-  -- Pricing & Payment
-  basic_sale_price NUMERIC(12, 2) NOT NULL,
+  rate_per_sqft NUMERIC(12, 2),
+  basic_sale_price NUMERIC(12, 2),
   other_charges NUMERIC(12, 2) DEFAULT 0,
-  total_cost NUMERIC(12, 2) NOT NULL,
+  total_cost NUMERIC(12, 2),
   total_cost_override_reason TEXT,
-  booking_amount_paid NUMERIC(12, 2) NOT NULL,
-  payment_mode payment_mode NOT NULL,
+  gst_amount NUMERIC(12, 2),
+  booking_amount_paid NUMERIC(12, 2),
+  payment_mode payment_mode,
   payment_mode_detail TEXT,
   txn_or_cheque_no TEXT,
   txn_date DATE,
-  
-  -- Payment Plan
-  payment_plan_type payment_plan_type NOT NULL,
+  payment_plan_type payment_plan_type,
   payment_plan_custom_text TEXT,
-  
-  -- System fields
+  additional_parking INTEGER NOT NULL DEFAULT 0,
+  premium_parking INTEGER NOT NULL DEFAULT 0,
   status booking_status NOT NULL DEFAULT 'DRAFT',
   created_by UUID NOT NULL REFERENCES profiles(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   submitted_at TIMESTAMPTZ,
-  
-  -- Constraints
-  CONSTRAINT check_unit_type_other CHECK (
-    (unit_type != 'Other' AND unit_type_other_text IS NULL) OR
-    (unit_type = 'Other' AND unit_type_other_text IS NOT NULL)
-  ),
-  CONSTRAINT check_payment_plan_custom CHECK (
-    (payment_plan_type != 'Custom' AND payment_plan_custom_text IS NULL) OR
-    (payment_plan_type = 'Custom' AND payment_plan_custom_text IS NOT NULL)
-  )
+  deleted_at TIMESTAMPTZ,
+  deleted_by UUID REFERENCES profiles(id)
 );
 
--- Create sequence for serial numbers
-CREATE SEQUENCE booking_serial_seq START 1;
-
--- Create indexes for better performance
 CREATE INDEX idx_bookings_serial ON bookings(serial_no);
 CREATE INDEX idx_bookings_applicant_name ON bookings(applicant_name);
 CREATE INDEX idx_bookings_applicant_mobile ON bookings(applicant_mobile);
@@ -138,25 +119,40 @@ CREATE INDEX idx_bookings_project_name ON bookings(project_name);
 CREATE INDEX idx_bookings_status ON bookings(status);
 CREATE INDEX idx_bookings_created_by ON bookings(created_by);
 CREATE INDEX idx_bookings_created_at ON bookings(created_at DESC);
+CREATE INDEX idx_bookings_submitted_at ON bookings(submitted_at DESC);
+CREATE INDEX idx_bookings_deleted_at ON bookings(deleted_at);
 
--- =============================================
--- BOOKING FILES TABLE
--- =============================================
+-- Prevent double-booking: one active hold per project+unit (DRAFT excluded).
+CREATE UNIQUE INDEX idx_bookings_active_unit_unique
+  ON bookings (project_name, unit_no)
+  WHERE status IN ('PENDING', 'SUBMITTED', 'EDITED')
+    AND deleted_at IS NULL
+    AND project_name IS NOT NULL
+    AND unit_no IS NOT NULL;
 
-CREATE TABLE booking_files (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  booking_id UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
-  file_type TEXT NOT NULL, -- 'company' or 'customer'
+-- -----------------------------------------------------------------------------
+-- KYC DOCUMENTS
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE booking_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id UUID REFERENCES bookings(id) ON DELETE CASCADE,
+  document_type TEXT NOT NULL CHECK (
+    document_type IN ('applicant_pan', 'applicant_aadhaar', 'coapplicant_pan', 'coapplicant_aadhaar')
+  ),
+  file_name TEXT NOT NULL,
   file_path TEXT NOT NULL,
   file_size INTEGER,
+  mime_type TEXT,
+  uploaded_by UUID REFERENCES profiles(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_booking_files_booking_id ON booking_files(booking_id);
+CREATE INDEX idx_booking_documents_booking_id ON booking_documents(booking_id);
 
--- =============================================
--- PAYMENT SCHEDULE SLABS (Construction-linked)
--- =============================================
+-- -----------------------------------------------------------------------------
+-- PAYMENT SLABS (reference)
+-- -----------------------------------------------------------------------------
 
 CREATE TABLE payment_slabs (
   id SMALLINT PRIMARY KEY,
@@ -181,10 +177,6 @@ INSERT INTO payment_slabs (id, sr_no, label, percentage) VALUES
 (13, 13, '5% before casting of 10th floor slab', 5),
 (14, 14, '5% at the time of Handover/ Registry of flat', 5);
 
--- =============================================
--- BOOKING PAYMENT SLABS (amount received per slab per booking)
--- =============================================
-
 CREATE TABLE booking_payment_slabs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   booking_id UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
@@ -196,54 +188,46 @@ CREATE TABLE booking_payment_slabs (
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(booking_id, slab_id)
+  UNIQUE (booking_id, slab_id)
 );
 
 CREATE INDEX idx_booking_payment_slabs_booking ON booking_payment_slabs(booking_id);
 CREATE INDEX idx_booking_payment_slabs_slab ON booking_payment_slabs(slab_id);
 
-CREATE TRIGGER update_booking_payment_slabs_updated_at BEFORE UPDATE ON booking_payment_slabs
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- -----------------------------------------------------------------------------
+-- AUDIT LOGS
+-- -----------------------------------------------------------------------------
 
--- =============================================
--- BOOKING AUDIT LOG TABLE
--- =============================================
-
+-- RESTRICT (not CASCADE): hard-deleting a booking must never silently erase
+-- its audit history. Bookings with history are soft-deleted instead.
 CREATE TABLE booking_audit_log (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  booking_id UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+  booking_id UUID NOT NULL REFERENCES bookings(id) ON DELETE RESTRICT,
   changed_by UUID NOT NULL REFERENCES profiles(id),
   changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  action TEXT NOT NULL, -- 'CREATED', 'EDITED', 'STATUS_CHANGED'
+  action TEXT NOT NULL,
   diff_json JSONB,
   reason TEXT
 );
 
 CREATE INDEX idx_audit_log_booking_id ON booking_audit_log(booking_id);
-CREATE INDEX idx_audit_log_changed_by ON booking_audit_log(changed_by);
 CREATE INDEX idx_audit_log_changed_at ON booking_audit_log(changed_at DESC);
-
--- =============================================
--- ADMIN AUDIT LOG TABLE
--- =============================================
 
 CREATE TABLE admin_audit_log (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  admin_id UUID NOT NULL REFERENCES profiles(id),
-  action TEXT NOT NULL, -- 'USER_APPROVED', 'ROLE_CHANGED', 'USER_DISABLED', etc.
+  admin_id UUID REFERENCES profiles(id),
+  action TEXT NOT NULL,
   target_user_id UUID REFERENCES profiles(id),
   details JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_admin_audit_log_admin_id ON admin_audit_log(admin_id);
 CREATE INDEX idx_admin_audit_log_created_at ON admin_audit_log(created_at DESC);
 
--- =============================================
--- FUNCTIONS
--- =============================================
+-- -----------------------------------------------------------------------------
+-- FUNCTIONS & TRIGGERS
+-- -----------------------------------------------------------------------------
 
--- Function to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -252,313 +236,307 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Apply trigger to tables
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
 CREATE TRIGGER update_settings_updated_at BEFORE UPDATE ON settings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
 CREATE TRIGGER update_bookings_updated_at BEFORE UPDATE ON bookings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_booking_payment_slabs_updated_at BEFORE UPDATE ON booking_payment_slabs
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Function to generate serial number and display format
+-- Assigns LUBC 01, LUBC 02, ... when a booking first becomes SUBMITTED.
+--
+-- Concurrency: MAX(serial_no) + 1 alone lets two concurrent approvals read the
+-- same MAX and collide. The transaction-scoped advisory lock serializes only
+-- serial assignment; it is released at COMMIT/ROLLBACK. Under READ COMMITTED
+-- (Supabase default) the MAX query runs after the lock is acquired and sees
+-- the previous holder's committed row. UNIQUE (serial_no) remains the backstop.
+--
+-- A SEQUENCE was not used because a rolled-back submit (e.g. the active-unit
+-- unique index rejecting a double booking) would permanently burn a number and
+-- leave gaps in customer-facing serials.
+--
+-- MAX scans every row that holds a serial (not just SUBMITTED/EDITED): a
+-- booking reverted to DRAFT keeps its serial, and ignoring it would reissue a
+-- number that UNIQUE (serial_no) then rejects. Soft delete clears serial_no.
+--
+-- SECURITY DEFINER so the MAX sees all rows regardless of the caller's RLS.
 CREATE OR REPLACE FUNCTION generate_serial_number()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   prefix TEXT;
   next_serial INTEGER;
 BEGIN
-  -- Generate serial number if:
-  -- 1. Inserting with status='SUBMITTED' and serial_no is null, OR
-  -- 2. Updating from DRAFT to SUBMITTED and serial_no is null
-  -- 3. Updating from PENDING to SUBMITTED (admin approval) and serial_no is null
-  IF NEW.serial_no IS NULL AND NEW.status = 'SUBMITTED' THEN
-    IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND (OLD.status = 'DRAFT' OR OLD.status = 'PENDING')) THEN
-      -- Get the prefix from settings
-      SELECT serial_prefix INTO prefix FROM settings LIMIT 1;
-      
-      -- Generate next serial number based on existing active serials
-      SELECT COALESCE(MAX(serial_no), 0) + 1
-      INTO next_serial
-      FROM bookings
-      WHERE deleted_at IS NULL
-        AND status IN ('SUBMITTED', 'EDITED')
-        AND serial_no IS NOT NULL;
+  IF NEW.serial_no IS NULL AND NEW.status = 'SUBMITTED'
+     AND (TG_OP = 'INSERT' OR OLD.status IN ('DRAFT', 'PENDING')) THEN
+    PERFORM pg_advisory_xact_lock(hashtext('bookings.serial_no'));
 
-      NEW.serial_no := next_serial;
-      NEW.serial_display := prefix || LPAD(NEW.serial_no::TEXT, 2, '0');
-      NEW.submitted_at := NOW();
-    END IF;
+    SELECT serial_prefix INTO prefix FROM settings LIMIT 1;
+    SELECT COALESCE(MAX(serial_no), 0) + 1 INTO next_serial FROM bookings;
+
+    NEW.serial_no := next_serial;
+    -- Pad to at least 2 digits; plain LPAD(x, 2) would truncate 100 to '10'.
+    NEW.serial_display := COALESCE(prefix, 'LUBC ')
+      || LPAD(next_serial::TEXT, GREATEST(2, LENGTH(next_serial::TEXT)), '0');
+    NEW.submitted_at := COALESCE(NEW.submitted_at, NOW());
   END IF;
-  
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 CREATE TRIGGER generate_booking_serial_insert BEFORE INSERT ON bookings
   FOR EACH ROW EXECUTE FUNCTION generate_serial_number();
-
 CREATE TRIGGER generate_booking_serial_update BEFORE UPDATE ON bookings
   FOR EACH ROW EXECUTE FUNCTION generate_serial_number();
 
--- =============================================
--- ROW LEVEL SECURITY (RLS) POLICIES
--- =============================================
+-- -----------------------------------------------------------------------------
+-- ROW LEVEL SECURITY
+-- -----------------------------------------------------------------------------
 
--- Enable RLS on all tables
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE booking_files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE booking_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE booking_audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_slabs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE booking_payment_slabs ENABLE ROW LEVEL SECURITY;
 
--- =============================================
--- PAYMENT SLABS POLICIES (read-only for all active users)
--- =============================================
-CREATE POLICY "Active users can view payment slabs"
-  ON payment_slabs FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND status = 'ACTIVE'
-    )
+CREATE OR REPLACE FUNCTION is_active_staff()
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles
+    WHERE id = auth.uid()
+      AND status = 'ACTIVE'
+      AND role IN ('EXECUTIVE', 'ADMIN')
   );
+$$;
 
--- =============================================
--- BOOKING PAYMENT SLABS POLICIES
--- =============================================
-CREATE POLICY "Active users can view booking payment slabs"
-  ON booking_payment_slabs FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND status = 'ACTIVE'
-    )
+CREATE OR REPLACE FUNCTION is_active_admin()
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles
+    WHERE id = auth.uid()
+      AND status = 'ACTIVE'
+      AND role = 'ADMIN'
   );
+$$;
 
-CREATE POLICY "Accounts and admins can insert booking payment slabs"
-  ON booking_payment_slabs FOR INSERT
+-- -----------------------------------------------------------------------------
+-- ROLE GUARD TRIGGERS
+--
+-- RLS policies can only see the new row in WITH CHECK, not the old one, so
+-- rules about *transitions* (who may change status, ownership, serials or
+-- deletion state) are enforced here. These matter because the browser holds
+-- the anon key + user JWT and can call PostgREST directly, bypassing the
+-- server actions. Admins and server-side service-role calls (auth.uid() IS
+-- NULL) are not restricted by these triggers.
+-- -----------------------------------------------------------------------------
+
+-- Executives may: create DRAFT/PENDING, move own DRAFT <-> PENDING, and edit a
+-- SUBMITTED/EDITED booking (which leaves it EDITED). Approval (PENDING ->
+-- SUBMITTED), rejection/revert, deletion/restore and serial changes are admin-only.
+CREATE OR REPLACE FUNCTION enforce_booking_write_rules()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF auth.uid() IS NULL OR is_active_admin() THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status NOT IN ('DRAFT', 'PENDING') THEN
+      RAISE EXCEPTION 'Only an admin can create a submitted booking'
+        USING ERRCODE = '42501';
+    END IF;
+    IF NEW.serial_no IS NOT NULL OR NEW.serial_display IS NOT NULL
+       OR NEW.deleted_at IS NOT NULL OR NEW.deleted_by IS NOT NULL THEN
+      RAISE EXCEPTION 'Serial numbers and deletion fields are set by the system'
+        USING ERRCODE = '42501';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NEW.created_by IS DISTINCT FROM OLD.created_by
+     OR NEW.serial_no IS DISTINCT FROM OLD.serial_no
+     OR NEW.serial_display IS DISTINCT FROM OLD.serial_display
+     OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at
+     OR NEW.deleted_by IS DISTINCT FROM OLD.deleted_by THEN
+    RAISE EXCEPTION 'Only an admin can change ownership, serial numbers or deletion state'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF OLD.status IN ('DRAFT', 'PENDING') AND NEW.status NOT IN ('DRAFT', 'PENDING') THEN
+    RAISE EXCEPTION 'Only an admin can approve a pending booking'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF OLD.status IN ('SUBMITTED', 'EDITED') AND NEW.status <> 'EDITED' THEN
+    RAISE EXCEPTION 'Only an admin can change the status of a submitted booking'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER enforce_booking_write_rules BEFORE INSERT OR UPDATE ON bookings
+  FOR EACH ROW EXECUTE FUNCTION enforce_booking_write_rules();
+
+-- profiles_update_own exists so the login page can stamp last_login. Without
+-- this guard, any user could also promote themselves to ADMIN or re-activate
+-- a DISABLED account.
+CREATE OR REPLACE FUNCTION protect_profile_privileges()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF auth.uid() IS NULL OR is_active_admin() THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.role IS DISTINCT FROM OLD.role
+     OR NEW.status IS DISTINCT FROM OLD.status
+     OR NEW.email IS DISTINCT FROM OLD.email THEN
+    RAISE EXCEPTION 'Only an admin can change role, status or email'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER protect_profile_privileges BEFORE UPDATE ON profiles
+  FOR EACH ROW EXECUTE FUNCTION protect_profile_privileges();
+
+-- -----------------------------------------------------------------------------
+-- POLICIES
+--
+-- All policies are PERMISSIVE, so policies for the same command are OR-ed.
+-- Never add a broad "staff can do X" policy next to a narrow one for the same
+-- command: the broad one silently wins.
+-- -----------------------------------------------------------------------------
+
+-- Profiles
+-- Staff can read colleagues' profiles: booking pages join creator names.
+-- No INSERT policy for regular users: profiles are created by the admin
+-- createUser action (service role). A self-insert policy would let anyone who
+-- can sign up to Supabase Auth insert themselves as an ACTIVE ADMIN.
+CREATE POLICY profiles_select_own ON profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY profiles_staff_select ON profiles FOR SELECT USING (is_active_staff());
+CREATE POLICY profiles_update_own ON profiles FOR UPDATE
+  USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
+CREATE POLICY profiles_admin_all ON profiles FOR ALL
+  USING (is_active_admin()) WITH CHECK (is_active_admin());
+
+-- Settings (not for PENDING/DISABLED users)
+CREATE POLICY settings_staff_select ON settings FOR SELECT USING (is_active_staff());
+CREATE POLICY settings_admin_update ON settings FOR UPDATE
+  USING (is_active_admin()) WITH CHECK (is_active_admin());
+
+-- Bookings
+-- Drafts are private to their creator; everything else is visible to staff.
+CREATE POLICY bookings_staff_select ON bookings FOR SELECT
+  USING (
+    is_active_staff()
+    AND deleted_at IS NULL
+    AND (status <> 'DRAFT' OR created_by = auth.uid())
+  );
+CREATE POLICY bookings_admin_select ON bookings FOR SELECT USING (is_active_admin());
+
+-- Allowed status values for non-admins are enforced by enforce_booking_write_rules.
+CREATE POLICY bookings_staff_insert ON bookings FOR INSERT
+  WITH CHECK (is_active_staff() AND created_by = auth.uid());
+
+-- Executive-editable rows: own DRAFT/PENDING, or any SUBMITTED/EDITED.
+-- Another user's PENDING booking is awaiting admin approval and is not editable.
+CREATE POLICY bookings_staff_update ON bookings FOR UPDATE
+  USING (
+    is_active_staff()
+    AND deleted_at IS NULL
+    AND (
+      (created_by = auth.uid() AND status IN ('DRAFT', 'PENDING'))
+      OR status IN ('SUBMITTED', 'EDITED')
+    )
+  )
+  WITH CHECK (is_active_staff() AND deleted_at IS NULL);
+CREATE POLICY bookings_admin_update ON bookings FOR UPDATE
+  USING (is_active_admin()) WITH CHECK (is_active_admin());
+
+-- Hard delete only for discarding your own draft. Real bookings are
+-- soft-deleted by admins (UPDATE deleted_at). Drafts with audit history
+-- (e.g. rejected bookings) are protected by the RESTRICT foreign key.
+CREATE POLICY bookings_delete_own_draft ON bookings FOR DELETE
+  USING (is_active_staff() AND created_by = auth.uid() AND status = 'DRAFT');
+
+-- Booking audit: append-only (no UPDATE/DELETE policies).
+CREATE POLICY booking_audit_staff_select ON booking_audit_log FOR SELECT USING (is_active_staff());
+CREATE POLICY booking_audit_staff_insert ON booking_audit_log FOR INSERT
+  WITH CHECK (changed_by = auth.uid() AND is_active_staff());
+
+-- Admin audit: append-only.
+CREATE POLICY admin_audit_admin_select ON admin_audit_log FOR SELECT USING (is_active_admin());
+CREATE POLICY admin_audit_admin_insert ON admin_audit_log FOR INSERT
+  WITH CHECK (is_active_admin() AND admin_id = auth.uid());
+
+-- Payment slabs: staff record payments; no one deletes payment rows via the API.
+CREATE POLICY payment_slabs_staff_select ON payment_slabs FOR SELECT USING (is_active_staff());
+CREATE POLICY booking_payment_slabs_staff_select ON booking_payment_slabs FOR SELECT
+  USING (is_active_staff());
+CREATE POLICY booking_payment_slabs_staff_insert ON booking_payment_slabs FOR INSERT
+  WITH CHECK (is_active_staff());
+CREATE POLICY booking_payment_slabs_staff_update ON booking_payment_slabs FOR UPDATE
+  USING (is_active_staff()) WITH CHECK (is_active_staff());
+
+-- KYC documents: uploader manages their own rows (upload, link to booking, delete).
+CREATE POLICY booking_documents_staff_select ON booking_documents FOR SELECT USING (is_active_staff());
+CREATE POLICY booking_documents_insert_own ON booking_documents FOR INSERT
+  WITH CHECK (is_active_staff() AND uploaded_by = auth.uid());
+CREATE POLICY booking_documents_update_own ON booking_documents FOR UPDATE
+  USING (is_active_staff() AND uploaded_by = auth.uid())
+  WITH CHECK (is_active_staff() AND uploaded_by = auth.uid());
+CREATE POLICY booking_documents_delete_own ON booking_documents FOR DELETE
+  USING (is_active_staff() AND uploaded_by = auth.uid());
+
+-- -----------------------------------------------------------------------------
+-- STORAGE
+-- -----------------------------------------------------------------------------
+
+-- Booking PDFs are generated on demand and never stored; this bucket holds
+-- KYC uploads only.
+INSERT INTO storage.buckets (id, name, public) VALUES ('booking-documents', 'booking-documents', false)
+  ON CONFLICT (id) DO NOTHING;
+
+-- No UPDATE policies: the app never overwrites files (upsert: false).
+
+-- KYC files live under '<uploader uuid>/...'; uploaders may only write and
+-- remove inside their own folder.
+CREATE POLICY storage_booking_docs_staff_read ON storage.objects FOR SELECT
+  USING (bucket_id = 'booking-documents' AND public.is_active_staff());
+CREATE POLICY storage_booking_docs_insert_own ON storage.objects FOR INSERT
   WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('ACCOUNTS', 'ADMIN') AND status = 'ACTIVE'
-    )
+    bucket_id = 'booking-documents'
+    AND public.is_active_staff()
+    AND (storage.foldername(name))[1] = auth.uid()::text
   );
-
-CREATE POLICY "Accounts and admins can update booking payment slabs"
-  ON booking_payment_slabs FOR UPDATE
+CREATE POLICY storage_booking_docs_delete ON storage.objects FOR DELETE
   USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('ACCOUNTS', 'ADMIN') AND status = 'ACTIVE'
+    bucket_id = 'booking-documents'
+    AND (
+      public.is_active_admin()
+      OR (public.is_active_staff() AND (storage.foldername(name))[1] = auth.uid()::text)
     )
   );
-
-CREATE POLICY "Accounts and admins can delete booking payment slabs"
-  ON booking_payment_slabs FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('ACCOUNTS', 'ADMIN') AND status = 'ACTIVE'
-    )
-  );
-
--- =============================================
--- PROFILES POLICIES
--- =============================================
-
--- Users can read their own profile
-CREATE POLICY "Users can view own profile"
-  ON profiles FOR SELECT
-  USING (auth.uid() = id);
-
--- Users can update their own profile (limited fields)
-CREATE POLICY "Users can update own profile"
-  ON profiles FOR UPDATE
-  USING (auth.uid() = id)
-  WITH CHECK (auth.uid() = id);
-
--- Admins can view all profiles
-CREATE POLICY "Admins can view all profiles"
-  ON profiles FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role = 'ADMIN' AND status = 'ACTIVE'
-    )
-  );
-
--- Admins can update any profile
-CREATE POLICY "Admins can update profiles"
-  ON profiles FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role = 'ADMIN' AND status = 'ACTIVE'
-    )
-  );
-
--- Admins can insert profiles (user creation)
-CREATE POLICY "Admins can create profiles"
-  ON profiles FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role = 'ADMIN' AND status = 'ACTIVE'
-    )
-  );
-
--- =============================================
--- SETTINGS POLICIES
--- =============================================
-
--- All authenticated users can read settings
-CREATE POLICY "Authenticated users can view settings"
-  ON settings FOR SELECT
-  USING (auth.uid() IS NOT NULL);
-
--- Only admins can update settings
-CREATE POLICY "Admins can update settings"
-  ON settings FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role = 'ADMIN' AND status = 'ACTIVE'
-    )
-  );
-
--- =============================================
--- BOOKINGS POLICIES
--- =============================================
-
--- All active users can view bookings
-CREATE POLICY "Active users can view bookings"
-  ON bookings FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND status = 'ACTIVE'
-    )
-  );
-
--- All active users can create bookings
-CREATE POLICY "Active users can create bookings"
-  ON bookings FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND status = 'ACTIVE'
-    ) AND created_by = auth.uid()
-  );
-
--- STAFF can only update their own DRAFT bookings
-CREATE POLICY "Staff can update own draft bookings"
-  ON bookings FOR UPDATE
-  USING (
-    created_by = auth.uid() AND
-    status = 'DRAFT' AND
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role = 'STAFF' AND status = 'ACTIVE'
-    )
-  );
-
--- EXECUTIVE and ADMIN can update any booking
-CREATE POLICY "Executives and admins can update bookings"
-  ON bookings FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('EXECUTIVE', 'ADMIN') AND status = 'ACTIVE'
-    )
-  );
-
--- =============================================
--- BOOKING FILES POLICIES
--- =============================================
-
--- Users can view files for bookings they can view
-CREATE POLICY "Users can view booking files"
-  ON booking_files FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM bookings
-      WHERE bookings.id = booking_files.booking_id
-      AND EXISTS (
-        SELECT 1 FROM profiles
-        WHERE id = auth.uid() AND status = 'ACTIVE'
-      )
-    )
-  );
-
--- System can insert files (via service role)
-CREATE POLICY "Service role can insert files"
-  ON booking_files FOR INSERT
-  WITH CHECK (true);
-
--- =============================================
--- AUDIT LOG POLICIES
--- =============================================
-
--- Users can view audit logs for bookings they can view
-CREATE POLICY "Users can view booking audit logs"
-  ON booking_audit_log FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM bookings
-      WHERE bookings.id = booking_audit_log.booking_id
-      AND EXISTS (
-        SELECT 1 FROM profiles
-        WHERE id = auth.uid() AND status = 'ACTIVE'
-      )
-    )
-  );
-
--- System can insert audit logs
-CREATE POLICY "System can insert audit logs"
-  ON booking_audit_log FOR INSERT
-  WITH CHECK (changed_by = auth.uid());
-
--- Admins can view all admin audit logs
-CREATE POLICY "Admins can view admin audit logs"
-  ON admin_audit_log FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role = 'ADMIN' AND status = 'ACTIVE'
-    )
-  );
-
--- System can insert admin audit logs
-CREATE POLICY "System can insert admin audit logs"
-  ON admin_audit_log FOR INSERT
-  WITH CHECK (admin_id = auth.uid());
-
--- =============================================
--- STORAGE BUCKETS
--- =============================================
-
--- Create storage bucket for PDFs
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('bookings', 'bookings', false);
-
--- Storage policies for bookings bucket
-CREATE POLICY "Authenticated users can read booking files"
-  ON storage.objects FOR SELECT
-  USING (
-    bucket_id = 'bookings' AND
-    auth.uid() IS NOT NULL
-  );
-
-CREATE POLICY "Service role can upload booking files"
-  ON storage.objects FOR INSERT
-  WITH CHECK (bucket_id = 'bookings');
-
-CREATE POLICY "Service role can delete booking files"
-  ON storage.objects FOR DELETE
-  USING (bucket_id = 'bookings');
-

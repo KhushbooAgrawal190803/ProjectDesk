@@ -16,7 +16,6 @@ export function SettingsForm({ settings }: SettingsFormProps) {
   const [loading, setLoading] = useState(false)
   const [serialPrefix, setSerialPrefix] = useState(settings.serial_prefix)
   const [defaultLocation, setDefaultLocation] = useState(settings.default_project_location)
-  const [forgotPasswordEmail, setForgotPasswordEmail] = useState(settings.forgot_password_email || 'agkhushboo43@gmail.com')
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -26,7 +25,6 @@ export function SettingsForm({ settings }: SettingsFormProps) {
       await updateSettings({
         serial_prefix: serialPrefix,
         default_project_location: defaultLocation,
-        forgot_password_email: forgotPasswordEmail,
       })
       toast.success('Settings updated successfully')
     } catch (error) {
@@ -67,22 +65,6 @@ export function SettingsForm({ settings }: SettingsFormProps) {
           />
           <p className="text-sm text-zinc-500">
             Default location for new bookings
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="forgotPasswordEmail">Forgot Password Notification Email</Label>
-          <Input
-            id="forgotPasswordEmail"
-            type="email"
-            value={forgotPasswordEmail}
-            onChange={(e) => setForgotPasswordEmail(e.target.value)}
-            placeholder="admin@company.com"
-            required
-            disabled={loading}
-          />
-          <p className="text-sm text-zinc-500">
-            Password reset requests from users will be sent to this email address
           </p>
         </div>
       </div>

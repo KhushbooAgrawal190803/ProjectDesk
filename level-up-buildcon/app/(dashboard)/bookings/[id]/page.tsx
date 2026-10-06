@@ -1,6 +1,12 @@
 import { redirect } from 'next/navigation'
-import { requireProfile } from '@/lib/auth/get-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { requireStaffPage } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
+import {
+  canApproveOrRejectBooking,
+  canDeleteOrRestoreBooking,
+  canEditBooking,
+  canEditOwnDraft,
+} from '@/lib/auth/permissions'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -24,7 +30,7 @@ interface AuditWithUser extends BookingAuditLog {
 }
 
 async function getBooking(id: string) {
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('bookings')
@@ -43,7 +49,7 @@ async function getBooking(id: string) {
 }
 
 async function getAuditLog(bookingId: string) {
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
   const { data } = await supabase
     .from('booking_audit_log')
@@ -58,7 +64,7 @@ async function getAuditLog(bookingId: string) {
 }
 
 async function getBookingDocuments(bookingId: string) {
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
   const { data } = await supabase
     .from('booking_documents')
@@ -71,10 +77,7 @@ async function getBookingDocuments(bookingId: string) {
 
 export default async function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const profile = await requireProfile()
-  if (!profile) {
-    redirect('/login')
-  }
+  const profile = await requireStaffPage()
 
   const [booking, auditLog, documents] = await Promise.all([
     getBooking(id),
@@ -94,10 +97,11 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
     }).format(amount)
   }
 
-  const canEdit =
-    profile.role === 'ADMIN' ||
-    profile.role === 'EXECUTIVE' ||
-    (profile.role === 'ACCOUNTS' && booking.status === 'PENDING' && booking.created_by === profile.id)
+  const canEdit = canEditBooking(profile, booking)
+  const canEditViaWizard = canEditOwnDraft(profile, booking)
+  const showApproveReject = canApproveOrRejectBooking(profile) && booking.status === 'PENDING'
+  const showDelete = canDeleteOrRestoreBooking(profile)
+  const showRevert = canDeleteOrRestoreBooking(profile) && booking.status !== 'DRAFT'
 
   const Section = ({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) => (
     <Card className="border-zinc-200 shadow-sm">
@@ -144,28 +148,27 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           </div>
           <div className="flex gap-2">
             <DownloadPDFsButton bookingId={booking.id} serialDisplay={booking.serial_display || 'Booking'} />
-            {profile.role === 'ADMIN' && booking.status === 'PENDING' && (
-              <ApproveRejectButtons bookingId={booking.id} />
+            {showApproveReject && <ApproveRejectButtons bookingId={booking.id} />}
+            {canEditViaWizard && (
+              <Link href={`/new-booking?draftId=${booking.id}`}>
+                <Button className="gap-2">
+                  <Edit className="w-4 h-4" />
+                  Edit Draft
+                </Button>
+              </Link>
             )}
-            {canEdit && (
-              profile.role === 'ACCOUNTS' ? (
-                <Link href={`/new-booking?draftId=${booking.id}`}>
-                  <Button className="gap-2">
-                    <Edit className="w-4 h-4" />
-                    Edit
-                  </Button>
-                </Link>
-              ) : (
-                <Link href={`/bookings/${booking.id}/edit`}>
-                  <Button className="gap-2">
-                    <Edit className="w-4 h-4" />
-                    Edit
-                  </Button>
-                </Link>
-              )
+            {canEdit && !canEditViaWizard && (
+              <Link href={`/bookings/${booking.id}/edit`}>
+                <Button className="gap-2">
+                  <Edit className="w-4 h-4" />
+                  Edit
+                </Button>
+              </Link>
             )}
-            <RevertToDraftButton bookingId={booking.id} canRevert={canEdit} bookingStatus={booking.status} />
-            <DeleteBookingButton bookingId={booking.id} canDelete={canEdit} />
+            {showRevert && (
+              <RevertToDraftButton bookingId={booking.id} canRevert bookingStatus={booking.status} />
+            )}
+            {showDelete && <DeleteBookingButton bookingId={booking.id} canDelete />}
           </div>
         </div>
 

@@ -1,11 +1,13 @@
 'use server'
 
-import { requireRole } from '@/lib/auth/get-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { requireStaff } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { calculateSlabAmountDue } from '@/lib/booking/calculations'
 
 export async function getPaymentSlabs() {
-  const supabase = await createServiceClient()
+  await requireStaff()
+  const supabase = await createClient()
   const { data, error } = await supabase
     .from('payment_slabs')
     .select('*')
@@ -15,8 +17,8 @@ export async function getPaymentSlabs() {
 }
 
 export async function getBookingsForSlab(slabId: number) {
-  await requireRole(['ACCOUNTS', 'ADMIN'])
-  const supabase = await createServiceClient()
+  await requireStaff()
+  const supabase = await createClient()
 
   const { data: slab } = await supabase
     .from('payment_slabs')
@@ -30,6 +32,7 @@ export async function getBookingsForSlab(slabId: number) {
     .from('bookings')
     .select('id, serial_display, applicant_name, unit_no, project_name, total_cost')
     .in('status', ['SUBMITTED', 'EDITED'])
+    .is('deleted_at', null)
     .order('serial_no', { ascending: true })
 
   const { data: payments } = await supabase
@@ -37,13 +40,11 @@ export async function getBookingsForSlab(slabId: number) {
     .select('booking_id, amount_due, amount_received, received_at, notes')
     .eq('slab_id', slabId)
 
-  const paymentByBooking = new Map(
-    (payments || []).map((p: any) => [p.booking_id, p])
-  )
+  const paymentByBooking = new Map((payments || []).map((p) => [p.booking_id, p]))
 
-  const rows = (bookings || []).map((b: any) => {
+  const rows = (bookings || []).map((b) => {
     const totalCost = Number(b.total_cost) || 0
-    const amountDue = (totalCost * Number(slab.percentage)) / 100
+    const amountDue = calculateSlabAmountDue(totalCost, Number(slab.percentage))
     const rec = paymentByBooking.get(b.id)
     return {
       ...b,
@@ -51,7 +52,7 @@ export async function getBookingsForSlab(slabId: number) {
       amount_received: rec ? Number(rec.amount_received) : 0,
       received_at: rec?.received_at || null,
       notes: rec?.notes || null,
-      payment_row_id: rec ? (rec as any).id : null,
+      payment_row_id: rec ? (rec as { id?: string }).id : null,
     }
   })
 
@@ -68,13 +69,14 @@ export async function setSlabPayment(
   receivedAt?: string,
   notes?: string
 ) {
-  const profile = await requireRole(['ACCOUNTS', 'ADMIN'])
-  const supabase = await createServiceClient()
+  const profile = await requireStaff()
+  const supabase = await createClient()
 
   const { data: booking } = await supabase
     .from('bookings')
     .select('total_cost')
     .eq('id', bookingId)
+    .is('deleted_at', null)
     .single()
 
   const { data: slabRow } = await supabase
@@ -84,21 +86,9 @@ export async function setSlabPayment(
     .single()
 
   if (!booking || !slabRow) throw new Error('Booking or slab not found')
-  const totalCost = Number(booking.total_cost) || 0
-  // Construction-linked due amount: percentage of total_cost, recomputed on each write
-  // so edits to total_cost don't leave stale amount_due on existing slab rows.
-  const amountDue = (totalCost * Number(slabRow.percentage)) / 100
 
-  const row = {
-    booking_id: bookingId,
-    slab_id: slabId,
-    amount_due: amountDue,
-    amount_received: amountReceived,
-    received_at: receivedAt || null,
-    entered_by: profile.id,
-    notes: notes || null,
-    updated_at: new Date().toISOString(),
-  }
+  const amountDue = calculateSlabAmountDue(Number(booking.total_cost) || 0, Number(slabRow.percentage))
+  const now = new Date().toISOString()
 
   const { data: existing } = await supabase
     .from('booking_payment_slabs')
@@ -111,11 +101,12 @@ export async function setSlabPayment(
     const { error } = await supabase
       .from('booking_payment_slabs')
       .update({
+        amount_due: amountDue,
         amount_received: amountReceived,
         received_at: receivedAt || null,
         notes: notes || null,
         entered_by: profile.id,
-        updated_at: row.updated_at,
+        updated_at: now,
       })
       .eq('id', existing.id)
     if (error) throw new Error(error.message)

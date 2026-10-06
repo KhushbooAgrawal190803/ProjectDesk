@@ -111,25 +111,7 @@ Evidence:
 
 ---
 
-### Payment Reminder Batch (`sendAllPaymentReminders`)
-| Dimension | Estimate |
-|-----------|----------|
-| CPU | O(n) sequential email sends |
-| DB | Multiple queries per slab |
-| External | SMTP latency × n emails |
-
-**Bottleneck:** Sequential SMTP. **Matters at large n** — could hit rate limits.
-
----
-
-### System Console Cell Save
-| Dimension | Estimate |
-|-----------|----------|
-| CPU | O(1) |
-| DB | 1 upsert per cell |
-| Network | 1 RTT per save |
-
-**Bottleneck:** Polling `getUpdatedCells(since)` if many admins — O(cells changed).
+*(Historical: the payment-reminder email batch and System Console cell sync were analyzed here; both features have been removed.)*
 
 ---
 

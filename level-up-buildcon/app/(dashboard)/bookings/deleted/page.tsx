@@ -1,5 +1,5 @@
-import { requireRole } from '@/lib/auth/get-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { requireAdminPage } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -25,7 +25,7 @@ interface DeletedBookingWithCreator extends Booking {
 }
 
 async function getDeletedBookings() {
-  const supabase = await createServiceClient()
+  const supabase = await createClient()
 
   const { data: bookings, error } = await supabase
     .from('bookings')
@@ -67,7 +67,7 @@ async function getDeletedBookings() {
 }
 
 export default async function DeletedBookingsPage() {
-  const profile = await requireRole(['ADMIN'])
+  const profile = await requireAdminPage()
   const deletedBookings = await getDeletedBookings()
 
   const formatCurrency = (amount: number) => {

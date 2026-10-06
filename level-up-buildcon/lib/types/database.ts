@@ -1,12 +1,10 @@
-export type UserRole = 'EXECUTIVE' | 'ACCOUNTS' | 'ADMIN'
+export type UserRole = 'EXECUTIVE' | 'ADMIN'
 export type UserStatus = 'PENDING' | 'ACTIVE' | 'DISABLED'
 export type BookingStatus = 'DRAFT' | 'PENDING' | 'SUBMITTED' | 'EDITED'
 export type UnitCategory = 'Residential' | 'Commercial'
 export type UnitType = 'Flat' | 'Villa' | 'Plot' | 'Shop' | 'Office' | 'Other'
 export type PaymentMode = 'Cash' | 'Cheque' | 'NEFT_RTGS' | 'UPI'
 export type PaymentPlanType = 'ConstructionLinked' | 'DownPayment' | 'PossessionLinked' | 'Custom'
-export type DispatchStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SENT'
-export type DispatchCopyType = 'customer' | 'company'
 
 export interface Profile {
   id: string
@@ -24,7 +22,6 @@ export interface Settings {
   allow_self_signup: boolean
   serial_prefix: string
   default_project_location: string
-  forgot_password_email: string
   created_at: string
   updated_at: string
 }
@@ -90,15 +87,6 @@ export interface Booking {
   submitted_at?: string
 }
 
-export interface BookingFile {
-  id: string
-  booking_id: string
-  file_type: 'company' | 'customer'
-  file_path: string
-  file_size?: number
-  created_at: string
-}
-
 export type DocumentType = 'applicant_pan' | 'applicant_aadhaar' | 'coapplicant_pan' | 'coapplicant_aadhaar'
 
 export interface BookingDocument {
@@ -150,38 +138,6 @@ export interface BookingPaymentSlab {
   notes?: string
   created_at: string
   updated_at: string
-}
-
-export interface DispatchDocument {
-  id: string
-  booking_id: string
-  copy_type: DispatchCopyType
-  file_name: string
-  file_path: string
-  file_size?: number
-  mime_type?: string
-  recipient_email?: string
-  recipient_phone?: string
-  status: DispatchStatus
-  uploaded_by: string
-  approved_by?: string
-  approved_at?: string
-  rejection_reason?: string
-  email_sent_at?: string
-  whatsapp_sent_at?: string
-  created_at: string
-  updated_at: string
-}
-
-export interface DispatchDocumentWithDetails extends DispatchDocument {
-  uploader?: Profile
-  approver?: Profile
-  booking?: {
-    serial_display?: string
-    applicant_name?: string
-    applicant_mobile?: string
-    applicant_email?: string
-  }
 }
 
 // Joined types for display

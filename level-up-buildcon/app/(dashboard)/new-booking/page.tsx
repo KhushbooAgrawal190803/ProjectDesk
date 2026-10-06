@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
-import { requireRole } from '@/lib/auth/get-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { requireStaffPage } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { BookingWizard } from './booking-wizard'
 import { getUserDrafts } from './actions'
@@ -13,7 +13,7 @@ const TOTAL_PREMIUM_PARKING = 9
 
 async function getAvailableParking(): Promise<number> {
   try {
-    const supabase = await createServiceClient()
+    const supabase = await createClient()
     const { data } = await supabase
       .from('bookings')
       .select('additional_parking')
@@ -28,7 +28,7 @@ async function getAvailableParking(): Promise<number> {
 
 async function getAvailablePremiumParking(): Promise<number> {
   try {
-    const supabase = await createServiceClient()
+    const supabase = await createClient()
     const { data } = await supabase
       .from('bookings')
       .select('premium_parking')
@@ -47,7 +47,7 @@ export default async function NewBookingPage({
   searchParams: Promise<{ unit?: string; draftId?: string }>
 }) {
   try {
-    const profile = await requireRole(['ADMIN', 'ACCOUNTS', 'EXECUTIVE'])
+    const profile = await requireStaffPage()
     if (!profile) {
       redirect('/login')
     }

@@ -9,16 +9,6 @@ const formatCurrency = (amount: number) => {
 export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     try {
-      console.log('Generating Company PDF with booking data:', {
-        serial_display: booking.serial_display,
-        project_name: booking.project_name,
-        applicant_name: booking.applicant_name,
-        total_cost: booking.total_cost,
-        booking_amount_paid: booking.booking_amount_paid,
-        unit_type: booking.unit_type,
-        status: booking.status,
-      })
-
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -226,15 +216,6 @@ export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Pr
 export function generateCustomerPDF(booking: Booking & { creator?: Profile }): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     try {
-      console.log('Generating Customer PDF with booking data:', {
-        serial_display: booking.serial_display,
-        applicant_name: booking.applicant_name,
-        project_name: booking.project_name,
-        unit_type: booking.unit_type,
-        total_cost: booking.total_cost,
-        booking_amount_paid: booking.booking_amount_paid,
-      })
-
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',

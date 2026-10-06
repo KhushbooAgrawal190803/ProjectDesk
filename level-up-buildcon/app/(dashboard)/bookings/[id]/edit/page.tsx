@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
-import { requireRole } from '@/lib/auth/get-user'
+import { requireStaffPage } from '@/lib/auth/get-user'
+import { canEditBooking } from '@/lib/auth/permissions'
 import { createClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -34,11 +35,15 @@ async function getBooking(id: string) {
 
 export default async function BookingEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const profile = await requireRole(['ADMIN', 'EXECUTIVE'])
+  const profile = await requireStaffPage()
   const booking = await getBooking(id)
 
   if (!booking) {
     redirect('/bookings')
+  }
+
+  if (!canEditBooking(profile, booking)) {
+    redirect(`/bookings/${id}`)
   }
 
   return (

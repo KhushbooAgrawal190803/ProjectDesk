@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { step1Schema, Step1Data } from '@/lib/validations/booking'
+import { step1Schema, Step1Data, Step1FormValues } from '@/lib/validations/booking'
 import { getFlatAreas, isFlatAreaLookupProject, isCommercialFlat, isAmenityFlat, COMMERCIAL_FLAT_AREA } from '@/lib/data/flat-areas'
 import { getOwnerNameForFlat } from '@/lib/data/flat-ownership'
 import { checkUnitAvailability } from './actions'
@@ -37,7 +37,7 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
     watch,
     setValue,
     formState: { errors },
-  } = useForm<Step1Data>({
+  } = useForm<Step1FormValues, unknown, Step1Data>({
     resolver: zodResolver(step1Schema),
     defaultValues: {
       project_name: 'Anandam',
@@ -53,9 +53,9 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
   const projectName = watch('project_name')
   const unitNo = watch('unit_no')
 
-  // Keep unit_type in sync with unit_category (they mirror each other)
+  // Anandam bookings always use Flat unit_type; category is Residential vs Commercial.
   useEffect(() => {
-    if (unitCategory) setValue('unit_type', unitCategory as 'Residential' | 'Commercial')
+    if (unitCategory) setValue('unit_type', 'Flat')
   }, [unitCategory, setValue])
 
   // Auto-fill built-up and super built-up area when flat number changes

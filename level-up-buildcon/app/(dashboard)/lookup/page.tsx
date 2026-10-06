@@ -1,11 +1,11 @@
 import { redirect } from 'next/navigation'
-import { requireProfile } from '@/lib/auth/get-user'
+import { requireStaffPage } from '@/lib/auth/get-user'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { LookupClient } from './lookup-client'
 import { getTowerAllocations } from './tower-actions'
 
 export default async function LookupPage() {
-  const profile = await requireProfile()
+  const profile = await requireStaffPage()
   if (!profile) {
     redirect('/login')
   }

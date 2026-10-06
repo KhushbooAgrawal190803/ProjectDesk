@@ -1,46 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireProfile } from '@/lib/auth/get-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { requireStaff } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
 import { generateCompanyPDF, generateCustomerPDF } from '@/lib/pdf/generator'
+import { jsonAuthError } from '@/lib/api/auth-response'
 import archiver from 'archiver'
 import { Writable } from 'stream'
 
 type Kind = 'company' | 'customer' | 'both'
 
-// Create a zip buffer from files
 const createZipBuffer = async (files: { name: string; buffer: Buffer }[]): Promise<Buffer> => {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     const stream = new Writable({
-      write(chunk: any, _encoding: any, callback: any) {
+      write(chunk: Buffer, _encoding, callback) {
         chunks.push(chunk)
         callback()
       },
     })
-
     const archive = archiver('zip', { zlib: { level: 9 } })
-
     archive.on('error', reject)
     stream.on('finish', () => resolve(Buffer.concat(chunks)))
-
     archive.pipe(stream)
-
-    files.forEach(({ name, buffer }) => {
-      archive.append(buffer, { name })
-    })
-
+    files.forEach(({ name, buffer }) => archive.append(buffer, { name }))
     archive.finalize()
   })
 }
 
 export async function GET(request: NextRequest) {
   try {
-    await requireProfile()
-    const supabase = await createServiceClient()
-
+    await requireStaff()
+    const supabase = await createClient()
     const kind = (request.nextUrl.searchParams.get('kind') || 'company') as Kind
 
-    // Only non-draft, non-deleted bookings
     const { data: bookings, error } = await supabase
       .from('bookings')
       .select('*')
@@ -48,52 +39,34 @@ export async function GET(request: NextRequest) {
       .is('deleted_at', null)
       .order('submitted_at', { ascending: true })
 
-    if (error || !bookings || bookings.length === 0) {
-      return NextResponse.json(
-        { error: 'No bookings found to download' },
-        { status: 404 }
-      )
+    if (error || !bookings?.length) {
+      return NextResponse.json({ error: 'No bookings found to download' }, { status: 404 })
     }
 
     const files: { name: string; buffer: Buffer }[] = []
 
-    for (const booking of bookings as any[]) {
-      const safeSerial = (booking.serial_display || 'Booking').replace(/\//g, '_')
-
+    for (const booking of bookings) {
+      const safeSerial = (booking.serial_display || booking.id.slice(0, 8)).replace(/\//g, '_')
       if (kind === 'company' || kind === 'both') {
-        const pdf = await generateCompanyPDF(booking)
-        files.push({
-          name: `${safeSerial}_Company.pdf`,
-          buffer: pdf,
-        })
+        files.push({ name: `${safeSerial}_Company.pdf`, buffer: await generateCompanyPDF(booking) })
       }
-
       if (kind === 'customer' || kind === 'both') {
-        const pdf = await generateCustomerPDF(booking)
-        files.push({
-          name: `${safeSerial}_Customer.pdf`,
-          buffer: pdf,
-        })
+        files.push({ name: `${safeSerial}_Customer.pdf`, buffer: await generateCustomerPDF(booking) })
       }
     }
 
     const zipBuffer = await createZipBuffer(files)
 
-    const filenameBase =
-      kind === 'company' ? 'Company_PDFs' : kind === 'customer' ? 'Customer_PDFs' : 'Bookings_PDFs'
-
-    return new NextResponse(zipBuffer as any, {
+    return new NextResponse(zipBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="${filenameBase}.zip"`,
+        'Content-Disposition': `attachment; filename="ProjectDesk_Bookings_${kind}.zip"`,
       },
     })
   } catch (error) {
-    console.error('Bulk PDF generation error:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate bulk PDFs' },
-      { status: 500 }
-    )
+    const authResp = jsonAuthError(error)
+    if (authResp) return authResp
+    console.error('[bulk-download] failed')
+    return NextResponse.json({ error: 'Failed to generate bulk download' }, { status: 500 })
   }
 }
-

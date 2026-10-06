@@ -1,252 +1,169 @@
 'use server'
 
-import { requireRole } from '@/lib/auth/get-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 export async function deleteBooking(bookingId: string) {
-  try {
-    const profile = await requireRole(['ADMIN'])
-    const supabase = await createServiceClient()
+  const profile = await requireAdmin()
+  const supabase = await createClient()
 
-    // First verify the booking exists
-    const { data: booking, error: getError } = await supabase
-      .from('bookings')
-      .select('id, serial_no, serial_display')
-      .eq('id', bookingId)
-      .single()
+  const { data: booking, error: getError } = await supabase
+    .from('bookings')
+    .select('id, serial_no, serial_display')
+    .eq('id', bookingId)
+    .single()
 
-    if (getError || !booking) {
-      throw new Error('Booking not found')
-    }
-
-    // Soft delete - set deleted_at and deleted_by, and clear serial so restored bookings get a new serial
-    const { error } = await supabase
-      .from('bookings')
-      .update({
-        deleted_at: new Date().toISOString(),
-        deleted_by: profile.id,
-        serial_no: null,
-        serial_display: null,
-      })
-      .eq('id', bookingId)
-
-    if (error) {
-      console.error('Delete error:', error.message)
-      throw new Error(`Failed to delete booking: ${error.message}`)
-    }
-
-    // Log the deletion
-    await supabase
-      .from('booking_audit_log')
-      .insert({
-        booking_id: bookingId,
-        changed_by: profile.id,
-        action: 'DELETED',
-      })
-
-    revalidatePath('/bookings')
-    revalidatePath('/bookings/deleted')
-    
-    return { success: true }
-  } catch (error: any) {
-    throw error
+  if (getError || !booking) {
+    throw new Error('Booking not found')
   }
+
+  const { error } = await supabase
+    .from('bookings')
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: profile.id,
+      serial_no: null,
+      serial_display: null,
+    })
+    .eq('id', bookingId)
+
+  if (error) throw new Error(`Failed to delete booking: ${error.message}`)
+
+  await supabase.from('booking_audit_log').insert({
+    booking_id: bookingId,
+    changed_by: profile.id,
+    action: 'DELETED',
+  })
+
+  revalidatePath('/bookings')
+  revalidatePath('/bookings/deleted')
+
+  return { success: true }
 }
 
 export async function restoreBooking(bookingId: string) {
-  try {
-    const profile = await requireRole(['ADMIN'])
-    const supabase = await createServiceClient()
+  const profile = await requireAdmin()
+  const supabase = await createClient()
 
-    // Restore by clearing deleted_at / deleted_by; serial will be re-generated on next SUBMITTED transition
-    const { error } = await supabase
-      .from('bookings')
-      .update({
-        deleted_at: null,
-        deleted_by: null,
-      })
-      .eq('id', bookingId)
+  const { error } = await supabase
+    .from('bookings')
+    .update({ deleted_at: null, deleted_by: null })
+    .eq('id', bookingId)
 
-    if (error) {
-      console.error('Restore error:', error.message)
-      throw new Error(`Failed to restore booking: ${error.message}`)
-    }
+  if (error) throw new Error(`Failed to restore booking: ${error.message}`)
 
-    // Log the restoration
-    await supabase
-      .from('booking_audit_log')
-      .insert({
-        booking_id: bookingId,
-        changed_by: profile.id,
-        action: 'RESTORED',
-      })
+  await supabase.from('booking_audit_log').insert({
+    booking_id: bookingId,
+    changed_by: profile.id,
+    action: 'RESTORED',
+  })
 
-    revalidatePath('/bookings')
-    revalidatePath('/bookings/deleted')
-    
-    return { success: true }
-  } catch (error: any) {
-    throw error
-  }
+  revalidatePath('/bookings')
+  revalidatePath('/bookings/deleted')
+
+  return { success: true }
 }
 
 export async function revertToDraft(bookingId: string, reason?: string) {
-  try {
-    const profile = await requireRole(['ADMIN'])
-    const supabase = await createServiceClient()
+  const profile = await requireAdmin()
+  const supabase = await createClient()
 
-    // Verify the booking exists and is in SUBMITTED or EDITED state
-    const { data: booking, error: getError } = await supabase
-      .from('bookings')
-      .select('id, status, serial_display')
-      .eq('id', bookingId)
-      .is('deleted_at', null)
-      .single()
+  const { data: booking, error: getError } = await supabase
+    .from('bookings')
+    .select('id, status, serial_display')
+    .eq('id', bookingId)
+    .is('deleted_at', null)
+    .single()
 
-    if (getError || !booking) {
-      throw new Error('Booking not found')
-    }
+  if (getError || !booking) throw new Error('Booking not found')
+  if (booking.status === 'DRAFT') throw new Error('Booking is already a draft')
 
-    if (booking.status === 'DRAFT') {
-      throw new Error('Booking is already a draft')
-    }
+  const { error } = await supabase
+    .from('bookings')
+    .update({ status: 'DRAFT', submitted_at: null })
+    .eq('id', bookingId)
 
-    // Update status to DRAFT
-    const { error } = await supabase
-      .from('bookings')
-      .update({
-        status: 'DRAFT',
-        submitted_at: null,
-      })
-      .eq('id', bookingId)
+  if (error) throw new Error(`Failed to revert booking: ${error.message}`)
 
-    if (error) {
-      console.error('Revert to draft error:', error.message)
-      throw new Error(`Failed to revert booking: ${error.message}`)
-    }
+  await supabase.from('booking_audit_log').insert({
+    booking_id: bookingId,
+    changed_by: profile.id,
+    action: 'REVERTED_TO_DRAFT',
+    reason: reason || `Booking ${booking.serial_display || ''} sent back to drafts`,
+  })
 
-    // Log the action
-    await supabase
-      .from('booking_audit_log')
-      .insert({
-        booking_id: bookingId,
-        changed_by: profile.id,
-        action: 'REVERTED_TO_DRAFT',
-        reason: reason || `Booking ${booking.serial_display || ''} sent back to drafts`,
-      })
+  revalidatePath('/bookings')
+  revalidatePath('/new-booking')
+  revalidatePath(`/bookings/${bookingId}`)
 
-    revalidatePath('/bookings')
-    revalidatePath('/new-booking')
-    revalidatePath(`/bookings/${bookingId}`)
-    
-    return { success: true }
-  } catch (error: any) {
-    throw error
-  }
+  return { success: true }
 }
 
 export async function approveBooking(bookingId: string) {
-  try {
-    const profile = await requireRole(['ADMIN'])
-    const supabase = await createServiceClient()
+  const profile = await requireAdmin()
+  const supabase = await createClient()
 
-    // Verify booking exists and is PENDING
-    const { data: booking, error: getError } = await supabase
-      .from('bookings')
-      .select('id, status, serial_display')
-      .eq('id', bookingId)
-      .is('deleted_at', null)
-      .single()
+  const { data: booking, error: getError } = await supabase
+    .from('bookings')
+    .select('id, status, serial_display')
+    .eq('id', bookingId)
+    .is('deleted_at', null)
+    .single()
 
-    if (getError || !booking) {
-      throw new Error('Booking not found')
-    }
+  if (getError || !booking) throw new Error('Booking not found')
+  if (booking.status !== 'PENDING') throw new Error('Only pending bookings can be approved')
 
-    if (booking.status !== 'PENDING') {
-      throw new Error('Only pending bookings can be approved')
-    }
+  const { error } = await supabase
+    .from('bookings')
+    .update({ status: 'SUBMITTED' })
+    .eq('id', bookingId)
 
-    // Update status to SUBMITTED (approved)
-    const { error } = await supabase
-      .from('bookings')
-      .update({ status: 'SUBMITTED' })
-      .eq('id', bookingId)
+  if (error) throw new Error(`Failed to approve booking: ${error.message}`)
 
-    if (error) {
-      console.error('Approve error:', error.message)
-      throw new Error(`Failed to approve booking: ${error.message}`)
-    }
+  await supabase.from('booking_audit_log').insert({
+    booking_id: bookingId,
+    changed_by: profile.id,
+    action: 'APPROVED',
+    reason: `Booking ${booking.serial_display || ''} approved by admin`,
+  })
 
-    // Log the action
-    await supabase
-      .from('booking_audit_log')
-      .insert({
-        booking_id: bookingId,
-        changed_by: profile.id,
-        action: 'APPROVED',
-        reason: `Booking ${booking.serial_display || ''} approved by admin`,
-      })
+  revalidatePath('/bookings')
+  revalidatePath(`/bookings/${bookingId}`)
 
-    revalidatePath('/bookings')
-    revalidatePath(`/bookings/${bookingId}`)
-    
-    return { success: true }
-  } catch (error: any) {
-    throw error
-  }
+  return { success: true }
 }
 
 export async function rejectBooking(bookingId: string, reason?: string) {
-  try {
-    const profile = await requireRole(['ADMIN'])
-    const supabase = await createServiceClient()
+  const profile = await requireAdmin()
+  const supabase = await createClient()
 
-    // Verify booking exists and is PENDING
-    const { data: booking, error: getError } = await supabase
-      .from('bookings')
-      .select('id, status, serial_display')
-      .eq('id', bookingId)
-      .is('deleted_at', null)
-      .single()
+  const { data: booking, error: getError } = await supabase
+    .from('bookings')
+    .select('id, status, serial_display')
+    .eq('id', bookingId)
+    .is('deleted_at', null)
+    .single()
 
-    if (getError || !booking) {
-      throw new Error('Booking not found')
-    }
+  if (getError || !booking) throw new Error('Booking not found')
+  if (booking.status !== 'PENDING') throw new Error('Only pending bookings can be rejected')
 
-    if (booking.status !== 'PENDING') {
-      throw new Error('Only pending bookings can be rejected')
-    }
+  const { error } = await supabase
+    .from('bookings')
+    .update({ status: 'DRAFT', submitted_at: null })
+    .eq('id', bookingId)
 
-    // Update status back to DRAFT so executive can fix and resubmit
-    const { error } = await supabase
-      .from('bookings')
-      .update({
-        status: 'DRAFT',
-        submitted_at: null,
-      })
-      .eq('id', bookingId)
+  if (error) throw new Error(`Failed to reject booking: ${error.message}`)
 
-    if (error) {
-      console.error('Reject error:', error.message)
-      throw new Error(`Failed to reject booking: ${error.message}`)
-    }
+  await supabase.from('booking_audit_log').insert({
+    booking_id: bookingId,
+    changed_by: profile.id,
+    action: 'REJECTED',
+    reason: reason || `Booking ${booking.serial_display || ''} rejected by admin`,
+  })
 
-    // Log the action
-    await supabase
-      .from('booking_audit_log')
-      .insert({
-        booking_id: bookingId,
-        changed_by: profile.id,
-        action: 'REJECTED',
-        reason: reason || `Booking ${booking.serial_display || ''} rejected by admin`,
-      })
+  revalidatePath('/bookings')
+  revalidatePath(`/bookings/${bookingId}`)
 
-    revalidatePath('/bookings')
-    revalidatePath(`/bookings/${bookingId}`)
-    
-    return { success: true }
-  } catch (error: any) {
-    throw error
-  }
+  return { success: true }
 }
