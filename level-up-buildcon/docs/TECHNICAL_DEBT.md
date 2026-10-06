@@ -1,250 +1,76 @@
-# ProjectDesk — Technical Debt Register
+# ProjectDesk — Technical Debt (Open Items)
 
-**Last updated:** October 2026 (post security-refactor)
+**Last updated:** October 6, 2026
 
-Each item: Problem → Files → Why it matters → Risk → Fix → Effort → Priority  
-**Status:** RESOLVED items were fixed in the Oct 2026 refactor — see [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md).
-
----
-
-## TD-001 — Unauthenticated Bootstrap Admin Endpoint — **RESOLVED**
-
-**Problem:** `GET /api/bootstrap-admin` created admin with hardcoded password, no auth.  
-**Resolution:** Route deleted. Create first admin via Supabase Dashboard → Authentication → Users, then insert matching `profiles` row (see `supabase/README.md`).
-
----
-
-## TD-002 — IDOR on PDF and Document APIs — **RESOLVED**
-
-**Problem:** Any active user could access any booking's PDFs/KYC by UUID.  
-**Resolution:** API routes authenticate → load booking → `assertCanViewBooking` / `assertCanDownloadPdfs` before fetch.
-
----
-
-## TD-003 — Service Role Used for All Server Operations
-
-**Problem:** `createServiceClient()` bypasses RLS everywhere; auth is app-layer only.  
-**Affected files:** Most `actions.ts`, API routes, `lib/auth/get-user.ts`  
-**Why it matters:** One missed `requireRole` = full DB access.  
-**Risk:** HIGH security (architectural)  
-**Recommended fix:** Use authenticated client for reads; service role for admin writes only.  
-**Effort:** L  
-**Priority:** P1  
-**Resolution:** All server paths use `createClient()` + RLS. The service role remains only in `admin/actions.ts` → `createUser` (Supabase Auth Admin API).
-
----
-
-## TD-004 — No Server-Side Validation on Booking Submit
-
-**Problem:** Zod schemas only on client; server trusts FormData.  
-**Affected files:** `lib/validations/booking.ts`, `new-booking/actions.ts`, `edit/actions.ts`  
-**Why it matters:** Data integrity, injection of invalid states.  
-**Risk:** MEDIUM correctness  
-**Recommended fix:** `bookingSchema.safeParse()` in server actions.  
-**Effort:** S  
-**Priority:** P0
-
----
-
-## TD-005 — Unit Availability Fails Open
-
-**Problem:** DB errors return `available: true`.  
-**Affected files:** `new-booking/actions.ts` → `checkUnitAvailability`  
-**Why it matters:** Double booking same flat.  
-**Risk:** MEDIUM business correctness  
-**Recommended fix:** Fail closed; DB unique constraint on active bookings per unit.  
-**Effort:** M  
-**Priority:** P0
-
----
-
-## TD-006 — Schema Migration Sprawl and Conflicts
-
-**Problem:** 18+ SQL files with conflicting serial formats, role enums, RLS policies.  
-**Affected files:** `supabase/*.sql`  
-**Why it matters:** Fresh deploy ambiguity; production drift.  
-**Risk:** MEDIUM maintainability / correctness  
-**Recommended fix:** Single canonical `schema.sql` reflecting production; archive old migrations.  
-**Effort:** M  
-**Priority:** P1
+Only **remaining** debt is listed here. Resolved items (bootstrap-admin, IDOR, service-role bypass, destruct triggers, server Zod, fail-closed availability, unit unique index, pdfkit, lockdown, dispatch dead code) are recorded in [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md).
 
 ---
 
 ## TD-007 — Proxy Cookie-Only Auth Check
 
-**Problem:** `proxy.ts` checks cookie name existence, not JWT validity.  
-**Affected files:** `proxy.ts` (the unused `lib/supabase/middleware.ts` has been deleted)  
-**Why it matters:** Misleading security boundary; stale cookies.  
-**Risk:** LOW (pages re-validate)  
-**Recommended fix:** Integrate Supabase session refresh in proxy or document as UX gate only.  
-**Effort:** S  
+**Problem:** `proxy.ts` checks cookie presence, not JWT validity.  
+**Risk:** LOW — pages and actions re-validate via `requireProfile()`.  
+**Fix:** Document as UX gate only, or add Supabase session refresh in proxy.  
 **Priority:** P2
 
 ---
 
 ## TD-008 — Nav vs Server Role Mismatch
 
-**Problem:** Sidebar hides routes users can still access via URL.  
-**Affected files:** `dashboard-layout.tsx`, various `page.tsx`  
-**Why it matters:** Confusing permissions model.  
-**Risk:** LOW security, MEDIUM UX  
-**Recommended fix:** Align `roles` arrays with `requireRole` on each page.  
-**Effort:** S  
+**Problem:** Sidebar hides routes users can still open by URL.  
+**Files:** `dashboard-layout.tsx`, individual `page.tsx` files.  
+**Fix:** Align nav `roles` arrays with each page's auth gate.  
 **Priority:** P1
 
 ---
 
 ## TD-009 — Edit Page Allows EXECUTIVE, Action Requires ADMIN
 
-**Problem:** `/bookings/[id]/edit` vs `updateBooking` role mismatch.  
-**Affected files:** `edit/page.tsx`, `edit/actions.ts`  
-**Why it matters:** Broken feature for EXECUTIVE role.  
-**Risk:** LOW  
-**Recommended fix:** Either allow EXECUTIVE to update or restrict page to ADMIN.  
-**Effort:** S  
+**Problem:** `/bookings/[id]/edit` is reachable by EXECUTIVE; `updateBooking` is ADMIN-only.  
+**Fix:** Restrict page to ADMIN or allow EXECUTIVE edits per business rules.  
 **Priority:** P1
 
 ---
 
 ## TD-010 — Delete/Revert UI Shown to Non-Admins
 
-**Problem:** Buttons visible when server actions reject.  
-**Affected files:** `bookings/[id]/page.tsx`, button components  
-**Why it matters:** Poor security UX.  
-**Risk:** LOW  
-**Recommended fix:** Conditional render on ADMIN role.  
-**Effort:** S  
+**Problem:** Admin-only buttons visible before server rejects the action.  
+**Fix:** Conditional render on `profile.role === 'ADMIN'`.  
 **Priority:** P2
-
----
-
-## TD-011 — Zero Automated Tests
-
-**Problem:** No unit, integration, or e2e tests in repository.  
-**Affected files:** N/A (missing `__tests__`, no test script beyond lint)  
-**Why it matters:** Regressions in auth, payments, serial logic undetected.  
-**Risk:** HIGH maintainability  
-**Recommended fix:** P0 test pyramid (see ENGINEERING_HANDBOOK Testing Audit).  
-**Effort:** L  
-**Priority:** P1
-
----
-
-## TD-012 — `getPaymentSlabs()` Missing Auth
-
-**Problem:** Server action callable without authentication.  
-**Affected files:** `accounts/payment-slab-actions.ts`  
-**Why it matters:** Information disclosure; pattern violation.  
-**Risk:** LOW  
-**Recommended fix:** Add `requireRole(['ACCOUNTS', 'ADMIN'])`.  
-**Effort:** S  
-**Priority:** P0
-
----
-
-## TD-013 — Destruct Triggers in NEXT_PUBLIC Env Vars
-
-**Problem:** Kill phrase and destruct email exposed to browser bundle.  
-**Affected files:** `login-content.tsx`, `.env` usage  
-**Why it matters:** Secrets visible in client JS.  
-**Risk:** HIGH  
-**Recommended fix:** Server-only env vars; remove client-side destruct trigger.  
-**Effort:** S  
-**Priority:** P0
-
----
-
-## TD-014 — Accounts Page Dead Code
-
-**Problem:** `getBookingsForDispatch()` fetched but unused; `pendingDispatches` hardcoded `[]`.  
-**Affected files:** `accounts/page.tsx`, dispatch clients  
-**Why it matters:** Dispatch workflow incomplete in UI.  
-**Risk:** LOW  
-**Recommended fix:** Wire pending dispatches or remove fetch.  
-**Effort:** S  
-**Priority:** P2  
-**Resolution:** Dispatch workflow removed entirely (code, API route, table, bucket). The Payments page now shows Booking Financials and Payment Slabs only.
 
 ---
 
 ## TD-015 — PDF Generator console.log PII
 
-**Problem:** Booking details logged during PDF generation.  
-**Affected files:** `lib/pdf/generator.ts`  
-**Why it matters:** Vercel log leakage.  
-**Risk:** LOW privacy  
-**Recommended fix:** Remove debug logs in production.  
-**Effort:** S  
+**Problem:** Booking fields logged during PDF generation → Vercel log leakage.  
+**Files:** `lib/pdf/generator.ts`  
 **Priority:** P2
 
 ---
 
-## TD-016 — Duplicate PDF Libraries (jsPDF + pdfkit)
+## TD-018 — Signup Route Disabled but Still Exists
 
-**Problem:** Both in package.json; generator uses jsPDF only.  
-**Affected files:** `package.json`, `lib/pdf/generator.ts`, `test-pdfkit.js`  
-**Why it matters:** Bundle size, confusion.  
-**Risk:** LOW  
-**Recommended fix:** Remove unused pdfkit if confirmed unused.  
-**Effort:** S  
+**Problem:** `/signup` redirects to login; admins create users instead.  
 **Priority:** P3
-
----
-
-## TD-017 — Lockdown Feature Half-Removed
-
-**Problem:** Commented code in lockdown.ts, lockdown-config.ts, get-user.ts, locked page.  
-**Affected files:** `lib/auth/lockdown*.ts`, `locked/`  
-**Why it matters:** Dead code confusion.  
-**Risk:** LOW maintainability  
-**Recommended fix:** Delete or finish feature.  
-**Effort:** S  
-**Priority:** P3
-
----
-
-## TD-018 — Signup Page Disabled but Route Exists
-
-**Problem:** `/signup` redirects to login; self-signup policy in DB unused from UI.  
-**Affected files:** `app/(auth)/signup/page.tsx`, `settings.allow_self_signup`  
-**Why it matters:** Dead route; admin creates users instead.  
-**Risk:** LOW  
-**Recommended fix:** Remove route or implement controlled signup.  
-**Effort:** S  
-**Priority:** P3
-
----
-
-## TD-019 — No Database Constraint on Unit Uniqueness
-
-**Problem:** Double booking prevented only by app check.  
-**Affected files:** DB schema, `checkUnitAvailability`  
-**Why it matters:** Race conditions under concurrent submit.  
-**Risk:** MEDIUM correctness  
-**Recommended fix:** Partial unique index: `(project_name, unit_no) WHERE status NOT IN ('DRAFT') AND deleted_at IS NULL`.  
-**Effort:** M  
-**Priority:** P1
 
 ---
 
 ## TD-020 — Floating-Point Currency Arithmetic
 
-**Problem:** JS `Number` for rupee calculations; DB uses NUMERIC.  
-**Affected files:** `step-3-pricing-payment.tsx`, `payment-slab-actions.ts`, dashboard aggregations  
-**Why it matters:** Rounding drift (mitigated by no rounding policy currently).  
-**Risk:** LOW at current scale  
-**Recommended fix:** Use decimal library or integer paise; align client/server formulas.  
-**Effort:** M  
+**Problem:** JS `Number` for rupees; Postgres uses `NUMERIC`. Minor rounding drift possible.  
+**Fix:** Integer paise or decimal library; align client/server formulas.  
 **Priority:** P2
 
 ---
 
-## Improvement Roadmap Cross-Reference
+## Future improvements (not bugs)
 
-| Phase | Debt items |
-|-------|------------|
-| Phase 1 — Secure | TD-001, TD-002, TD-004, TD-005, TD-012, TD-013 |
-| Phase 2 — Clean Architecture | TD-003, TD-006, TD-008, TD-009, TD-017 |
-| Phase 3 — Testing | TD-011 |
-| Phase 4 — Reliability | TD-019, TD-020, TD-005 |
-| Phase 5 — Polish | TD-014, TD-015, TD-016, TD-018 |
+| Item | Why | Priority |
+|------|-----|----------|
+| Paginate bookings list | Full-table fetch won't scale past ~10k rows | P1 |
+| Dashboard SQL aggregates | O(n) scans for stats and owner split | P1 |
+| Background bulk PDF job | Sequential jsPDF in serverless is the main perf bottleneck | P1 |
+| Transactions on submit+audit | Multi-step writes not wrapped in one DB transaction | P2 |
+| E2E tests (Playwright) | Wizard flow only manually tested today | P2 |
+
+See [PERFORMANCE_AND_COMPLEXITY.md](./PERFORMANCE_AND_COMPLEXITY.md) for scale discussion.

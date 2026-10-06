@@ -8,12 +8,12 @@
 This handbook documents the **current state** of ProjectDesk as verified against source code. Sections labeled **RECOMMENDED** describe future improvements, not existing behavior.
 
 **Related documents:**
+- [INTERVIEW_GUIDE.md](./INTERVIEW_GUIDE.md) — start here for interview prep
 - [CODEBASE_MAP.md](./CODEBASE_MAP.md)
-- [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)
+- [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md)
 - [PERFORMANCE_AND_COMPLEXITY.md](./PERFORMANCE_AND_COMPLEXITY.md)
 - [TECHNICAL_DEBT.md](./TECHNICAL_DEBT.md)
 - [ENGINEERING_DECISIONS.md](./ENGINEERING_DECISIONS.md)
-- [INTERVIEW_GUIDE.md](./INTERVIEW_GUIDE.md)
 
 ---
 
@@ -152,23 +152,25 @@ No other external services.
 ## `/login`
 - **Purpose:** Staff authentication
 - **User:** Public
-- **UI:** Email/password form, logo, forgot password link
-- **Code:** `app/(auth)/login/login-content.tsx`
-- **Data:** Supabase Auth session; updates `profiles.last_login`
+- **UI:** Full-bleed Anandam east elevation background; centered frosted card with email/password; forgot password link. Shared shell: `components/layout/auth-shell.tsx`
+- **Code:** `app/(auth)/login/login-content.tsx`, `components/layout/auth-shell.tsx`
+- **Data:** Supabase Auth session; validates profile exists and is ACTIVE with EXECUTIVE or ADMIN role; updates `profiles.last_login`
 - **Actions:** Sign in; sets `sessionStorage.lubc_tab` for tab-guard UX
-- **Backend flow:** Client → `signInWithPassword` → redirect to dashboard
+- **Backend flow:** Client → `signInWithPassword` → profile check → redirect to dashboard (or signOut + toast if profile missing)
 - **Security:** Supabase Auth only; no destructive login triggers
-- **Failure modes:** Invalid credentials → toast
+- **Failure modes:** Invalid credentials → toast; missing profile or DB grants → clear error toast
 
 ## `/dashboard`
-- **Purpose:** Executive overview — stats, owner split, parking, tower, recent bookings
+- **Purpose:** Executive overview — compact stats row, large tower grid, recent activity sidebar
 - **User:** Any ACTIVE user (`requireProfile`)
-- **Code:** `dashboard/page.tsx`, `tower-view.tsx`, `recent-bookings.tsx`
+- **Code:** `dashboard/page.tsx`, `lookup/tower-view.tsx`, `recent-bookings.tsx`, `lib/data/tower-colors.ts`
 - **Data:** Booking counts, amounts, 10 recent bookings, tower allocations, parking totals
+- **Layout:** 7 stat tiles; tower view spans ~8 columns; recent activity sidebar ~4 columns with scroll when many items
+- **Tower colors:** Muted palette in `tower-colors.ts` — developer (green), landowner (blue), commercial (tan), amenity (gray), sold (red ring)
 - **Actions:** Navigate to booking detail; tower cell → new booking or detail
 - **Backend flow:** RSC → multiple Supabase queries via authenticated client (RLS) → render
 - **Security:** All active users see aggregate stats including owner split
-- **Failure modes:** Missing env → throw on createClient
+- **Failure modes:** Missing env → throw on createClient; missing table GRANTs → profile fetch fails (run migration 003)
 - **Improvements:** SQL aggregates instead of full-table scan
 
 ## `/bookings`
@@ -333,9 +335,9 @@ Full column detail in subagent database report and `supabase/schema.sql` + migra
 
 # Part 6 — Security
 
-Full audit: [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)
+See [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md) for the full Oct 2026 changelog.
 
-**Post-refactor (Oct 2026):** Bootstrap/destruct removed; IDOR fixed on PDF/document routes; permissions centralized in `lib/auth/permissions.ts`. Remaining items in [TECHNICAL_DEBT.md](./TECHNICAL_DEBT.md).
+**Current model:** Bootstrap/destruct removed; IDOR fixed on PDF/document routes; permissions centralized in `lib/auth/permissions.ts`; RLS-first queries; service role only for Auth user creation; fail-closed availability + partial unique index on active units; server-side Zod on booking submit. Open items in [TECHNICAL_DEBT.md](./TECHNICAL_DEBT.md).
 
 ---
 
@@ -518,18 +520,20 @@ Admin → Users table → Approve
 # Part 12 — Testing Audit
 
 ## CURRENT STATE
-- **Zero** automated tests (no `.test.ts`, no test script)
-- Manual test scripts: `test-pdf-generator.js`, `test-pdfkit.js`
+- **Vitest unit tests** (`npm test`): permissions, booking calculations, fail-closed availability (~200 lines)
+- Manual scripts may exist for PDF smoke tests
 
 ## Recommended Test Pyramid
 
-### P0 — Must test
-- `requireRole` / `requireProfile` on all server actions
-- `submitBooking` status by role (ADMIN vs EXECUTIVE)
+### P0 — Covered or partially covered
+- Permission rules — `lib/auth/permissions.test.ts`
+- Booking calculations — `lib/booking/calculations.test.ts`
+- Fail-closed availability — `lib/booking/availability.test.ts`
+
+### P0 — Still needed
+- `submitBooking` status by role (ADMIN vs EXECUTIVE) — integration
 - `approveBooking` / `rejectBooking` state transitions
-- `checkUnitAvailability` including fail-open behavior
-- `setSlabPayment` amount_due calculation
-- IDOR regression tests on PDF/document APIs
+- IDOR regression tests on PDF/document APIs — integration
 - Serial trigger behavior (integration with test DB)
 
 ### P1 — Should test
@@ -553,44 +557,26 @@ Admin → Users table → Approve
 | DRY | PARTIALLY | Duplicate PDF layout between company/customer |
 | Least privilege | USES WELL | Service role only for Auth user creation; IDOR fixed |
 | Defense in depth | USES WELL | App permission checks + RLS + guard triggers |
-| Server/client boundaries | USES WELL | Secrets server-side (except NEXT_PUBLIC destruct) |
-| Validation boundaries | VIOLATES | Client-only Zod |
-| Database constraints | PARTIALLY | UNIQUE serial; missing unit uniqueness |
-| Transactional integrity | VIOLATES | No explicit transactions on multi-step ops |
+| Server/client boundaries | USES WELL | Secrets server-side only |
+| Validation boundaries | USES WELL | Client + server Zod (`parseBookingSubmit`) |
+| Database constraints | USES WELL | UNIQUE serial; partial unique on active unit holds |
+| Transactional integrity | PARTIALLY | No explicit transactions on multi-step ops |
 | Idempotency | NOT APPLICABLE / WEAK | No idempotency keys |
-| Auditability | USES WELL | booking_audit_log; wiped by destruct |
+| Auditability | USES WELL | booking_audit_log |
 
 ---
 
 # Part 14 — Improvement Roadmap
 
-## Phase 1 — Understand and Secure (do first)
-- Remove/protect bootstrap-admin
-- Fix IDOR on PDF/documents
-- Remove NEXT_PUBLIC destruct secrets
-- Server-side Zod validation
-- Auth on getPaymentSlabs
-- Fail-closed unit availability
+## Done (Oct 2026 refactor)
+- Bootstrap/destruct removed; IDOR fixed; RLS-first; server Zod; fail-closed availability; unit unique index; Vitest unit tests; canonical `schema.sql`; UI refresh (login background, tower-first dashboard)
 
-## Phase 2 — Clean Architecture
-- Consolidate SQL schema
-- Align nav/page/action roles
-- Hybrid Supabase client strategy
-- Remove dead code (lockdown, pdfkit)
-
-## Phase 3 — Testing
-- P0 tests from section 12
-
-## Phase 4 — Reliability
-- DB unique constraint on units
-- Transactions for submit+audit
-- Pagination on bookings list
-- Dashboard SQL aggregates
-
-## Phase 5 — Interview Polish
-- This handbook + README update
-- Demo script for booking flow
-- Remove console.log PII from PDF generator
+## Next priorities
+1. **Scale** — paginate bookings list; SQL aggregates on dashboard
+2. **Perf** — background job for bulk PDF generation
+3. **Correctness** — fix edit-page EXECUTIVE vs ADMIN mismatch (TD-009)
+4. **Testing** — E2E wizard flow; integration tests for approve/reject and PDF APIs
+5. **Polish** — remove PDF generator console.log PII; align nav roles with page gates
 
 ---
 

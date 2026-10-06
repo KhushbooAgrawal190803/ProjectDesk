@@ -71,6 +71,16 @@ Server-side Zod: `parseBookingDraft`, `parseBookingSubmit` in booking actions.
 
 `npm test` — permissions, calculations, availability (fail-closed).
 
+## Database grants (migration 003)
+
+Fresh `schema.sql` includes table GRANTs for the `authenticated` role. Existing databases that hit `permission denied for table profiles` need a one-time run of `supabase/migrations/003_grant_table_permissions.sql`.
+
+## UI refresh (Oct 6, 2026)
+
+- Login: Anandam east elevation full-bleed background (`auth-shell.tsx`)
+- Dashboard: tower-first layout, muted tower colors (`tower-colors.ts`), compact stats, recent activity sidebar fix
+- Header: Anandam logo + underline nav tabs
+
 ## New Supabase setup
 
 Run only `supabase/schema.sql` on a fresh project. See `supabase/README.md`.

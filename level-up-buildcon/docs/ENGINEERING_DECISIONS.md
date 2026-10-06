@@ -58,7 +58,7 @@ Supabase with PostgreSQL, Supabase Auth, Storage buckets, RLS policies.
 - Small team internal tool — managed backend reduces ops
 
 ### Tradeoffs
-- Service role bypasses RLS in practice → app must enforce auth
+- RLS must be correct — app permission checks are the first line, DB is the second
 - Migration files scattered; schema drift risk
 - Vendor lock-in for auth/storage APIs
 
@@ -104,33 +104,35 @@ Server needs reliable DB access; RLS complicates server-side queries; profile fe
 
 ---
 
-## Decision: Role Model (EXECUTIVE / ACCOUNTS / ADMIN)
+## Decision: Role Model (EXECUTIVE + ADMIN)
+
+> **Superseded (Oct 2026):** ACCOUNTS role removed. Payment/slab features are available to both EXECUTIVE and ADMIN. See [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md).
 
 ### Problem
-Different staff need different capabilities: sales lookup vs accounts/payments vs admin.
+Different staff need different capabilities: sales/bookings vs admin approval and user management.
 
 ### Options
 - Single role + feature flags
-- RBAC with 3+ roles
+- RBAC with 2–3 roles
 - Per-user permissions table
 
 ### Current choice
-Three roles in `user_role` enum: `EXECUTIVE`, `ACCOUNTS`, `ADMIN` (evolved from STAFF → EXECUTIVE via migration).
+Two roles in `user_role` enum: `EXECUTIVE`, `ADMIN`.
 
 ### Why it makes sense (retrospective)
-- Matches org structure: sales executives, accounts team, administrators
-- Simple to explain in interview
-- Enforced via `requireRole()` arrays
+- Small internal team — two tiers is enough
+- EXECUTIVE handles day-to-day bookings and payments; ADMIN adds approval, delete/restore, user management
+- Enforced via `requireStaff()` / `requireAdmin()` and `lib/auth/permissions.ts`
 
 ### Tradeoffs
-- Nav vs page enforcement inconsistent
-- EXECUTIVE can view all bookings but limited edit — may be intentional
+- Nav vs page enforcement still inconsistent in places (TD-008)
+- EXECUTIVE can view all bookings but limited edit on some pages
 - No fine-grained permissions (e.g., read-only admin)
 
 ### When would we reconsider?
-- More than 3 distinct permission sets needed
+- Need a dedicated finance-only role again
 
-**Evidence:** `migration-roles-restructure.sql`, `lib/types/database.ts`, dashboard nav.
+**Evidence:** `lib/types/database.ts`, `lib/auth/permissions.ts`, `dashboard-layout.tsx`.
 
 ---
 
@@ -146,7 +148,7 @@ Non-admin staff submit bookings; admin must approve before serial assignment.
 
 ### Current choice
 - ADMIN submit → `SUBMITTED` immediately
-- EXECUTIVE/ACCOUNTS submit → `PENDING` → admin approves → `SUBMITTED`
+- EXECUTIVE submit → `PENDING` → admin approves → `SUBMITTED`
 - Serial number assigned by DB trigger on `SUBMITTED`
 
 ### Why it makes sense (retrospective)

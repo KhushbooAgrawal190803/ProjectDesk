@@ -1,24 +1,39 @@
 # ProjectDesk — Interview Guide
 
-**Purpose:** Explain ProjectDesk confidently in a software engineering interview.
+**Purpose:** Explain ProjectDesk confidently in a software engineering interview.  
+**Last updated:** October 6, 2026
+
+## Documentation map (study in this order)
+
+| # | Document | Use for |
+|---|----------|---------|
+| 1 | **This file** | Pitches, Q&A, 7-day plan |
+| 2 | [ENGINEERING_HANDBOOK.md](./ENGINEERING_HANDBOOK.md) | Deep reference — architecture, screens, data model |
+| 3 | [CODEBASE_MAP.md](./CODEBASE_MAP.md) | File-by-file map with interview priority tags |
+| 4 | [SECURITY_REFACTOR.md](./SECURITY_REFACTOR.md) | What changed in the Oct 2026 refactor (current security story) |
+| 5 | [PERFORMANCE_AND_COMPLEXITY.md](./PERFORMANCE_AND_COMPLEXITY.md) | Scale / 100x questions |
+| 6 | [TECHNICAL_DEBT.md](./TECHNICAL_DEBT.md) | "What would you improve next?" |
+| 7 | [ENGINEERING_DECISIONS.md](./ENGINEERING_DECISIONS.md) | Stack and tradeoff stories |
+
+**Codebase size:** ~12,550 lines of source (TypeScript/TSX ~11,600, SQL ~730, CSS ~210). Unit tests: ~200 lines across 3 Vitest files.
 
 ---
 
 ## 30-Second Explanation
 
-> "ProjectDesk is an internal Next.js app I built for a real estate developer to manage Anandam property bookings. Staff create bookings through a wizard, admins approve them and assign serial numbers, accounts track construction-linked payments, and the system generates PDF confirmations. It uses Supabase for auth and PostgreSQL, with role-based access for executives, accounts, and admins."
+> "ProjectDesk is an internal Next.js app I built for Level Up Buildcon to manage Anandam property bookings in Ranchi. Executives submit bookings through a wizard; admins approve them and PostgreSQL assigns serial numbers. Staff track construction-linked payment slabs, view a color-coded tower grid, and download jsPDF confirmations. It's Supabase for auth and Postgres with two roles — executive and admin — and defense-in-depth authorization via app permissions plus RLS."
 
 ---
 
 ## 2-Minute Explanation
 
-> "The business problem is replacing spreadsheet-based booking tracking for an internal sales and accounts team. Executives submit bookings that go into a PENDING queue; admins approve to SUBMITTED status, which triggers a PostgreSQL function to assign serial numbers like LUBC 01.
+> "The business problem is replacing spreadsheet-based booking tracking for an internal sales team. Executives submit bookings into a PENDING queue; admins approve to SUBMITTED, which triggers a PostgreSQL function to assign serial numbers like LUBC 01.
 >
-> The stack is Next.js 16 App Router with Server Actions, TypeScript, Tailwind, and Supabase. Authorization is centralized in a permissions module and enforced again by Postgres RLS and guard triggers; the service role is used only to create Auth users.
+> The stack is Next.js 16 App Router with Server Actions, TypeScript, Tailwind, and Supabase. Authorization is centralized in `lib/auth/permissions.ts` and enforced again by Postgres RLS and guard triggers; the service role is used only to create Auth users via the Supabase Admin API.
 >
-> Key features: a tower grid showing unit availability with owner split between developer and landowner, jsPDF-generated company and customer PDFs that staff download on demand, and payment slab tracking against 14 construction milestones.
+> Key features: a tower grid with muted color coding for developer vs landowner units, jsPDF company and customer PDFs downloaded on demand, and payment slab tracking against 14 construction milestones.
 >
-> The primary engineering challenge wasn't scale — it's maybe 25 internal users — it was **correct authorization and PII protection** for booking and payment data. The security audit found IDOR gaps on PDF APIs that I'd fix first."
+> The primary engineering challenge wasn't scale — maybe 25 internal users — it was **correct authorization and PII protection**. I audited the codebase, fixed IDOR on PDF routes, moved to RLS-first queries, removed destructive bootstrap/destruct features, and added fail-closed unit availability with a partial unique index."
 
 ---
 
@@ -90,7 +105,22 @@ Supporting points:
 2. **Approval workflow** — admin bottleneck vs data quality
 3. **jsPDF vs Puppeteer** — serverless compatibility vs layout ease
 4. **Proxy cookie check** — Edge runtime issues led to simplified gate
-5. **Fail-open unit availability** — UX vs correctness (should change)
+5. **Fail-open → fail-closed availability** — originally returned available on DB errors; now rejects + DB unique index
+
+---
+
+## UI / Branding (Oct 2026 refresh)
+
+Know at a high level — not the main interview topic, but shows product polish:
+
+| Area | Implementation |
+|------|----------------|
+| Login | Full-bleed Anandam east elevation background (`public/anandam-ranchi-east.jpg`), frosted card via `components/layout/auth-shell.tsx` |
+| Dashboard | Tower-first layout: 7 stat tiles, large tower grid (`tower-view.tsx` + `lib/data/tower-colors.ts`), recent activity sidebar |
+| Tower colors | Muted hex palette — developer green, landowner blue, commercial tan, amenity gray, sold = red ring |
+| Header | Anandam logo + underline nav tabs in `dashboard-layout.tsx`; Plus Jakarta Sans font |
+
+**Files:** `auth-shell.tsx`, `anandam-logo.tsx`, `tower-colors.ts`, `dashboard/page.tsx`, `recent-bookings.tsx`
 
 ---
 
@@ -113,7 +143,7 @@ Supporting points:
 
 ## Database Discussion
 
-"PostgreSQL via Supabase with normalized payment slabs — 14 reference rows and a junction table for per-booking progress. Bookings use soft delete. Serial numbers assigned by trigger on SUBMITTED status using MAX+1. Schema migrations are messy — multiple conflicting serial format migrations — I'd consolidate to one canonical schema. Missing a partial unique index on project+unit for active bookings."
+"PostgreSQL via Supabase with normalized payment slabs — 14 reference rows and a junction table for per-booking progress. Bookings use soft delete. Serial numbers assigned by trigger on SUBMITTED status using MAX+1. Fresh installs use one canonical `schema.sql`; numbered migrations are one-time patches for existing DBs. Active unit holds are protected by a partial unique index on `(project_name, unit_no)` for PENDING/SUBMITTED/EDITED rows."
 
 ---
 
@@ -125,13 +155,12 @@ Supporting points:
 
 ## "What Would You Improve?"
 
-1. Remove bootstrap-admin / fix IDOR (security)
-2. Server-side Zod validation
-3. Fail-closed unit availability + DB constraint
-4. Consolidate schema migrations
-5. Add P0 authorization tests
-6. Paginate bookings list
-7. Background job for bulk PDF
+1. Paginate bookings list and dashboard aggregates (scale)
+2. Background job for bulk PDF generation (perf bottleneck)
+3. Fix EXECUTIVE vs ADMIN mismatch on edit page (TD-009)
+4. Remove PDF generator console.log PII
+5. E2E tests for the booking wizard
+6. Integer paise for currency math to avoid float drift
 
 ---
 
@@ -184,8 +213,8 @@ Supporting points:
 **Answer:** Server action calls requireRole(['ADMIN']) → redirect login. Would fail authorization.  
 **Files:** `bookings/actions.ts`
 
-**Q5:** What's wrong with `getPaymentSlabs()` having no auth?  
-**Answer:** Callable without session; information disclosure pattern violation.  
+**Q5:** Does `getPaymentSlabs()` require auth?  
+**Answer:** Yes — `requireStaff()` at the top. This was a pre-refactor gap; now fixed.  
 **Files:** `payment-slab-actions.ts`
 
 **Q6:** Why is `sessionStorage.lubc_tab` not a security feature?  
@@ -204,9 +233,9 @@ Supporting points:
 **Answer:** Only if you are active staff and permitted to view that booking (e.g. not someone else's draft) — `assertCanDownloadPdfs`. This was an IDOR before the refactor.  
 **Files:** `api/bookings/[id]/download/route.ts`
 
-**Q10:** What does `/api/bootstrap-admin` do and why is it dangerous?  
-**Answer:** Creates ADMIN with hardcoded password, no auth. Critical vulnerability.  
-**Files:** `bootstrap-admin/route.ts`
+**Q10:** What did `/api/bootstrap-admin` do and why was it removed?  
+**Answer:** Pre-refactor: created ADMIN with hardcoded password, no auth. Route deleted; first admin is created via Supabase Dashboard + profiles INSERT.  
+**Files:** `supabase/README.md`, `docs/SECURITY_REFACTOR.md`
 
 ### Booking Workflow
 
@@ -222,20 +251,20 @@ Supporting points:
 **Answer:** Cleared to null; restore doesn't immediately reassign — new serial on next SUBMITTED transition.  
 **Files:** `bookings/actions.ts` deleteBooking
 
-**Q14:** Why does checkUnitAvailability fail open?  
-**Answer:** On DB error returns available:true — intentional? Likely oversight; risks double booking.  
-**Files:** `new-booking/actions.ts`
+**Q14:** What happens if checkUnitAvailability hits a DB error?  
+**Answer:** Fail-closed — returns unavailable. Pre-refactor it failed open; that was fixed.  
+**Files:** `lib/booking/availability.ts`, `availability.test.ts`
 
 **Q15:** Can two bookings get the same unit?  
-**Answer:** Possible under race — app check only, no DB unique constraint.  
-**Files:** checkUnitAvailability, schema
+**Answer:** App check + partial unique index `idx_bookings_active_unit_unique` on active statuses. Race window is much smaller than before.  
+**Files:** `schema.sql`, `lib/booking/availability.ts`
 
 **Q16:** What's the difference between EDITED and SUBMITTED status?  
 **Answer:** Admin edits a SUBMITTED booking → status becomes EDITED.  
 **Files:** `edit/actions.ts`
 
-**Q17:** Can ACCOUNTS edit another user's PENDING booking?  
-**Answer:** saveDraft scopes to created_by; submit same. Cannot update others' drafts.  
+**Q17:** Can an EXECUTIVE edit another user's PENDING booking?  
+**Answer:** No — saveDraft scopes to `created_by`; submit same. Cannot update others' drafts.  
 **Files:** `new-booking/actions.ts`
 
 **Q18:** Why is unit_type always 'Flat' in submitBooking?  
@@ -359,12 +388,12 @@ Supporting points:
 **Files:** `lib/**/*.test.ts`
 
 **Q47:** What would you test first?  
-**Answer:** Authorization on server actions; approve/reject transitions; IDOR fixes.  
-**Files:** see handbook testing section
+**Answer:** E2E wizard flow; edit-page role mismatch; bulk PDF under load. Unit tests already cover permissions, calculations, availability.  
+**Files:** `lib/**/*.test.ts`, handbook Part 12
 
-**Q48:** Is Zod validation sufficient?  
-**Answer:** No — client only; server must re-validate.  
-**Files:** validations/booking.ts
+**Q48:** Is Zod validation sufficient on the client alone?  
+**Answer:** No — server re-validates via `parseBookingDraft` / `parseBookingSubmit` in booking actions.  
+**Files:** `lib/validations/booking.ts`, `new-booking/actions.ts`
 
 **Q49:** How do you prevent double-click submit issues?  
 **Answer:** UI loading state only — no server idempotency.  
@@ -409,9 +438,10 @@ Supporting points:
 - Understand serial trigger and payment slabs
 
 ### Day 3 — Authentication & Authorization
-- Read SECURITY_AUDIT.md
+- Read SECURITY_REFACTOR.md (current security story)
 - Read `lib/auth/permissions.ts` and map every requireStaff/requireAdmin call
 - Understand why the service role is limited to `createUser`
+- Trace login profile validation in `login-content.tsx` (signOut if no profile)
 
 ### Day 4 — Booking Workflow
 - Walk wizard: step-1 through step-4

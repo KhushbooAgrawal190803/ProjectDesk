@@ -52,7 +52,21 @@ npm run lint      # ESLint
 - **Documents**: Booking PDFs are generated on demand and downloaded by authorized staff. The app sends no email, SMS, or WhatsApp messages.
 - **Unit integrity**: App check (fail-closed) + PostgreSQL partial unique index on active `(project_name, unit_no)`.
 
-See [docs/ENGINEERING_HANDBOOK.md](./docs/ENGINEERING_HANDBOOK.md) for full documentation.
+## Interview prep
+
+Start with **[docs/INTERVIEW_GUIDE.md](./docs/INTERVIEW_GUIDE.md)** — pitches, 50+ Q&A, and a 7-day study plan.
+
+| Document | Purpose |
+|----------|---------|
+| [INTERVIEW_GUIDE.md](./docs/INTERVIEW_GUIDE.md) | Pitches, Q&A, study plan |
+| [ENGINEERING_HANDBOOK.md](./docs/ENGINEERING_HANDBOOK.md) | Full technical reference |
+| [CODEBASE_MAP.md](./docs/CODEBASE_MAP.md) | File map with interview priority |
+| [SECURITY_REFACTOR.md](./docs/SECURITY_REFACTOR.md) | Oct 2026 security changelog |
+| [TECHNICAL_DEBT.md](./docs/TECHNICAL_DEBT.md) | Open improvements only |
+| [PERFORMANCE_AND_COMPLEXITY.md](./docs/PERFORMANCE_AND_COMPLEXITY.md) | Scale / bottlenecks |
+| [ENGINEERING_DECISIONS.md](./docs/ENGINEERING_DECISIONS.md) | Stack tradeoff stories |
+
+**Codebase size:** ~12,550 lines of source (TS/TSX ~11,600, SQL ~730, CSS ~210).
 
 ## License / use
 

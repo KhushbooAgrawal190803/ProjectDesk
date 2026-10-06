@@ -42,7 +42,13 @@ Unit test config. **Interview: LOW**
 Root redirect and root layout. **Interview: LOW**
 
 ### `app/(auth)/login/page.tsx` + `login-content.tsx`
-Email/password login via Supabase Auth; updates `last_login`; sets `sessionStorage.lubc_tab`. **Interview: HIGH**
+Email/password login via Supabase Auth; validates profile + role; updates `last_login`; sets `sessionStorage.lubc_tab`. Wrapped in `AuthShell`. **Interview: HIGH**
+
+### `components/layout/auth-shell.tsx`
+Shared auth page shell: full-bleed building background, frosted card. Used by login, forgot-password, reset-password. **Interview: LOW**
+
+### `components/brand/anandam-logo.tsx`
+Logo image component for dashboard header. **Interview: LOW**
 
 ### `app/(auth)/signup/page.tsx`
 Redirects to login (self-signup disabled). **Interview: LOW**
@@ -54,7 +60,10 @@ Static notice: ask an administrator to send a reset link. No backend call. **Int
 Client Supabase password update after the Supabase Auth reset link. **Interview: MEDIUM**
 
 ### `app/(dashboard)/dashboard/page.tsx` + `recent-bookings.tsx`
-Stats, owner split, parking, tower view, recent bookings. O(n) scans. **Interview: HIGH**
+Compact stat tiles, tower-first layout (8/4 grid), owner split, parking, recent activity sidebar. O(n) scans. **Interview: HIGH**
+
+### `app/(dashboard)/lookup/tower-view.tsx` + `lib/data/tower-colors.ts`
+Color-coded Anandam tower grid; muted palette for developer/landowner/commercial/amenity/sold. **Interview: HIGH**
 
 ### `app/(dashboard)/bookings/page.tsx` + `bookings-table.tsx`
 Booking registry with URL filters. **Interview: HIGH**
@@ -150,7 +159,7 @@ Static Anandam flat → area map; developer vs landowner classification. **Inter
 ## `components/`
 
 ### `components/layout/dashboard-layout.tsx`
-Shell: nav filtered by role, logout, tab guard. **Interview: HIGH**
+Shell: Anandam logo, underline nav tabs, nav filtered by role, logout. **Interview: HIGH**
 
 ### `components/ui/*`, loading indicators
 shadcn/ui primitives and UX loaders. **Interview: LOW**
@@ -201,3 +210,5 @@ proxy.ts
 7. `lib/data/flat-ownership.ts`
 8. `proxy.ts`
 9. `components/layout/dashboard-layout.tsx`
+10. `components/layout/auth-shell.tsx` (login UX)
+11. `lib/data/tower-colors.ts` (tower palette)
