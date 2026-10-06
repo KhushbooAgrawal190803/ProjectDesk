@@ -314,7 +314,7 @@ Supporting points:
 
 **Q35:** Why is admin_id nullable in admin_audit_log after migration?  
 **Answer:** Allows system events without admin user reference.  
-**Files:** migration-consolidated.sql
+**Files:** `supabase/schema.sql`, `supabase/migrations/`
 
 ### Architecture / System Design
 
