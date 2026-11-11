@@ -7,19 +7,63 @@ import { step2Schema, Step2Data, Step2FormValues } from '@/lib/validations/booki
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronRight, ChevronLeft, UserPlus } from 'lucide-react'
+import { ChevronRight, ChevronLeft, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { DocumentUploadSection, UploadedDoc } from './document-upload'
+import { DocumentUploadSection, DocumentUploadField, UploadedDoc } from './document-upload'
+import { deleteDocument } from './document-actions'
+import { AddressFields, AddressValue } from './address-fields'
+import { formatPostalAddress } from '@/lib/booking/address'
+import type { CoApplicantInput } from '@/lib/booking/persist-details'
 
 const getErrorMessage = (error: any): string | null => {
   if (!error) return null
   return typeof error.message === 'string' ? error.message : null
 }
 
+const SALUTATIONS = ['Mr.', 'Mrs.', 'Ms.', 'Miss', 'Dr.']
+const RELATIONSHIPS = ['Father', 'Mother', 'Husband', 'Wife']
+const PARENTS_LABEL = "Parents' / Spouse's Name"
+
+function SalutationSelect({ id, value, onChange }: { id: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <select
+      id={id}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="flex h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+    >
+      <option value="">Select</option>
+      {SALUTATIONS.map((item) => (
+        <option key={item} value={item}>{item}</option>
+      ))}
+    </select>
+  )
+}
+
+function emptyCoApplicant(): CoApplicantInput {
+  return {
+    id: crypto.randomUUID(),
+    salutation: '',
+    name: '',
+    father_or_spouse: '',
+    relationship: '',
+    occupation: '',
+    mobile: '',
+    email: '',
+    pan: '',
+    aadhaar: '',
+    address_line1: '',
+    address_line2: '',
+    city: '',
+    state: '',
+    pin_code: '',
+    country: 'India',
+  }
+}
+
 interface Step2ApplicantProps {
-  data: Partial<Step2Data>
-  onUpdate: (data: Partial<Step2Data>) => void
+  data: Partial<Step2Data> & { coapplicants?: CoApplicantInput[] }
+  onUpdate: (data: Partial<Step2Data> & { coapplicants: CoApplicantInput[] }) => void
   onNext: () => void
   onBack: () => void
   draftId?: string
@@ -28,25 +72,41 @@ interface Step2ApplicantProps {
 }
 
 export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, documents, onDocumentsChange }: Step2ApplicantProps) {
-  const [showCoApplicant, setShowCoApplicant] = useState(data.has_coapplicant || false)
+  const [salutation, setSalutation] = useState(data.applicant_salutation || '')
+  const [address, setAddress] = useState<AddressValue>({
+    address_line1: data.applicant_address_line1 || '',
+    address_line2: data.applicant_address_line2 || '',
+    city: data.applicant_city || '',
+    state: data.applicant_state || '',
+    pin_code: data.applicant_pin_code || '',
+    country: data.applicant_country || 'India',
+  })
+  const [coapplicants, setCoapplicants] = useState<CoApplicantInput[]>(data.coapplicants || [])
 
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors },
   } = useForm<Step2FormValues, unknown, Step2Data>({
     resolver: zodResolver(step2Schema),
     defaultValues: { ...data, has_coapplicant: data.has_coapplicant || false },
   })
 
-  const handleCoApplicantToggle = (checked: boolean) => {
-    setShowCoApplicant(checked)
-    setValue('has_coapplicant', checked)
-  }
-
   const onSubmit = (formData: Step2Data) => {
-    onUpdate({ ...formData, has_coapplicant: showCoApplicant })
+    const country = address.country || 'India'
+    onUpdate({
+      ...formData,
+      applicant_salutation: salutation,
+      applicant_address_line1: address.address_line1 || '',
+      applicant_address_line2: address.address_line2 || '',
+      applicant_city: address.city || '',
+      applicant_state: address.state || '',
+      applicant_pin_code: address.pin_code || '',
+      applicant_country: country,
+      applicant_address: formatPostalAddress({ ...address, country }),
+      has_coapplicant: coapplicants.length > 0,
+      coapplicants,
+    })
     onNext()
   }
 
@@ -65,6 +125,10 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
         <h3 className="text-lg font-semibold mb-4">Primary Applicant</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
+            <Label htmlFor="applicant_salutation">Salutation</Label>
+            <SalutationSelect id="applicant_salutation" value={salutation} onChange={setSalutation} />
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="applicant_name">Full Name</Label>
             <Input
               id="applicant_name"
@@ -77,7 +141,7 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="applicant_father_or_spouse">Father&apos;s / Spouse Name</Label>
+            <Label htmlFor="applicant_father_or_spouse">{PARENTS_LABEL}</Label>
             <Input
               id="applicant_father_or_spouse"
               {...register('applicant_father_or_spouse')}
@@ -86,6 +150,22 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
             {errors.applicant_father_or_spouse && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.applicant_father_or_spouse)}</p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="applicant_relationship">Relationship</Label>
+            <select
+              id="applicant_relationship"
+              {...register('applicant_relationship')}
+              className="flex h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+            >
+              <option value="">Select</option>
+              {RELATIONSHIPS.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="applicant_occupation">Occupation</Label>
+            <Input id="applicant_occupation" {...register('applicant_occupation')} placeholder="Occupation" />
           </div>
 
           <div className="space-y-2">
@@ -141,105 +221,118 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
             )}
           </div>
 
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="applicant_address">Address</Label>
-            <Input
-              id="applicant_address"
-              {...register('applicant_address')}
-              placeholder="Full address"
-            />
-          </div>
+          <AddressFields idPrefix="applicant" value={address} onChange={setAddress} />
         </div>
       </div>
 
-      {/* Co-Applicant Toggle */}
-      <div className="flex items-center gap-3 p-4 border border-zinc-200 rounded-lg bg-zinc-50">
-        <Checkbox
-          id="has_coapplicant"
-          checked={showCoApplicant}
-          onCheckedChange={(checked) => handleCoApplicantToggle(checked as boolean)}
-        />
-        <Label htmlFor="has_coapplicant" className="flex items-center gap-2 cursor-pointer">
-          <UserPlus className="w-4 h-4" />
-          Add Co-Applicant
-        </Label>
-      </div>
-
-      {/* Co-Applicant Information */}
-      {showCoApplicant && (
-        <div>
-          <h3 className="text-lg font-semibold mb-4">Co-Applicant</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="coapplicant_name">Full Name</Label>
-              <Input
-                id="coapplicant_name"
-                {...register('coapplicant_name')}
-                placeholder="Enter full name"
-              />
-              {errors.coapplicant_name && (
-                <p className="text-sm text-red-600">{getErrorMessage(errors.coapplicant_name)}</p>
-              )}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Co-Applicants</h3>
+          <Button type="button" variant="outline" onClick={() => setCoapplicants((current) => [...current, emptyCoApplicant()])} className="gap-2">
+            <Plus className="size-4" />
+            Add Co-Applicant
+          </Button>
+        </div>
+        {coapplicants.map((person, index) => (
+          <div key={person.id} className="space-y-4 rounded-lg border border-zinc-200 p-4">
+            <div className="flex items-center justify-between">
+              <h4 className="font-medium text-zinc-900">Co-Applicant {index + 1}</h4>
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-red-600"
+                onClick={() => {
+                  const pan = documents[`${person.id}:pan`]
+                  const aadhaar = documents[`${person.id}:aadhaar`]
+                  if (pan) void deleteDocument(pan.id)
+                  if (aadhaar) void deleteDocument(aadhaar.id)
+                  const next = { ...documents }
+                  delete next[`${person.id}:pan`]
+                  delete next[`${person.id}:aadhaar`]
+                  onDocumentsChange(next)
+                  setCoapplicants((current) => current.filter((item) => item.id !== person.id))
+                }}
+              >
+                <Trash2 className="size-4" />
+              </Button>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="coapplicant_relationship">Relationship</Label>
-              <Input
-                id="coapplicant_relationship"
-                {...register('coapplicant_relationship')}
-                placeholder="e.g., Spouse, Parent"
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Salutation</Label>
+                <SalutationSelect
+                  id={`${person.id}-salutation`}
+                  value={person.salutation || ''}
+                  onChange={(value) => setCoapplicants((current) => current.map((item) => item.id === person.id ? { ...item, salutation: value } : item))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Relationship</Label>
+                <select
+                  value={person.relationship || ''}
+                  onChange={(e) => setCoapplicants((current) => current.map((item) => item.id === person.id ? { ...item, relationship: e.target.value } : item))}
+                  className="flex h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                >
+                  <option value="">Select</option>
+                  {RELATIONSHIPS.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </div>
+              {([
+                ['name', 'Full Name'],
+                ['father_or_spouse', PARENTS_LABEL],
+                ['occupation', 'Occupation'],
+                ['mobile', 'Mobile Number'],
+                ['email', 'Email'],
+                ['pan', 'PAN'],
+                ['aadhaar', 'Aadhaar'],
+              ] as const).map(([key, label]) => (
+                <div key={key} className="space-y-2">
+                  <Label>{label}</Label>
+                  <Input
+                    value={person[key] || ''}
+                    onChange={(e) => setCoapplicants((current) => current.map((item) => item.id === person.id ? { ...item, [key]: e.target.value } : item))}
+                  />
+                </div>
+              ))}
+              <AddressFields
+                idPrefix={person.id}
+                value={person}
+                onChange={(next) => setCoapplicants((current) => current.map((item) => item.id === person.id ? { ...item, ...next } : item))}
               />
-              {errors.coapplicant_relationship && (
-                <p className="text-sm text-red-600">{getErrorMessage(errors.coapplicant_relationship)}</p>
-              )}
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="coapplicant_mobile">Mobile Number</Label>
-              <Input
-                id="coapplicant_mobile"
-                {...register('coapplicant_mobile')}
-                placeholder="10-digit mobile number"
-                maxLength={10}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <DocumentUploadField
+                label="PAN Card (Image/PDF)"
+                documentType="coapplicant_pan"
+                recordKey={`${person.id}:pan`}
+                bookingId={draftId}
+                uploadedDoc={documents[`${person.id}:pan`]}
+                onUpload={(doc, recordKey) => onDocumentsChange({ ...documents, [recordKey]: doc })}
+                onRemove={(recordKey) => {
+                  const next = { ...documents }
+                  delete next[recordKey]
+                  onDocumentsChange(next)
+                }}
               />
-              {errors.coapplicant_mobile && (
-                <p className="text-sm text-red-600">{getErrorMessage(errors.coapplicant_mobile)}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="coapplicant_pan">PAN Number</Label>
-              <Input
-                id="coapplicant_pan"
-                {...register('coapplicant_pan')}
-                placeholder="ABCDE1234F"
-                maxLength={10}
-                style={{ textTransform: 'uppercase' }}
+              <DocumentUploadField
+                label="Aadhaar Card (Image/PDF)"
+                documentType="coapplicant_aadhaar"
+                recordKey={`${person.id}:aadhaar`}
+                bookingId={draftId}
+                uploadedDoc={documents[`${person.id}:aadhaar`]}
+                onUpload={(doc, recordKey) => onDocumentsChange({ ...documents, [recordKey]: doc })}
+                onRemove={(recordKey) => {
+                  const next = { ...documents }
+                  delete next[recordKey]
+                  onDocumentsChange(next)
+                }}
               />
-              {errors.coapplicant_pan && (
-                <p className="text-sm text-red-600">{getErrorMessage(errors.coapplicant_pan)}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="coapplicant_aadhaar">Aadhaar Number</Label>
-              <Input
-                id="coapplicant_aadhaar"
-                {...register('coapplicant_aadhaar')}
-                placeholder="12-digit Aadhaar"
-                maxLength={12}
-              />
-              {errors.coapplicant_aadhaar && (
-                <p className="text-sm text-red-600">{getErrorMessage(errors.coapplicant_aadhaar)}</p>
-              )}
             </div>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
 
-      {/* Document Uploads */}
       <DocumentUploadSection
-        showCoApplicant={showCoApplicant}
+        showCoApplicant={false}
         bookingId={draftId}
         documents={documents}
         onDocumentsChange={onDocumentsChange}

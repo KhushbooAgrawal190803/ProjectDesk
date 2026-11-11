@@ -1,44 +1,23 @@
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 
-const sizeMap = {
-  sm: 'size-10',
-  md: 'size-14',
-  lg: 'size-20',
-  header: 'size-12 md:size-16',
-} as const
-
 interface AnandamLogoProps {
-  size?: keyof typeof sizeMap
   showTitle?: boolean
   titleClassName?: string
   className?: string
+  /** Light background. The letterhead mark is black. */
+  onDark?: boolean
 }
 
-export function AnandamLogo({
-  size = 'header',
-  showTitle = true,
-  titleClassName,
-  className,
-}: AnandamLogoProps) {
+export function AnandamLogo({ className, onDark = false }: AnandamLogoProps) {
   return (
-    <div className={cn('flex items-center gap-3 md:gap-4', className)}>
-      <div className={cn('relative shrink-0 overflow-hidden rounded-xl shadow-sm', sizeMap[size])}>
-        <Image
-          src="/anandam-logo.png"
-          alt="Anandam — Level Up Buildcon"
-          fill
-          className="object-cover"
-          priority
-        />
-      </div>
-      {showTitle && (
-        <div className="hidden sm:block">
-          <p className={cn('text-base font-semibold tracking-tight text-zinc-900 md:text-lg', titleClassName)}>
-            Level Up Buildcon
-          </p>
-        </div>
-      )}
-    </div>
+    <Image
+      src="/level-up-buildcon-logo.jpg"
+      alt="Level Up Buildcon"
+      width={280}
+      height={120}
+      priority
+      className={cn('h-16 w-auto object-contain object-left', onDark && 'brightness-0 invert', className)}
+    />
   )
 }

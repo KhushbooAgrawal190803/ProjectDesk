@@ -48,6 +48,7 @@ interface BookingRow {
   unit_no?: string
   project_name?: string
   total_cost?: number
+  total_property_value?: number
   amount_due: number
   amount_received: number
   received_at?: string | null
@@ -288,7 +289,7 @@ export function PaymentScheduleClient() {
                       <TableHead className="font-semibold">Serial</TableHead>
                       <TableHead className="font-semibold">Applicant</TableHead>
                       <TableHead className="font-semibold">Flat</TableHead>
-                      <TableHead className="font-semibold text-right">Total Cost</TableHead>
+                      <TableHead className="font-semibold text-right">Total Consideration</TableHead>
                       <TableHead className="font-semibold text-right">Slab Due</TableHead>
                       <TableHead className="font-semibold text-right">Received</TableHead>
                       <TableHead className="font-semibold text-right">Balance</TableHead>
@@ -315,7 +316,7 @@ export function PaymentScheduleClient() {
                           </TableCell>
                           <TableCell className="font-medium text-sm">{b.applicant_name || '—'}</TableCell>
                           <TableCell className="text-zinc-600 text-sm font-mono">{b.unit_no || '—'}</TableCell>
-                          <TableCell className="text-right text-sm text-zinc-600">{formatCurrency(b.total_cost || 0)}</TableCell>
+                          <TableCell className="text-right text-sm text-zinc-600">{formatCurrency(b.total_property_value || b.total_cost || 0)}</TableCell>
                           <TableCell className="text-right text-sm font-semibold">{formatCurrency(b.amount_due)}</TableCell>
                           <TableCell className="text-right text-sm">
                             {b.amount_received > 0

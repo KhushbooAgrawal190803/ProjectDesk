@@ -19,10 +19,12 @@ export interface UploadedDoc {
 interface DocumentUploadProps {
   label: string
   documentType: DocumentType
+  /** Key in the documents map. Defaults to documentType. */
+  recordKey?: string
   bookingId?: string
   uploadedDoc?: UploadedDoc
-  onUpload: (doc: UploadedDoc) => void
-  onRemove: (documentType: DocumentType) => void
+  onUpload: (doc: UploadedDoc, recordKey: string) => void
+  onRemove: (recordKey: string) => void
 }
 
 function formatFileSize(bytes: number): string {
@@ -31,7 +33,8 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function DocumentUploadField({ label, documentType, bookingId, uploadedDoc, onUpload, onRemove }: DocumentUploadProps) {
+export function DocumentUploadField({ label, documentType, recordKey, bookingId, uploadedDoc, onUpload, onRemove }: DocumentUploadProps) {
+  const key = recordKey || documentType
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -66,7 +69,7 @@ function DocumentUploadField({ label, documentType, bookingId, uploadedDoc, onUp
           fileName: file.name,
           fileSize: file.size,
           mimeType: file.type,
-        })
+        }, key)
         toast.success('Document uploaded')
       } else {
         toast.error('Upload failed', { description: result.error })
@@ -84,7 +87,7 @@ function DocumentUploadField({ label, documentType, bookingId, uploadedDoc, onUp
     try {
       const result = await deleteDocument(uploadedDoc.id)
       if (result.success) {
-        onRemove(documentType)
+        onRemove(key)
         toast.success('Document removed')
       } else {
         toast.error('Failed to remove', { description: result.error })
@@ -164,13 +167,13 @@ interface DocumentUploadSectionProps {
 }
 
 export function DocumentUploadSection({ showCoApplicant, bookingId, documents, onDocumentsChange }: DocumentUploadSectionProps) {
-  const handleUpload = (doc: UploadedDoc) => {
-    onDocumentsChange({ ...documents, [doc.documentType]: doc })
+  const handleUpload = (doc: UploadedDoc, recordKey: string) => {
+    onDocumentsChange({ ...documents, [recordKey]: doc })
   }
 
-  const handleRemove = (documentType: DocumentType) => {
+  const handleRemove = (recordKey: string) => {
     const updated = { ...documents }
-    delete updated[documentType]
+    delete updated[recordKey]
     onDocumentsChange(updated)
   }
 
@@ -207,6 +210,7 @@ export function DocumentUploadSection({ showCoApplicant, bookingId, documents, o
             <DocumentUploadField
               label="PAN Card (Image/PDF)"
               documentType="coapplicant_pan"
+              recordKey="coapplicant_pan"
               bookingId={bookingId}
               uploadedDoc={documents['coapplicant_pan']}
               onUpload={handleUpload}
@@ -215,6 +219,7 @@ export function DocumentUploadSection({ showCoApplicant, bookingId, documents, o
             <DocumentUploadField
               label="Aadhaar Card (Image/PDF)"
               documentType="coapplicant_aadhaar"
+              recordKey="coapplicant_aadhaar"
               bookingId={bookingId}
               uploadedDoc={documents['coapplicant_aadhaar']}
               onUpload={handleUpload}

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Booking, Profile, UserRole } from '@/lib/types/database'
+import { formatPaymentMode } from '@/lib/booking/payment-mode'
 import {
   Table,
   TableBody,
@@ -66,7 +67,7 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
 
   const handleFilterChange = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString())
-    if (value) {
+    if (value && value !== 'all') {
       params.set(key, value)
     } else {
       params.delete(key)
@@ -151,15 +152,15 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4 border-t border-zinc-200">
               <div>
                 <Select
-                  value={searchParams.get('project') || ''}
+                  value={searchParams.get('project') || 'all'}
                   onValueChange={(v) => handleFilterChange('project', v)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Projects" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Projects</SelectItem>
-                    {filterOptions.projects.map((project) => (
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {filterOptions.projects.filter(Boolean).map((project) => (
                       <SelectItem key={project} value={project}>
                         {project}
                       </SelectItem>
@@ -170,14 +171,14 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
 
               <div>
                 <Select
-                  value={searchParams.get('unit_category') || ''}
+                  value={searchParams.get('unit_category') || 'all'}
                   onValueChange={(v) => handleFilterChange('unit_category', v)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Categories" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Categories</SelectItem>
+                    <SelectItem value="all">All Categories</SelectItem>
                     <SelectItem value="Residential">Residential</SelectItem>
                     <SelectItem value="Commercial">Commercial</SelectItem>
                   </SelectContent>
@@ -186,14 +187,14 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
 
               <div>
                 <Select
-                  value={searchParams.get('status') || ''}
+                  value={searchParams.get('status') || 'all'}
                   onValueChange={(v) => handleFilterChange('status', v)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Status</SelectItem>
+                    <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="PENDING">Pending</SelectItem>
                     <SelectItem value="SUBMITTED">Submitted</SelectItem>
                     <SelectItem value="EDITED">Edited</SelectItem>
@@ -203,33 +204,34 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
 
               <div>
                 <Select
-                  value={searchParams.get('payment_mode') || ''}
+                  value={searchParams.get('payment_mode') || 'all'}
                   onValueChange={(v) => handleFilterChange('payment_mode', v)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Payment Modes" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Payment Modes</SelectItem>
+                    <SelectItem value="all">All Payment Modes</SelectItem>
                     <SelectItem value="Cash">Cash</SelectItem>
                     <SelectItem value="Cheque">Cheque</SelectItem>
                     <SelectItem value="NEFT_RTGS">NEFT / RTGS</SelectItem>
                     <SelectItem value="UPI">UPI</SelectItem>
+                    <SelectItem value="Other">Others</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
                 <Select
-                  value={searchParams.get('created_by') || ''}
+                  value={searchParams.get('created_by') || 'all'}
                   onValueChange={(v) => handleFilterChange('created_by', v)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Users" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Users</SelectItem>
-                    {filterOptions.users.map((user) => (
+                    <SelectItem value="all">All Users</SelectItem>
+                    {filterOptions.users.filter((user) => user.id).map((user) => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.full_name}
                       </SelectItem>
@@ -310,7 +312,7 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
                     {formatCurrency(booking.booking_amount_paid)}
                   </TableCell>
                   <TableCell className="text-zinc-600">
-                    {booking.payment_mode ? booking.payment_mode.replace('_', ' / ') : '-'}
+                    {booking.payment_mode ? formatPaymentMode(booking.payment_mode, booking.payment_mode === 'Other' ? booking.payment_mode_detail : undefined) : '-'}
                   </TableCell>
                   <TableCell className="text-zinc-600 text-sm">
                     {booking.creator?.full_name}

@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { toast } from 'sonner'
 import { ChevronRight, CheckCircle2, FileText, Save, Trash2 } from 'lucide-react'
 import { BookingFormData } from '@/lib/validations/booking'
+import type { CoApplicantInput, ParkingSpaceInput } from '@/lib/booking/persist-details'
+import type { ScheduleRowInput } from '@/lib/booking/schedule'
 import { Booking } from '@/lib/types/database'
 import { saveDraft, submitBooking, getDraft, deleteDraft } from './actions'
 import { linkDocumentsToBooking, getDraftDocuments } from './document-actions'
@@ -17,12 +19,26 @@ import { Step1ProjectUnit } from './step-1-project-unit'
 import { Step2Applicant } from './step-2-applicant'
 import { Step3PricingPayment } from './step-3-pricing-payment'
 import { Step4Review } from './step-4-review'
+import { StepNoc } from './step-noc'
+import { StepPaymentSchedule } from './step-payment-schedule'
+
+type WizardForm = Partial<BookingFormData> & {
+  schedule_mode?: 'standard' | 'custom'
+  coapplicants?: CoApplicantInput[]
+  parking_spaces?: ParkingSpaceInput[]
+  schedule_rows?: ScheduleRowInput[]
+  total_parking_charges?: number
+  total_property_value?: number
+  pricing_mode?: 'rate' | 'lump_sum'
+}
 
 const STEPS = [
   { number: 1, title: 'Project & Unit', description: 'Property details' },
   { number: 2, title: 'Applicant(s)', description: 'Customer information' },
   { number: 3, title: 'Pricing & Payment', description: 'Financial details' },
-  { number: 4, title: 'Review', description: 'Confirm & submit' },
+  { number: 4, title: 'Bank NOC', description: 'If a bank letter is needed' },
+  { number: 5, title: 'Payment Schedule', description: 'Slabs on the flat price' },
+  { number: 6, title: 'Review', description: 'Confirm & submit' },
 ]
 
 interface BookingWizardProps {
@@ -42,7 +58,7 @@ export function BookingWizard({
 }: BookingWizardProps) {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState(1)
-  const [formData, setFormData] = useState<Partial<BookingFormData>>({
+  const [formData, setFormData] = useState<WizardForm>({
     project_name: 'Anandam',
     project_location: 'Ranchi, Jharkhand',
     project_address: 'PLOT NO 1089 KHATA NO 74, GUTUWA NAGRI RANCHI JHARKHAND',
@@ -50,9 +66,15 @@ export function BookingWizard({
     building_permit_no: 'RRDA/GH/0369/2025',
     unit_category: 'Residential',
     unit_type: 'Flat',
-    payment_mode: 'UPI',
+    payment_mode: 'Cash',
     additional_parking: 0,
     premium_parking: 0,
+    gst_collected: 0,
+    noc_required: false,
+    applicant_country: 'India',
+    schedule_mode: 'standard',
+    coapplicants: [],
+    parking_spaces: [],
     ...(prefilledUnit ? { unit_no: prefilledUnit } : {}),
   })
   const [draftId, setDraftId] = useState<string | undefined>()
@@ -74,8 +96,20 @@ export function BookingWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preselectedDraftId])
 
-  const updateFormData = (data: Partial<BookingFormData>) => {
+  const updateFormData = (data: WizardForm) => {
     setFormData((prev) => ({ ...prev, ...data }))
+  }
+
+  const linkUploadedDocuments = async (bookingId: string) => {
+    const docIds = Object.values(documents).map((doc) => doc.id)
+    if (!docIds.length) return
+    const coapplicantByDocument: Record<string, string | null> = {}
+    const people = ((formData as { coapplicants?: { id: string }[] }).coapplicants) || []
+    for (const [key, doc] of Object.entries(documents)) {
+      const owner = people.find((person) => key.startsWith(`${person.id}:`))
+      if (owner) coapplicantByDocument[doc.id] = owner.id
+    }
+    await linkDocumentsToBooking(docIds, bookingId, coapplicantByDocument)
   }
 
   const handleSaveDraft = async () => {
@@ -83,6 +117,7 @@ export function BookingWizard({
     try {
       const result = await saveDraft(formData, draftId)
       setDraftId(result.draftId)
+      await linkUploadedDocuments(result.draftId)
       toast.success('Draft saved', {
         description: 'Your progress has been saved.',
       })
@@ -102,13 +137,20 @@ export function BookingWizard({
         'project_name', 'project_location', 'project_address', 'rera_regn_no', 'building_permit_no',
         'unit_category', 'unit_type', 'unit_type_other_text', 'unit_no', 'floor_no',
         'builtup_area', 'super_builtup_area', 'carpet_area',
-        'applicant_name', 'applicant_father_or_spouse', 'applicant_mobile', 'applicant_email',
+        'applicant_name', 'applicant_salutation', 'applicant_father_or_spouse', 'applicant_relationship', 'applicant_occupation', 'applicant_mobile', 'applicant_email',
         'applicant_pan', 'applicant_aadhaar', 'applicant_address',
+        'applicant_address_line1', 'applicant_address_line2', 'applicant_city', 'applicant_state', 'applicant_pin_code', 'applicant_country',
+        'boundary_east', 'boundary_west', 'boundary_north', 'boundary_south',
         'coapplicant_name', 'coapplicant_relationship', 'coapplicant_mobile',
         'coapplicant_pan', 'coapplicant_aadhaar',
-        'rate_per_sqft', 'total_cost', 'gst_amount',
+        'rate_per_sqft', 'total_cost', 'gst_amount', 'gst_collected',
         'booking_amount_paid', 'payment_mode', 'payment_mode_detail',
-        'txn_or_cheque_no', 'txn_date', 'additional_parking', 'premium_parking',
+        'txn_or_cheque_no', 'txn_date', 'allotment_date', 'agreement_for_sale_date', 'additional_parking', 'premium_parking',
+        'noc_required', 'noc_bank_name', 'noc_addressee', 'noc_bank_address',
+        'noc_bank_address_line1', 'noc_bank_address_line2', 'noc_bank_city', 'noc_bank_state', 'noc_bank_pin_code', 'noc_bank_country',
+        'payment_plan_type',
+        'finance_scenario', 'finance_bank_name', 'finance_bank_branch', 'finance_loan_status',
+        'finance_sanction_ref', 'finance_sanction_amount', 'finance_sanction_date', 'undivided_land_share',
       ]
       const sanitized: Record<string, any> = {}
       for (const key of formFields) {
@@ -118,6 +160,12 @@ export function BookingWizard({
         }
       }
       // Detect co-applicant
+      sanitized.coapplicants = (draft as any).coapplicants || []
+      sanitized.payment_entries = (draft as any).payment_entries || []
+      sanitized.parking_spaces = (draft as any).parking_spaces || []
+      sanitized.schedule_rows = (draft as any).schedule_rows || []
+      sanitized.schedule_mode = (draft as any).schedule_mode || 'standard'
+      sanitized.pricing_mode = sanitized.rate_per_sqft ? 'rate' : sanitized.total_cost ? 'lump_sum' : 'rate'
       if (sanitized.coapplicant_name) {
         sanitized.has_coapplicant = true
       }
@@ -126,7 +174,10 @@ export function BookingWizard({
       const existingDocs = await getDraftDocuments(id)
       const restoredDocs: Record<string, UploadedDoc> = {}
       for (const doc of existingDocs) {
-        restoredDocs[doc.document_type] = {
+        const key = doc.coapplicant_id
+          ? `${doc.coapplicant_id}:${doc.document_type === 'coapplicant_pan' ? 'pan' : 'aadhaar'}`
+          : doc.document_type
+        restoredDocs[key] = {
           id: doc.id,
           documentType: doc.document_type,
           fileName: doc.file_name,
@@ -162,12 +213,7 @@ export function BookingWizard({
     setSubmitting(true)
     try {
       const result = await submitBooking(formData as BookingFormData, draftId)
-      
-      // Link uploaded documents to the booking
-      const docIds = Object.values(documents).map(d => d.id)
-      if (docIds.length > 0) {
-        await linkDocumentsToBooking(docIds, result.bookingId)
-      }
+      await linkUploadedDocuments(result.bookingId)
       
       setSubmittedBookingId(result.bookingId)
       setShowSuccess(true)
@@ -215,7 +261,7 @@ export function BookingWizard({
         {/* Stepper */}
         <Card className="border-zinc-200 shadow-sm">
           <CardContent className="py-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 overflow-x-auto">
               {STEPS.map((step, index) => (
                 <div key={step.number} className="flex items-center flex-1">
                   <button
@@ -302,9 +348,27 @@ export function BookingWizard({
               />
             )}
             {currentStep === 4 && (
+              <StepNoc
+                key={formKey}
+                data={formData}
+                onUpdate={updateFormData}
+                onNext={() => goToStep(5)}
+                onBack={() => goToStep(3)}
+              />
+            )}
+            {currentStep === 5 && (
+              <StepPaymentSchedule
+                key={formKey}
+                data={formData}
+                onUpdate={updateFormData}
+                onNext={() => goToStep(6)}
+                onBack={() => goToStep(4)}
+              />
+            )}
+            {currentStep === 6 && (
               <Step4Review
                 data={formData as BookingFormData}
-                onBack={() => goToStep(3)}
+                onBack={() => goToStep(5)}
                 onSubmit={handleSubmit}
                 submitting={submitting}
                 documents={documents}
@@ -312,7 +376,7 @@ export function BookingWizard({
             )}
 
             {/* Save Draft Button */}
-            {currentStep < 4 && (
+            {currentStep < 6 && (
               <div className="flex items-center justify-between pt-4 border-t border-zinc-200">
                 <Button
                   variant="outline"
@@ -415,9 +479,15 @@ export function BookingWizard({
                     building_permit_no: 'RRDA/GH/0369/2025',
                     unit_category: 'Residential',
                     unit_type: 'Flat',
-                    payment_mode: 'UPI',
+                    payment_mode: 'Cash',
                     additional_parking: 0,
                     premium_parking: 0,
+                    gst_collected: 0,
+                    noc_required: false,
+                    applicant_country: 'India',
+                    schedule_mode: 'standard',
+                    coapplicants: [],
+                    parking_spaces: [],
                   })
                   setDraftId(undefined)
                   setCurrentStep(1)

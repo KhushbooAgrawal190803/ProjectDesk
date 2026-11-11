@@ -4,10 +4,10 @@ import { createClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { RecentBookings } from './recent-bookings'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { FileText, Users, IndianRupee, TrendingUp, ParkingSquare } from 'lucide-react'
 import { getTowerAllocations } from '@/app/(dashboard)/lookup/tower-actions'
 import { TowerView } from '@/app/(dashboard)/lookup/tower-view'
 import { getOwnerTypeForFlat } from '@/lib/data/flat-ownership'
+import { IstDate } from './ist-date'
 
 async function getDashboardStats() {
   const supabase = await createClient()
@@ -66,9 +66,9 @@ async function getDashboardStats() {
     .neq('status', 'DRAFT')
     .is('deleted_at', null)
   const bookedParking = (parkingData || []).reduce((s, b) => s + (Number(b.additional_parking) || 0), 0)
-  const availableParking = Math.max(0, 27 - bookedParking)
+  const availableParking = Math.max(0, 79 - bookedParking)
   const bookedPremiumParking = (parkingData || []).reduce((s, b) => s + (Number((b as any).premium_parking) || 0), 0)
-  const availablePremiumParking = Math.max(0, 9 - bookedPremiumParking)
+  const availablePremiumParking = Math.max(0, 27 - bookedPremiumParking)
 
   return {
     totalBookings: totalBookings || 0,
@@ -84,23 +84,10 @@ async function getDashboardStats() {
   }
 }
 
-function StatTile({
-  label,
-  value,
-  sub,
-  icon: Icon,
-}: {
-  label: string
-  value: ReactNode
-  sub?: string
-  icon: React.ComponentType<{ className?: string }>
-}) {
+function StatTile({ label, value, sub }: { label: string; value: ReactNode; sub?: string }) {
   return (
-    <div className="rounded-xl border border-zinc-200/80 bg-white px-4 py-3 shadow-sm">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
-        <Icon className="size-4 shrink-0 text-zinc-400" />
-      </div>
+    <div className="border border-zinc-200 bg-white px-4 py-3">
+      <p className="text-xs text-zinc-500">{label}</p>
       <p className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900">{value}</p>
       {sub && <p className="mt-0.5 text-xs text-zinc-500">{sub}</p>}
     </div>
@@ -125,30 +112,32 @@ export default async function DashboardPage() {
   return (
     <DashboardLayout profile={profile}>
       <div className="flex min-h-[calc(100vh-9rem)] flex-col gap-5">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Dashboard</h1>
-          <p className="mt-0.5 text-sm text-zinc-500">Welcome back, {profile.full_name}</p>
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Dashboard</h1>
+            <p className="mt-0.5 text-sm text-zinc-500">Welcome back, {profile.full_name}</p>
+          </div>
+          <IstDate />
         </div>
 
         {/* Compact stats — always fills one row on laptop+ */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-          <StatTile label="Total Bookings" value={stats.totalBookings} sub="All time" icon={FileText} />
-          <StatTile label="This Week" value={stats.weekBookings} sub="Last 7 days" icon={TrendingUp} />
-          <StatTile label="Total Amount" value={formatCurrency(stats.totalAmount)} sub="All bookings" icon={IndianRupee} />
-          <StatTile label="Level Up Buildcon" value={stats.ownerTotals.DEVELOPER.count} sub={`${formatCurrency(stats.ownerTotals.DEVELOPER.amount)} booked`} icon={FileText} />
-          <StatTile label="Balaji Hospitality" value={stats.ownerTotals.LANDOWNER.count} sub={`${formatCurrency(stats.ownerTotals.LANDOWNER.amount)} booked`} icon={FileText} />
+          <StatTile label="Total Bookings" value={stats.totalBookings} sub="All time" />
+          <StatTile label="This Week" value={stats.weekBookings} sub="Last 7 days" />
+          <StatTile label="Total Amount" value={formatCurrency(stats.totalAmount)} sub="All bookings" />
+          <StatTile label="Level Up Buildcon" value={stats.ownerTotals.DEVELOPER.count} sub={`${formatCurrency(stats.ownerTotals.DEVELOPER.amount)} booked`} />
+          <StatTile label="Balaji Hospitality" value={stats.ownerTotals.LANDOWNER.count} sub={`${formatCurrency(stats.ownerTotals.LANDOWNER.amount)} booked`} />
           <StatTile
             label="Parking"
             value={
               <>
                 {stats.availableParking}
-                <span className="text-base font-normal text-zinc-400"> / 27</span>
+                <span className="text-base font-normal text-zinc-400"> / 79</span>
               </>
             }
-            sub={`Premium ${stats.availablePremiumParking}/9`}
-            icon={ParkingSquare}
+            sub={`Secondary ${stats.availablePremiumParking}/27`}
           />
-          <StatTile label="Team" value={stats.activeUsers} sub="Active users" icon={Users} />
+          <StatTile label="Team" value={stats.activeUsers} sub="Active users" />
         </div>
 
         {/* Main: tower dominates, activity on the side */}

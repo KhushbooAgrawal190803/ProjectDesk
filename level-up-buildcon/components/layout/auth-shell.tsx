@@ -1,5 +1,6 @@
 import Image from 'next/image'
 import { ReactNode } from 'react'
+import { AnandamLogo } from '@/components/brand/anandam-logo'
 
 interface AuthShellProps {
   children: ReactNode
@@ -28,9 +29,10 @@ export function AuthShell({ children, title, description }: AuthShellProps) {
       />
 
       <div className="relative w-full max-w-md">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <p className="text-lg font-semibold tracking-tight text-white">Level Up Buildcon</p>
-          <p className="text-sm text-zinc-300">ProjectDesk</p>
+        <div className="mb-6 flex justify-center">
+          <div className="rounded-md bg-white px-4 py-2">
+            <AnandamLogo className="h-24" />
+          </div>
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-white/95 p-8 shadow-2xl shadow-black/30 backdrop-blur-sm">

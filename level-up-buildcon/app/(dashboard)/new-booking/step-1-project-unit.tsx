@@ -5,7 +5,9 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { step1Schema, Step1Data, Step1FormValues } from '@/lib/validations/booking'
 import { getFlatAreas, isFlatAreaLookupProject, isCommercialFlat, isAmenityFlat, COMMERCIAL_FLAT_AREA } from '@/lib/data/flat-areas'
+import { getUndividedLandShare } from '@/lib/data/land-share'
 import { getOwnerNameForFlat } from '@/lib/data/flat-ownership'
+import { boundaryMatch, getUnitBoundaries } from '@/lib/data/flat-boundaries'
 import { checkUnitAvailability } from './actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,9 +15,9 @@ import { Label } from '@/components/ui/label'
 import { ChevronRight, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
-const getErrorMessage = (error: any): string | null => {
+const getErrorMessage = (error: unknown): string | null => {
   if (!error) return null
-  return typeof error.message === 'string' ? error.message : null
+  return typeof (error as { message?: unknown }).message === 'string' ? String((error as { message: string }).message) : null
 }
 
 interface Step1ProjectUnitProps {
@@ -52,13 +54,13 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
   const unitCategory = watch('unit_category')
   const projectName = watch('project_name')
   const unitNo = watch('unit_no')
+  const boundaryState = boundaryMatch(unitNo)
+  const boundaries = getUnitBoundaries(unitNo)
 
-  // Anandam bookings always use Flat unit_type; category is Residential vs Commercial.
   useEffect(() => {
     if (unitCategory) setValue('unit_type', 'Flat')
   }, [unitCategory, setValue])
 
-  // Auto-fill built-up and super built-up area when flat number changes
   useEffect(() => {
     if (!projectName || !unitNo) return
     const trimmed = unitNo.trim()
@@ -74,7 +76,6 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
     }
   }, [projectName, unitNo, unitCategory, setValue])
 
-  // Auto-derive floor number from unit number (502 → 5, 203 → 2, 1001 → 10)
   useEffect(() => {
     if (!unitNo) return
     const digits = unitNo.replace(/\D/g, '')
@@ -83,7 +84,13 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
     }
   }, [unitNo, setValue])
 
-  // Derive unit size label for residential units: flats ending in 4 or 8 are 4BHK, others 3BHK
+  useEffect(() => {
+    setValue('boundary_east', boundaries?.east || '')
+    setValue('boundary_west', boundaries?.west || '')
+    setValue('boundary_north', boundaries?.north || '')
+    setValue('boundary_south', boundaries?.south || '')
+  }, [boundaries, setValue])
+
   useEffect(() => {
     if (!unitNo || unitCategory !== 'Residential') {
       setUnitSizeLabel(null)
@@ -100,33 +107,24 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
 
   const ownerName = getOwnerNameForFlat(unitNo) || null
 
-  // Validate flat number against the selected category
   useEffect(() => {
     if (!projectName || !unitNo) { setFlatError(null); return }
     if (!isFlatAreaLookupProject(projectName)) { setFlatError(null); return }
     const trimmed = unitNo.trim()
 
     if (unitCategory === 'Commercial') {
-      // Only 101-104 and 201-204 are valid for commercial bookings
       if (!isCommercialFlat(trimmed)) {
         setFlatError(`Flat ${unitNo} is not a commercial unit. Only 101–104 and 201–204 can be booked under Commercial.`)
       } else {
         setFlatError(null)
       }
+    } else if (isCommercialFlat(trimmed)) {
+      setFlatError(`Flat ${unitNo} is a commercial unit. Select "Commercial" to book it.`)
+    } else if (isAmenityFlat(trimmed)) {
+      setFlatError(`Flat ${unitNo} is an amenity unit and is not available for booking`)
     } else {
-      // Residential: block commercial flats, amenity flats, and unknowns
-      if (isCommercialFlat(trimmed)) {
-        setFlatError(`Flat ${unitNo} is a commercial unit. Select "Commercial" to book it.`)
-      } else if (isAmenityFlat(trimmed)) {
-        setFlatError(`Flat ${unitNo} is an amenity unit and is not available for booking`)
-      } else {
-        const areas = getFlatAreas(projectName, trimmed)
-        if (areas === null) {
-          setFlatError(`Flat ${unitNo} is not in the Anandam schedule`)
-        } else {
-          setFlatError(null)
-        }
-      }
+      const areas = getFlatAreas(projectName, trimmed)
+      setFlatError(areas === null ? `Flat ${unitNo} is not in the Anandam schedule` : null)
     }
   }, [projectName, unitNo, unitCategory])
 
@@ -163,8 +161,8 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
     onNext()
   }
 
-  const handleError = (formErrors: any) => {
-    const messages = Object.values(formErrors).map((e: any) => e?.message).filter(Boolean)
+  const handleError = (formErrors: Record<string, { message?: string } | undefined>) => {
+    const messages = Object.values(formErrors).map((e) => e?.message).filter(Boolean)
     toast.error('Please fix the following:', {
       description: messages.join(', ') || 'Some required fields are missing',
     })
@@ -172,17 +170,12 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
 
   return (
     <form onSubmit={handleSubmit(onSubmit, handleError)} className="space-y-6">
-      {/* Project Information */}
       <div>
         <h3 className="text-lg font-semibold mb-4">Project Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="project_name">Project Name</Label>
-            <Input
-              id="project_name"
-              {...register('project_name')}
-              placeholder="Enter project name"
-            />
+            <Input id="project_name" {...register('project_name')} placeholder="Enter project name" />
             {errors.project_name && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.project_name)}</p>
             )}
@@ -190,11 +183,7 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
 
           <div className="space-y-2">
             <Label htmlFor="project_location">Location</Label>
-            <Input
-              id="project_location"
-              {...register('project_location')}
-              placeholder="City, State"
-            />
+            <Input id="project_location" {...register('project_location')} placeholder="City, State" />
             {errors.project_location && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.project_location)}</p>
             )}
@@ -202,34 +191,27 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
 
           <div className="space-y-2">
             <Label htmlFor="rera_regn_no">RERA Registration No.</Label>
-            <Input
-              id="rera_regn_no"
-              {...register('rera_regn_no')}
-              placeholder="Optional"
-            />
+            <Input id="rera_regn_no" {...register('rera_regn_no')} placeholder="Optional" />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="building_permit_no">Building Permit No.</Label>
-            <Input
-              id="building_permit_no"
-              {...register('building_permit_no')}
-              placeholder="Optional"
-            />
+            <Input id="building_permit_no" {...register('building_permit_no')} placeholder="Optional" />
           </div>
 
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="project_address">Project Address</Label>
-            <Input
-              id="project_address"
-              {...register('project_address')}
-              placeholder="Full project address"
-            />
+            <Input id="project_address" {...register('project_address')} placeholder="Full project address" />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="allotment_date">Allotment Date</Label>
+            <Input id="allotment_date" type="date" {...register('allotment_date')} />
+            <p className="text-xs text-zinc-500">Printed on the allotment letter and the NOC. This is not the Agreement for Sale date.</p>
           </div>
         </div>
       </div>
 
-      {/* Unit Information */}
       <div>
         <h3 className="text-lg font-semibold mb-4">Unit Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -237,23 +219,13 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
             <Label htmlFor="unit_category">Unit Category</Label>
             <div className="flex gap-2">
               <label className="flex-1">
-                <input
-                  type="radio"
-                  value="Residential"
-                  {...register('unit_category')}
-                  className="peer sr-only"
-                />
+                <input type="radio" value="Residential" {...register('unit_category')} className="peer sr-only" />
                 <div className="flex items-center justify-center h-11 px-4 border-2 border-zinc-200 rounded-lg cursor-pointer peer-checked:border-zinc-900 peer-checked:bg-zinc-50 transition-all">
                   <span className="font-medium">Residential</span>
                 </div>
               </label>
               <label className="flex-1">
-                <input
-                  type="radio"
-                  value="Commercial"
-                  {...register('unit_category')}
-                  className="peer sr-only"
-                />
+                <input type="radio" value="Commercial" {...register('unit_category')} className="peer sr-only" />
                 <div className="flex items-center justify-center h-11 px-4 border-2 border-zinc-200 rounded-lg cursor-pointer peer-checked:border-zinc-900 peer-checked:bg-zinc-50 transition-all">
                   <span className="font-medium">Commercial</span>
                 </div>
@@ -261,7 +233,6 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
             </div>
           </div>
 
-          {/* unit_type mirrors unit_category — stored for records but not shown separately */}
           <input type="hidden" {...register('unit_type')} />
 
           <div className="space-y-2">
@@ -304,23 +275,12 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
 
           <div className="space-y-2">
             <Label htmlFor="floor_no">Floor Number</Label>
-            <Input
-              id="floor_no"
-              {...register('floor_no')}
-              placeholder="Auto-filled from unit no."
-              className="bg-zinc-50"
-            />
+            <Input id="floor_no" {...register('floor_no')} placeholder="Auto-filled from unit no." className="bg-zinc-50" />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="builtup_area">Built-up Area (sq.ft.)</Label>
-            <Input
-              id="builtup_area"
-              type="number"
-              step="0.01"
-              {...register('builtup_area')}
-              placeholder="Auto-filled for Anandam"
-            />
+            <Input id="builtup_area" type="number" step="0.01" {...register('builtup_area')} placeholder="Auto-filled for Anandam" />
             {errors.builtup_area && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.builtup_area)}</p>
             )}
@@ -328,21 +288,52 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
 
           <div className="space-y-2">
             <Label htmlFor="super_builtup_area">Super Built-up Area (sq.ft.)</Label>
-            <Input
-              id="super_builtup_area"
-              type="number"
-              step="0.01"
-              {...register('super_builtup_area')}
-              placeholder="Auto-filled for Anandam"
-            />
+            <Input id="super_builtup_area" type="number" step="0.01" {...register('super_builtup_area')} placeholder="Auto-filled for Anandam" />
             {errors.super_builtup_area && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.super_builtup_area)}</p>
             )}
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="undivided_land_share">Undivided land share (sq.ft.)</Label>
+            <Input
+              id="undivided_land_share"
+              readOnly
+              value={getUndividedLandShare(projectName, unitNo) ?? ''}
+              placeholder="Fills in from the land share schedule"
+              className="bg-zinc-50"
+            />
+          </div>
         </div>
       </div>
 
-      {/* Actions */}
+      <div>
+        <h3 className="text-lg font-semibold mb-4">Boundaries</h3>
+        {boundaries ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {([
+              ['boundary_east', 'East'],
+              ['boundary_west', 'West'],
+              ['boundary_north', 'North'],
+              ['boundary_south', 'South'],
+            ] as const).map(([name, label]) => (
+              <div key={name} className="space-y-2">
+                <Label htmlFor={name}>{label}</Label>
+                <Input id={name} readOnly className="bg-zinc-50" {...register(name)} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-500">
+            {boundaryState.state === 'ambiguous'
+              ? `Flat ${unitNo?.trim()} matches more than one row on the boundary schedule, so nothing was filled in.`
+              : unitNo?.trim()
+                ? `Flat ${unitNo.trim()} is not on the current boundary schedule. The previous boundary list is not used.`
+                : 'Boundaries fill in when a unit from the schedule is selected.'}
+          </p>
+        )}
+      </div>
+
       <div className="flex justify-end pt-4 border-t border-zinc-200">
         <Button type="submit" className="gap-2">
           Continue
@@ -352,4 +343,3 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
     </form>
   )
 }
-

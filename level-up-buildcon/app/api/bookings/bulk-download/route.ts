@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireStaff } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import { generateCompanyPDF, generateCustomerPDF } from '@/lib/pdf/generator'
+import { loadExtrasForBookings } from '@/lib/booking/persist-details'
 import { jsonAuthError } from '@/lib/api/auth-response'
 import archiver from 'archiver'
 import { Writable } from 'stream'
@@ -44,14 +45,16 @@ export async function GET(request: NextRequest) {
     }
 
     const files: { name: string; buffer: Buffer }[] = []
+    const extras = await loadExtrasForBookings(supabase, bookings.map((booking) => booking.id))
 
     for (const booking of bookings) {
+      const fullBooking = { ...booking, ...extras.get(booking.id) }
       const safeSerial = (booking.serial_display || booking.id.slice(0, 8)).replace(/\//g, '_')
       if (kind === 'company' || kind === 'both') {
-        files.push({ name: `${safeSerial}_Company.pdf`, buffer: await generateCompanyPDF(booking) })
+        files.push({ name: `${safeSerial}_Company.pdf`, buffer: await generateCompanyPDF(fullBooking) })
       }
       if (kind === 'customer' || kind === 'both') {
-        files.push({ name: `${safeSerial}_Customer.pdf`, buffer: await generateCustomerPDF(booking) })
+        files.push({ name: `${safeSerial}_Customer.pdf`, buffer: await generateCustomerPDF(fullBooking) })
       }
     }
 

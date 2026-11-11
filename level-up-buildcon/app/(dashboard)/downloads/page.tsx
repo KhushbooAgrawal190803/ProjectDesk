@@ -1,15 +1,40 @@
 import { redirect } from 'next/navigation'
 import { requireStaffPage } from '@/lib/auth/get-user'
+import { createClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Download, FileArchive, FileText } from 'lucide-react'
+import { groupDemandDownloads } from '@/lib/downloads/groups'
+import { DEMAND_TIMEZONE, todayInTimeZone } from '@/lib/demands/engine'
 
 export default async function DownloadsPage() {
   const profile = await requireStaffPage()
   if (!profile) {
     redirect('/login')
   }
+  const supabase = await createClient()
+  const today = todayInTimeZone(new Date(), DEMAND_TIMEZONE)
+  const [{ count: bookingCount }, { count: nocCount }, { count: agreementCount }, notesResult, rowsResult] = await Promise.all([
+    supabase.from('bookings').select('id', { count: 'exact', head: true }).neq('status', 'DRAFT').is('deleted_at', null),
+    supabase.from('bookings').select('id', { count: 'exact', head: true }).neq('status', 'DRAFT').is('deleted_at', null).eq('noc_required', true),
+    supabase.from('booking_generated_documents').select('id', { count: 'exact', head: true }).eq('kind', 'agreement').eq('finalized', true),
+    supabase.from('demand_notes').select('id, trigger_label, schedule_row_id'),
+    supabase.from('booking_schedule_rows').select('id, label, trigger_type, milestone_date'),
+  ])
+  const noteByRow = new Map((notesResult.data || []).map((note) => [note.schedule_row_id as string, note]))
+  const demandGroups = groupDemandDownloads((rowsResult.data || []).map((row) => {
+    const note = noteByRow.get(row.id as string)
+    const dateTitle = row.trigger_type === 'date' && row.milestone_date
+      ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${row.milestone_date}T00:00:00Z`))
+      : ''
+    return {
+      trigger: dateTitle || (note?.trigger_label as string) || (row.label as string) || 'Installment',
+      due: Boolean(note) || (row.trigger_type === 'date' && String(row.milestone_date) <= today),
+      noteId: (note?.id as string) || null,
+    }
+  }))
+  const statusLabel = { ready: 'Ready', waiting: 'Due, not issued', not_due: 'Not yet due' }
 
   return (
     <DashboardLayout profile={profile}>
@@ -109,20 +134,49 @@ export default async function DownloadsPage() {
           </Card>
         </div>
 
-        <Card className="border-zinc-200 shadow-sm bg-blue-50 border-blue-200">
-          <CardContent className="py-6">
-            <div className="flex items-start gap-3">
-              <FileText className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[
+            ['Allotment letters', bookingCount || 0, '/api/downloads/bundle?kind=allotment'],
+            ['NOCs', nocCount || 0, '/api/downloads/bundle?kind=noc'],
+            ['Agreements for Sale', agreementCount || 0, '/api/downloads/bundle?kind=agreement'],
+          ].map(([title, count, href]) => (
+            <Card key={String(title)} className="border-zinc-200 shadow-sm">
+              <CardHeader>
+                <CardTitle>{title}</CardTitle>
+                <CardDescription>{count} document{count === 1 ? '' : 's'}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {Number(count) > 0 ? (
+                  <Button asChild variant="outline" className="w-full gap-2">
+                    <a href={String(href)}><Download className="w-4 h-4" />Download ZIP</a>
+                  </Button>
+                ) : (
+                  <p className="text-sm text-zinc-500">Nothing to download yet.</p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          <h2 className="text-xl font-semibold text-zinc-900">Demand notes by stage</h2>
+          {demandGroups.map((group) => (
+            <div key={group.key} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3">
               <div>
-                <p className="font-medium text-blue-900 mb-1">Note about PDF Generation</p>
-                <p className="text-sm text-blue-700">
-                  PDF generation functionality will be implemented after the database and UI are complete. 
-                  For now, you can view all booking details in the system and access individual booking pages.
-                </p>
+                <p className="font-medium text-zinc-900">{group.title}</p>
+                <p className="text-sm text-zinc-500">{group.count} instalment{group.count === 1 ? '' : 's'} · {statusLabel[group.status]}</p>
               </div>
+              {group.status === 'ready' ? (
+                <Button asChild variant="outline" className="gap-2">
+                  <a href={`/api/downloads/bundle?kind=demand&group=${encodeURIComponent(group.key)}`}><Download className="w-4 h-4" />Download ZIP</a>
+                </Button>
+              ) : (
+                <p className="text-sm text-zinc-500">{group.status === 'not_due' ? 'Not yet due' : 'Not issued'}</p>
+              )}
             </div>
-          </CardContent>
-        </Card>
+          ))}
+          {demandGroups.length === 0 && <p className="text-sm text-zinc-500">No instalments are on the schedule yet.</p>}
+        </div>
       </div>
     </DashboardLayout>
   )

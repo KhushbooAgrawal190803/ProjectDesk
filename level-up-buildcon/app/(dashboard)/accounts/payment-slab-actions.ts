@@ -4,6 +4,8 @@ import { requireStaff } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { calculateSlabAmountDue } from '@/lib/booking/calculations'
+import { considerationOf } from '@/lib/booking/consideration'
+import { hundredthsToString } from '@/lib/booking/money'
 
 export async function getPaymentSlabs() {
   await requireStaff()
@@ -30,7 +32,7 @@ export async function getBookingsForSlab(slabId: number) {
 
   const { data: bookings } = await supabase
     .from('bookings')
-    .select('id, serial_display, applicant_name, unit_no, project_name, total_cost')
+    .select('id, serial_display, applicant_name, unit_no, project_name, total_cost, basic_sale_price, total_parking_charges, total_property_value, payment_plan_type')
     .in('status', ['SUBMITTED', 'EDITED'])
     .is('deleted_at', null)
     .order('serial_no', { ascending: true })
@@ -42,13 +44,15 @@ export async function getBookingsForSlab(slabId: number) {
 
   const paymentByBooking = new Map((payments || []).map((p) => [p.booking_id, p]))
 
-  const rows = (bookings || []).map((b) => {
-    const totalCost = Number(b.total_cost) || 0
-    const amountDue = calculateSlabAmountDue(totalCost, Number(slab.percentage))
+  const rows = (bookings || []).filter((b) => b.payment_plan_type !== 'Custom').map((b) => {
+    const priced = considerationOf(b)
+    const computed = priced
+      ? calculateSlabAmountDue(Number(hundredthsToString(priced.totalPaise)), Number(slab.percentage))
+      : 0
     const rec = paymentByBooking.get(b.id)
     return {
       ...b,
-      amount_due: amountDue,
+      amount_due: rec && rec.amount_due != null ? Number(rec.amount_due) : computed,
       amount_received: rec ? Number(rec.amount_received) : 0,
       received_at: rec?.received_at || null,
       notes: rec?.notes || null,
@@ -74,7 +78,7 @@ export async function setSlabPayment(
 
   const { data: booking } = await supabase
     .from('bookings')
-    .select('total_cost')
+    .select('total_cost, basic_sale_price, total_parking_charges, total_property_value')
     .eq('id', bookingId)
     .is('deleted_at', null)
     .single()
@@ -87,7 +91,10 @@ export async function setSlabPayment(
 
   if (!booking || !slabRow) throw new Error('Booking or slab not found')
 
-  const amountDue = calculateSlabAmountDue(Number(booking.total_cost) || 0, Number(slabRow.percentage))
+  const priced = considerationOf(booking)
+  const amountDue = priced
+    ? calculateSlabAmountDue(Number(hundredthsToString(priced.totalPaise)), Number(slabRow.percentage))
+    : 0
   const now = new Date().toISOString()
 
   const { data: existing } = await supabase

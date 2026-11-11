@@ -8,8 +8,8 @@ import { getUserDrafts } from './actions'
 /** Uses cookies/session (requireRole / Supabase); must not be statically prerendered */
 export const dynamic = 'force-dynamic'
 
-const TOTAL_PARKING = 27
-const TOTAL_PREMIUM_PARKING = 9
+const TOTAL_PARKING = 79
+const TOTAL_PREMIUM_PARKING = 27
 
 async function getAvailableParking(): Promise<number> {
   try {

@@ -119,15 +119,23 @@ export async function deleteDocument(documentId: string) {
   }
 }
 
-export async function linkDocumentsToBooking(documentIds: string[], bookingId: string) {
+export async function linkDocumentsToBooking(
+  documentIds: string[],
+  bookingId: string,
+  coapplicantByDocument: Record<string, string | null> = {}
+) {
   try {
     const profile = await requireStaff()
     const supabase = await createClient()
 
     for (const docId of documentIds) {
+      const coapplicantId = coapplicantByDocument[docId]
       const { error } = await supabase
         .from('booking_documents')
-        .update({ booking_id: bookingId })
+        .update({
+          booking_id: bookingId,
+          ...(coapplicantId ? { coapplicant_id: coapplicantId } : {}),
+        })
         .eq('id', docId)
         .eq('uploaded_by', profile.id)
 

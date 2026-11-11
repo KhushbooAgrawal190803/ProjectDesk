@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table'
 import { IndianRupee, FileText, TrendingUp, Receipt } from 'lucide-react'
 import { format } from 'date-fns'
+import { formatPaymentMode } from '@/lib/booking/payment-mode'
 import { PaymentScheduleClient } from './payment-schedule-client'
 
 async function getAccountsData() {
@@ -30,6 +31,8 @@ async function getAccountsData() {
       unit_no,
       project_name,
       total_cost,
+      total_property_value,
+      total_parking_charges,
       booking_amount_paid,
       gst_amount,
       payment_mode,
@@ -46,7 +49,7 @@ async function getAccountsData() {
 
   // Calculate summary stats
   const totalBookings = allBookings.length
-  const totalAmount = allBookings.reduce((sum, b) => sum + (b.total_cost || 0), 0)
+  const totalAmount = allBookings.reduce((sum, b) => sum + (Number(b.total_property_value || b.total_cost) || 0), 0)
   const totalBookingAmountReceived = allBookings.reduce((sum, b) => sum + (b.booking_amount_paid || 0), 0)
   const totalGST = allBookings.reduce((sum, b) => sum + (b.gst_amount || 0), 0)
 
@@ -104,13 +107,13 @@ export default async function AccountsPage() {
           <Card className="border-zinc-200 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-sm font-medium text-zinc-600">
-                Total Property Value
+                Total Consideration
               </CardTitle>
               <TrendingUp className="w-4 h-4 text-zinc-400" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-semibold">{formatCurrency(stats.totalAmount)}</div>
-              <p className="text-xs text-zinc-500 mt-1">Sum of total costs</p>
+              <p className="text-xs text-zinc-500 mt-1">Flat + parking. GST is separate.</p>
             </CardContent>
           </Card>
 
@@ -167,7 +170,7 @@ export default async function AccountsPage() {
                           <TableHead className="font-semibold">Applicant</TableHead>
                           <TableHead className="font-semibold">Project</TableHead>
                           <TableHead className="font-semibold">Unit</TableHead>
-                          <TableHead className="font-semibold text-right">Total Cost</TableHead>
+                          <TableHead className="font-semibold text-right">Total Consideration</TableHead>
                           <TableHead className="font-semibold text-right">Booking Amount</TableHead>
                           <TableHead className="font-semibold text-right">GST</TableHead>
                           <TableHead className="font-semibold">Payment</TableHead>
@@ -187,7 +190,7 @@ export default async function AccountsPage() {
                             <TableCell className="text-zinc-600">{booking.project_name || '-'}</TableCell>
                             <TableCell className="text-zinc-600">{booking.unit_no || '-'}</TableCell>
                             <TableCell className="text-right font-medium">
-                              {booking.total_cost ? formatCurrency(booking.total_cost) : '-'}
+                              {booking.total_property_value || booking.total_cost ? formatCurrency(booking.total_property_value || booking.total_cost) : '-'}
                             </TableCell>
                             <TableCell className="text-right font-medium">
                               {booking.booking_amount_paid ? formatCurrency(booking.booking_amount_paid) : '-'}
@@ -196,7 +199,7 @@ export default async function AccountsPage() {
                               {booking.gst_amount ? formatCurrency(booking.gst_amount) : '-'}
                             </TableCell>
                             <TableCell className="text-zinc-600">
-                              {booking.payment_mode ? booking.payment_mode.replace('_', ' / ') : '-'}
+                              {booking.payment_mode ? formatPaymentMode(booking.payment_mode, booking.payment_mode === 'Other' ? booking.payment_mode_detail : undefined) : '-'}
                             </TableCell>
                             <TableCell className="text-zinc-600 text-sm">
                               {booking.submitted_at && format(new Date(booking.submitted_at), 'MMM d, yyyy')}

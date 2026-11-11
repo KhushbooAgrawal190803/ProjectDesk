@@ -1,9 +1,20 @@
 import { Booking, Profile } from '@/lib/types/database'
 import { jsPDF } from 'jspdf'
+import { formatPersonName } from '@/lib/booking/person'
+import { formatPaymentMode } from '@/lib/booking/payment-mode'
 
-const formatCurrency = (amount: number) => {
-  const n = amount ?? 0
-  return `Rs. ${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+const formatCurrency = (amount: number | string | null | undefined) => {
+  const n = Number(amount ?? 0)
+  return `Rs. ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function boundaryRows(booking: Booking): Array<[string, string]> {
+  return [
+    ['East', booking.boundary_east || ''],
+    ['West', booking.boundary_west || ''],
+    ['North', booking.boundary_north || ''],
+    ['South', booking.boundary_south || ''],
+  ].filter((row) => row[1]) as Array<[string, string]>
 }
 
 export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Promise<Buffer> {
@@ -70,7 +81,7 @@ export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Pr
       // Row helper with better formatting
       const addRow = (label: string, value: string) => {
         const maxValueWidth = pageWidth - 110
-        const splitValue = doc.splitTextToSize(value, maxValueWidth)
+        const splitValue = String(value).split('\n').flatMap((line) => doc.splitTextToSize(line || ' ', maxValueWidth))
         const lineHeight = 4.5
         const rowHeight = Math.max(5.5, splitValue.length * lineHeight + 1)
 
@@ -123,44 +134,85 @@ export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Pr
       addRow('Built-up Area', `${booking.builtup_area != null ? booking.builtup_area : 'N/A'} sq.ft`)
       addRow('Super Built-up Area', `${booking.super_builtup_area || 'N/A'} sq.ft`)
       addRow('Carpet Area', `${booking.carpet_area || 'N/A'} sq.ft`)
+      for (const [label, value] of boundaryRows(booking)) addRow(label, value)
       yPos += 3
 
       // APPLICANT INFORMATION
       addSection('APPLICANT INFORMATION')
-      addRow('Name', booking.applicant_name || 'N/A')
-      addRow('Father/Spouse', booking.applicant_father_or_spouse || 'N/A')
+      addRow('Name', formatPersonName(booking.applicant_salutation, booking.applicant_name) || 'N/A')
+      addRow('Parents/Spouse', booking.applicant_father_or_spouse || 'N/A')
       addRow('Mobile', booking.applicant_mobile || 'N/A')
       addRow('Email', booking.applicant_email || 'N/A')
       addRow('PAN', booking.applicant_pan || 'N/A')
       addRow('Aadhaar', booking.applicant_aadhaar || 'N/A')
+      if (booking.applicant_address) addRow('Address', booking.applicant_address)
       yPos += 3
 
-      // CO-APPLICANT (if exists)
-      if (booking.coapplicant_name) {
-        addSection('CO-APPLICANT INFORMATION')
-        addRow('Name', booking.coapplicant_name)
-        addRow('Relationship', booking.coapplicant_relationship || 'N/A')
-        addRow('Mobile', booking.coapplicant_mobile || 'N/A')
-        addRow('PAN', booking.coapplicant_pan || 'N/A')
-        addRow('Aadhaar', booking.coapplicant_aadhaar || 'N/A')
+      const coapplicants = booking.coapplicants?.length
+        ? booking.coapplicants
+        : booking.coapplicant_name
+          ? [{
+              id: 'legacy',
+              name: booking.coapplicant_name,
+              father_or_spouse: booking.coapplicant_relationship,
+              mobile: booking.coapplicant_mobile,
+              pan: booking.coapplicant_pan,
+              aadhaar: booking.coapplicant_aadhaar,
+              address: null,
+            }]
+          : []
+      coapplicants.forEach((person, index) => {
+        addSection(coapplicants.length > 1 ? `CO-APPLICANT ${index + 1}` : 'CO-APPLICANT INFORMATION')
+        addRow('Name', formatPersonName(person.salutation, person.name) || 'N/A')
+        addRow("Parents/Spouse", person.father_or_spouse || 'N/A')
+        addRow('Mobile', person.mobile || 'N/A')
+        if (person.email) addRow('Email', person.email)
+        addRow('PAN', person.pan || 'N/A')
+        addRow('Aadhaar', person.aadhaar || 'N/A')
+        if (person.address) addRow('Address', person.address)
         yPos += 3
-      }
+      })
 
       // PAYMENT INFORMATION
       addSection('PAYMENT INFORMATION')
       if (booking.rate_per_sqft) {
         addRow('Rate per Sq.ft.', formatCurrency(booking.rate_per_sqft))
       }
-      addRow('Total Amount', formatCurrency(booking.total_cost || 0))
+      addRow('Flat consideration', formatCurrency(booking.basic_sale_price || booking.total_cost || 0))
+      addRow('Parking Charges', formatCurrency(booking.total_parking_charges || 0))
+      addRow('Total Consideration', formatCurrency(booking.total_property_value || booking.total_cost || 0))
       addRow('Booking Amount Paid', formatCurrency(booking.booking_amount_paid || 0))
-      if (booking.gst_amount) {
-        addRow('GST (5%)', formatCurrency(booking.gst_amount))
-      }
-      addRow('Payment Mode', booking.payment_mode || 'N/A')
+      addRow('GST Applicable (5%)', formatCurrency(booking.gst_amount || 0))
+      addRow('GST Collected', formatCurrency(booking.gst_collected || 0))
+      addRow('Payment Mode', formatPaymentMode(booking.payment_mode, booking.payment_mode === 'Other' ? booking.payment_mode_detail : undefined) || 'N/A')
       if (booking.txn_or_cheque_no) {
         addRow('Txn/Cheque No', booking.txn_or_cheque_no)
       }
       addRow('Payment Plan', booking.payment_plan_type || 'N/A')
+      if (booking.parking_spaces?.length) {
+        yPos += 3
+        addSection('PARKING')
+        for (const space of booking.parking_spaces) {
+          const kind = space.kind === 'secondary' ? 'Secondary' : 'Main'
+          const count = Number(space.quantity) > 1 ? ` (${space.quantity})` : ''
+          addRow(`${kind} parking${count}`, formatCurrency(space.price || 0))
+        }
+      }
+      if (booking.schedule_rows?.length) {
+        yPos += 3
+        addSection('PAYMENT SCHEDULE')
+        for (const row of booking.schedule_rows) {
+          const label = row.trigger_type === 'date' ? (row.milestone_date || row.label || 'Date') : (row.label || 'Milestone')
+          addRow(label, formatCurrency(row.calculated_amount || 0))
+        }
+      }
+      if (booking.noc_required) {
+        yPos += 3
+        addSection('BANK NOC')
+        addRow('Bank', booking.noc_bank_name || 'N/A')
+        addRow('Addressee', booking.noc_addressee || 'N/A')
+        addRow('Address', booking.noc_bank_address || 'N/A')
+      }
       yPos += 5
 
       // DECLARATION
@@ -291,7 +343,7 @@ export function generateCustomerPDF(booking: Booking & { creator?: Profile }): P
       // Row helper
       const addRow = (label: string, value: string) => {
         const maxValueWidth = pageWidth - 110
-        const splitValue = doc.splitTextToSize(value, maxValueWidth)
+        const splitValue = String(value).split('\n').flatMap((line) => doc.splitTextToSize(line || ' ', maxValueWidth))
         const lineHeight = 4.5
         const rowHeight = Math.max(5.5, splitValue.length * lineHeight + 1)
 
@@ -344,39 +396,61 @@ export function generateCustomerPDF(booking: Booking & { creator?: Profile }): P
         booking.builtup_area ??
         booking.carpet_area
       addRow('Area', `${area != null ? area : 'N/A'} sq.ft`)
+      for (const [label, value] of boundaryRows(booking)) addRow(label, value)
       yPos += 4
 
       // PAYMENT SUMMARY
       addSection('PAYMENT SUMMARY')
-      const remainingAmount = (booking.total_cost || 0) - (booking.booking_amount_paid || 0)
+      const propertyValue = Number(booking.total_property_value || booking.total_cost || 0)
+      const remainingAmount = propertyValue - Number(booking.booking_amount_paid || 0)
       if (booking.rate_per_sqft) {
         addRow('Rate per Sq.ft.', formatCurrency(booking.rate_per_sqft))
       }
-      addRow('Total Amount', formatCurrency(booking.total_cost || 0))
+      addRow('Flat consideration', formatCurrency(booking.basic_sale_price || booking.total_cost || 0))
+      addRow('Parking Charges', formatCurrency(booking.total_parking_charges || 0))
+      addRow('Total Consideration', formatCurrency(booking.total_property_value || booking.total_cost || 0))
       addRow('Amount Paid', formatCurrency(booking.booking_amount_paid || 0))
-      if (booking.gst_amount) {
-        addRow('GST (5%)', formatCurrency(booking.gst_amount))
-      }
+      addRow('GST Applicable (5%)', formatCurrency(booking.gst_amount || 0))
+      addRow('GST Collected', formatCurrency(booking.gst_collected || 0))
       addRow('Remaining Amount', formatCurrency(remainingAmount))
       yPos += 4
 
       // CONTACT INFORMATION
       addSection('APPLICANT INFORMATION')
-      addRow('Name', booking.applicant_name || 'N/A')
+      addRow('Name', formatPersonName(booking.applicant_salutation, booking.applicant_name) || 'N/A')
       addRow('Mobile', booking.applicant_mobile || 'N/A')
       addRow('Email', booking.applicant_email || 'N/A')
       if (booking.applicant_pan) addRow('PAN', booking.applicant_pan)
       if (booking.applicant_aadhaar) addRow('Aadhaar', booking.applicant_aadhaar)
+      if (booking.applicant_address) addRow('Address', booking.applicant_address)
       yPos += 4
 
-      // CO-APPLICANT (if exists)
-      if (booking.coapplicant_name) {
-        addSection('CO-APPLICANT INFORMATION')
-        addRow('Name', booking.coapplicant_name)
-        addRow('Relationship', booking.coapplicant_relationship || 'N/A')
-        if (booking.coapplicant_mobile) addRow('Mobile', booking.coapplicant_mobile)
-        if (booking.coapplicant_pan) addRow('PAN', booking.coapplicant_pan)
-        if (booking.coapplicant_aadhaar) addRow('Aadhaar', booking.coapplicant_aadhaar)
+      const customerCoapplicants = booking.coapplicants?.length
+        ? booking.coapplicants
+        : booking.coapplicant_name
+          ? [{ id: 'legacy', name: booking.coapplicant_name, father_or_spouse: booking.coapplicant_relationship, mobile: booking.coapplicant_mobile, email: null, pan: booking.coapplicant_pan, aadhaar: booking.coapplicant_aadhaar, address: null }]
+          : []
+      customerCoapplicants.forEach((person, index) => {
+        addSection(customerCoapplicants.length > 1 ? `CO-APPLICANT ${index + 1}` : 'CO-APPLICANT INFORMATION')
+        addRow('Name', formatPersonName(person.salutation, person.name) || 'N/A')
+        if (person.father_or_spouse) addRow('Parents/Spouse', person.father_or_spouse)
+        if (person.mobile) addRow('Mobile', person.mobile)
+        if (person.address) addRow('Address', person.address)
+        yPos += 4
+      })
+      if (booking.schedule_rows?.length) {
+        addSection('PAYMENT SCHEDULE')
+        for (const row of booking.schedule_rows) {
+          const label = row.trigger_type === 'date' ? (row.milestone_date || row.label || 'Date') : (row.label || 'Milestone')
+          addRow(label, formatCurrency(row.calculated_amount || 0))
+        }
+        yPos += 4
+      }
+      if (booking.noc_required) {
+        addSection('BANK NOC')
+        addRow('Bank', booking.noc_bank_name || 'N/A')
+        addRow('Addressee', booking.noc_addressee || 'N/A')
+        addRow('Address', booking.noc_bank_address || 'N/A')
         yPos += 4
       }
 

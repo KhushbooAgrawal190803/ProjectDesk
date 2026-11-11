@@ -18,6 +18,8 @@ interface BookingEditFormProps {
 
 export function BookingEditForm({ booking }: BookingEditFormProps) {
   const router = useRouter()
+  // Agreement details added after the Booking type was written.
+  const stored = booking as unknown as Record<string, string | null | undefined>
   const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState({
     // Project & Unit
@@ -41,6 +43,8 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
     applicant_pan: booking.applicant_pan || '',
     applicant_aadhaar: booking.applicant_aadhaar || '',
     applicant_address: booking.applicant_address || '',
+    applicant_relationship: stored.applicant_relationship || '',
+    applicant_occupation: stored.applicant_occupation || '',
 
     // Co-applicant
     coapplicant_name: booking.coapplicant_name || '',
@@ -59,6 +63,11 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
     payment_mode_detail: booking.payment_mode_detail || '',
     txn_or_cheque_no: booking.txn_or_cheque_no || '',
     txn_date: booking.txn_date || '',
+    allotment_date: (booking.allotment_date || '').slice(0, 10),
+    agreement_for_sale_date: (booking.agreement_for_sale_date || '').slice(0, 10),
+    finance_scenario: stored.finance_scenario || 'purchaser',
+    finance_bank_name: stored.finance_bank_name || '',
+    finance_loan_status: stored.finance_loan_status || '',
 
     // Payment Plan
     payment_plan_type: booking.payment_plan_type,
@@ -105,7 +114,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
         <h3 className="font-semibold text-zinc-900">Project & Unit Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label>Project Name *</Label>
+            <Label>Project Name</Label>
             <Input
               name="project_name"
               value={formData.project_name}
@@ -114,7 +123,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
             />
           </div>
           <div>
-            <Label>Location *</Label>
+            <Label>Location</Label>
             <Input
               name="project_location"
               value={formData.project_location}
@@ -132,7 +141,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
             />
           </div>
           <div>
-            <Label>Unit Number *</Label>
+            <Label>Unit Number</Label>
             <Input
               name="unit_no"
               value={formData.unit_no}
@@ -179,7 +188,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
         <h3 className="font-semibold text-zinc-900">Applicant Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label>Name *</Label>
+            <Label>Name</Label>
             <Input
               name="applicant_name"
               value={formData.applicant_name}
@@ -188,7 +197,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
             />
           </div>
           <div>
-            <Label>Father's / Spouse Name *</Label>
+            <Label>Parents&apos; / Spouse&apos;s Name</Label>
             <Input
               name="applicant_father_or_spouse"
               value={formData.applicant_father_or_spouse}
@@ -197,7 +206,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
             />
           </div>
           <div>
-            <Label>Mobile *</Label>
+            <Label>Mobile</Label>
             <Input
               name="applicant_mobile"
               value={formData.applicant_mobile}
@@ -243,7 +252,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
         <h3 className="font-semibold text-zinc-900">Pricing & Payment</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label>Basic Sale Price *</Label>
+            <Label>Basic Sale Price</Label>
             <Input
               name="basic_sale_price"
               type="number"
@@ -263,7 +272,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
             />
           </div>
           <div>
-            <Label>Total Cost *</Label>
+            <Label>Total Cost</Label>
             <Input
               name="total_cost"
               type="number"
@@ -273,7 +282,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
             />
           </div>
           <div>
-            <Label>Booking Amount Paid *</Label>
+            <Label>Booking Amount Paid</Label>
             <Input
               name="booking_amount_paid"
               type="number"
@@ -283,7 +292,7 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
             />
           </div>
           <div>
-            <Label>Payment Mode *</Label>
+            <Label>Payment Mode</Label>
             <select
               name="payment_mode"
               value={formData.payment_mode}
@@ -293,9 +302,22 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
               <option value="Cash">Cash</option>
               <option value="Cheque">Cheque</option>
               <option value="NEFT_RTGS">NEFT/RTGS</option>
-              <option value="UPI">UPI</option>
+              {formData.payment_mode === 'UPI' && <option value="UPI">UPI</option>}
+              <option value="Other">Others</option>
             </select>
           </div>
+          {(formData.payment_mode === 'Other' || formData.payment_mode === 'Cheque') && (
+            <div>
+              <Label>{formData.payment_mode === 'Cheque' ? 'Bank the cheque is drawn on' : 'Specify the other payment mode'}</Label>
+              <Input
+                name="payment_mode_detail"
+                value={formData.payment_mode_detail}
+                onChange={handleInputChange}
+                className="mt-1"
+                placeholder={formData.payment_mode === 'Cheque' ? 'For example, State Bank of India' : 'For example, demand draft'}
+              />
+            </div>
+          )}
           <div>
             <Label>Transaction / Cheque Number</Label>
             <Input
@@ -305,6 +327,71 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
               className="mt-1"
             />
           </div>
+        </div>
+      </div>
+
+      <Separator />
+
+      <div className="space-y-4">
+        <h3 className="font-semibold text-zinc-900">Letters</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label>Allotment Date</Label>
+            <Input name="allotment_date" type="date" value={formData.allotment_date} onChange={handleInputChange} className="mt-1" />
+          </div>
+          <div>
+            <Label>Agreement for Sale Date</Label>
+            <Input name="agreement_for_sale_date" type="date" value={formData.agreement_for_sale_date} onChange={handleInputChange} className="mt-1" />
+          </div>
+        </div>
+      </div>
+
+      <Separator />
+
+      <div className="space-y-4">
+        <div>
+          <h3 className="font-semibold text-zinc-900">Agreement for Sale</h3>
+          <p className="mt-1 text-xs text-zinc-500">These decide the allottee description and the booking-amount wording in Article I.</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label>Parent or spouse named above is the applicant&apos;s</Label>
+            <select name="applicant_relationship" value={formData.applicant_relationship} onChange={handleInputChange} className="mt-1 w-full px-3 py-2 border border-zinc-300 rounded-md">
+              <option value="">Select</option>
+              <option value="Father">Father</option>
+              <option value="Mother">Mother</option>
+              <option value="Husband">Husband</option>
+              <option value="Wife">Wife</option>
+            </select>
+          </div>
+          <div>
+            <Label>Applicant occupation</Label>
+            <Input name="applicant_occupation" value={formData.applicant_occupation} onChange={handleInputChange} className="mt-1" />
+          </div>
+          <div className="md:col-span-2">
+            <Label>How the booking is funded</Label>
+            <select name="finance_scenario" value={formData.finance_scenario} onChange={handleInputChange} className="mt-1 w-full px-3 py-2 border border-zinc-300 rounded-md">
+              <option value="purchaser">Scenario 1: entire booking amount paid by the purchaser(s)</option>
+              <option value="split_50_50">Scenario 2: purchaser pays 10% of the total consideration, bank funds the other 10% at booking</option>
+              <option value="split_10_90">Scenario 3: purchaser pays 10% and bank pays 90% of each instalment</option>
+            </select>
+          </div>
+          {formData.finance_scenario !== 'purchaser' && (
+            <>
+              <div>
+                <Label>Financing bank</Label>
+                <Input name="finance_bank_name" value={formData.finance_bank_name} onChange={handleInputChange} className="mt-1" />
+              </div>
+              <div>
+                <Label>Loan status</Label>
+                <select name="finance_loan_status" value={formData.finance_loan_status} onChange={handleInputChange} className="mt-1 w-full px-3 py-2 border border-zinc-300 rounded-md">
+                  <option value="">Select</option>
+                  <option value="Sanctioned">Sanctioned</option>
+                  <option value="Not yet sanctioned">Not yet sanctioned</option>
+                </select>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

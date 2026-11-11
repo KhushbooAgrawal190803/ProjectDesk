@@ -121,6 +121,13 @@ export async function approveBooking(bookingId: string) {
 
   if (error) throw new Error(`Failed to approve booking: ${error.message}`)
 
+  try {
+    const { reconcileBooking } = await import('@/lib/demands/issue')
+    await reconcileBooking(supabase, bookingId, { actorId: profile.id })
+  } catch (reconcileError) {
+    console.error('Demand reconciliation after approval failed:', reconcileError instanceof Error ? reconcileError.message : reconcileError)
+  }
+
   await supabase.from('booking_audit_log').insert({
     booking_id: bookingId,
     changed_by: profile.id,

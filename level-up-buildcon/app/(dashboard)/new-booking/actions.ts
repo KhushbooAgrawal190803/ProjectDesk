@@ -9,7 +9,8 @@ import {
   isUnitConflictError,
   UNIT_CONFLICT_MESSAGE,
 } from '@/lib/booking/availability'
-import { clampParking, derivePricingFields, toNum } from '@/lib/booking/calculations'
+import { derivePricingFields, toNum } from '@/lib/booking/calculations'
+import { buildBookingScalars, loadBookingExtras, replaceBookingChildren } from '@/lib/booking/persist-details'
 import { assertCanEditOwnDraft, submitStatusForRole } from '@/lib/auth/permissions'
 
 const DRAFT_FIELDS = [
@@ -44,6 +45,10 @@ function mapDraftFields(data: Partial<BookingFormData>): Record<string, unknown>
   return bookingData
 }
 
+function asRaw(data: Partial<BookingFormData>): Record<string, unknown> {
+  return data as Record<string, unknown>
+}
+
 export async function saveDraft(data: Partial<BookingFormData>, draftId?: string) {
   const parsed = parseBookingDraft(data)
   if (!parsed.success) {
@@ -52,7 +57,11 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
 
   const profile = await requireStaff()
   const supabase = await createClient()
-  const bookingData = mapDraftFields(parsed.data)
+  const raw = asRaw(data)
+  const bookingData = {
+    ...mapDraftFields(parsed.data),
+    ...buildBookingScalars(raw, 'draft'),
+  }
 
   if (draftId) {
     const { data: existing } = await supabase
@@ -76,6 +85,7 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
       .single()
 
     if (error) throw new Error(`Failed to update draft: ${error.message}`)
+    await replaceBookingChildren(supabase, updated.id, raw, 'draft')
     return { success: true, draftId: updated.id }
   }
 
@@ -89,6 +99,7 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
     .single()
 
   if (error) throw new Error(`Failed to save draft: ${error.message}`)
+  await replaceBookingChildren(supabase, created.id, raw, 'draft')
   return { success: true, draftId: created.id }
 }
 
@@ -105,8 +116,46 @@ export async function getDraft(draftId: string) {
     .is('deleted_at', null)
     .single()
 
-  if (error) throw new Error('Draft not found')
-  return data
+  if (error || !data) throw new Error('Draft not found')
+
+  const extras = await loadBookingExtras(supabase, data.id)
+  let coapplicants = extras.coapplicants as Array<Record<string, unknown>>
+  if (!coapplicants.length && data.coapplicant_name) {
+    coapplicants = [{
+      id: crypto.randomUUID(),
+      name: data.coapplicant_name,
+      father_or_spouse: data.coapplicant_relationship,
+      mobile: data.coapplicant_mobile,
+      pan: data.coapplicant_pan,
+      aadhaar: data.coapplicant_aadhaar,
+      country: 'India',
+    }]
+  }
+  let parkingSpaces = extras.parking_spaces as Array<Record<string, unknown>>
+  if (!parkingSpaces.length && ((data.additional_parking || 0) > 0 || (data.premium_parking || 0) > 0)) {
+    parkingSpaces = [
+      ...Array.from({ length: data.additional_parking || 0 }, () => ({
+        id: crypto.randomUUID(),
+        kind: 'main',
+        label: '',
+        price: 0,
+      })),
+      ...Array.from({ length: data.premium_parking || 0 }, () => ({
+        id: crypto.randomUUID(),
+        kind: 'secondary',
+        label: '',
+        price: 0,
+      })),
+    ]
+  }
+  return {
+    ...data,
+    coapplicants,
+    parking_spaces: parkingSpaces,
+    schedule_rows: extras.schedule_rows,
+    payment_entries: extras.payment_entries,
+    schedule_mode: data.payment_plan_type === 'Custom' ? 'custom' : 'standard',
+  }
 }
 
 export async function getUserDrafts() {
@@ -152,6 +201,8 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
   const profile = await requireStaff()
   const supabase = await createClient()
   const baseData = parsed.data
+  const raw = asRaw(data)
+  const scalars = buildBookingScalars(raw, 'submit')
 
   if (baseData.project_name && baseData.unit_no) {
     const unitCheck = await checkUnitAvailability(
@@ -165,8 +216,6 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
   }
 
   const pricing = derivePricingFields(baseData)
-  const parking = clampParking(baseData.additional_parking, baseData.premium_parking)
-
   const bookingData = {
     project_name: baseData.project_name || null,
     project_location: baseData.project_location || 'Ranchi, Jharkhand',
@@ -203,7 +252,7 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
     txn_date: baseData.txn_date || null,
     payment_plan_type: baseData.payment_plan_type || null,
     payment_plan_custom_text: baseData.payment_plan_custom_text || null,
-    ...parking,
+    ...scalars,
     status: submitStatusForRole(profile.role),
     created_by: profile.id,
     submitted_at: new Date().toISOString(),
@@ -255,11 +304,22 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
     bookingId = created.id
   }
 
+  await replaceBookingChildren(supabase, bookingId, raw, 'submit')
+
   await supabase.from('booking_audit_log').insert({
     booking_id: bookingId,
     changed_by: profile.id,
     action: draftId ? 'EDITED' : 'CREATED',
   })
+
+  if (bookingData.status === 'SUBMITTED') {
+    try {
+      const { reconcileBooking } = await import('@/lib/demands/issue')
+      await reconcileBooking(supabase, bookingId, { actorId: profile.id })
+    } catch (error) {
+      console.error('Demand reconciliation after submit failed:', error instanceof Error ? error.message : error)
+    }
+  }
 
   revalidatePath('/bookings')
   revalidatePath('/dashboard')

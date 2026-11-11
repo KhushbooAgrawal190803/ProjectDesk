@@ -18,19 +18,33 @@ export const step1Schema = z.object({
   unit_type_other_text: optionalString,
   unit_no: optionalString,
   floor_no: optionalString,
+  boundary_east: optionalString,
+  boundary_west: optionalString,
+  boundary_north: optionalString,
+  boundary_south: optionalString,
   builtup_area: optionalNumber,
   super_builtup_area: optionalNumber,
   carpet_area: optionalNumber,
+  allotment_date: optionalString,
 })
 
 export const step2Schema = z.object({
   applicant_name: optionalString,
+  applicant_salutation: optionalString,
   applicant_father_or_spouse: optionalString,
+  applicant_relationship: optionalString,
+  applicant_occupation: optionalString,
   applicant_mobile: optionalString,
   applicant_email: optionalString,
   applicant_pan: optionalString,
   applicant_aadhaar: optionalString,
   applicant_address: optionalString,
+  applicant_address_line1: optionalString,
+  applicant_address_line2: optionalString,
+  applicant_city: optionalString,
+  applicant_state: optionalString,
+  applicant_pin_code: optionalString,
+  applicant_country: optionalString,
   has_coapplicant: z.boolean().optional().default(false),
   coapplicant_name: optionalString,
   coapplicant_relationship: optionalString,
@@ -44,14 +58,33 @@ export const step3Schema = z.object({
   total_cost: optionalNumber,
   booking_amount_paid: optionalNumber,
   gst_amount: optionalNumber,
-  payment_mode: z.enum(['Cash', 'Cheque', 'NEFT_RTGS', 'UPI']).optional(),
+  gst_collected: optionalNumber,
+  payment_mode: z.enum(['Cash', 'Cheque', 'NEFT_RTGS', 'UPI', 'Other']).optional(),
   payment_mode_detail: optionalString,
   txn_or_cheque_no: optionalString,
   txn_date: optionalString,
   payment_plan_type: z.enum(['ConstructionLinked', 'DownPayment', 'PossessionLinked', 'Custom']).optional(),
   payment_plan_custom_text: optionalString,
-  additional_parking: z.coerce.number().min(0).max(27).optional().default(0),
-  premium_parking: z.coerce.number().min(0).max(9).optional().default(0),
+  additional_parking: z.number().min(0).max(79).optional(),
+  premium_parking: z.number().min(0).max(27).optional(),
+  noc_required: z.boolean().optional(),
+  noc_bank_name: optionalString,
+  noc_addressee: optionalString,
+  noc_bank_address: optionalString,
+  noc_bank_address_line1: optionalString,
+  noc_bank_address_line2: optionalString,
+  noc_bank_city: optionalString,
+  noc_bank_state: optionalString,
+  noc_bank_pin_code: optionalString,
+  noc_bank_country: optionalString,
+  agreement_for_sale_date: optionalString,
+  finance_scenario: z.enum(['purchaser', 'split_50_50', 'split_10_90', '']).optional(),
+  finance_bank_name: optionalString,
+  finance_bank_branch: optionalString,
+  finance_loan_status: optionalString,
+  finance_sanction_ref: optionalString,
+  finance_sanction_amount: optionalNumber,
+  finance_sanction_date: optionalString,
 })
 
 export const bookingSchema = z.object({
@@ -60,13 +93,8 @@ export const bookingSchema = z.object({
   ...step3Schema.shape,
 })
 
-/** Minimum fields required to submit (not draft save). */
-export const submitBookingSchema = bookingSchema.extend({
-  project_name: z.string().min(1, 'Project name is required'),
-  unit_no: z.string().min(1, 'Unit number is required'),
-  applicant_name: z.string().min(1, 'Applicant name is required'),
-  applicant_mobile: z.string().min(1, 'Mobile number is required'),
-})
+/** Submit uses the same optional fields as a draft. */
+export const submitBookingSchema = bookingSchema
 
 export type Step1Data = z.output<typeof step1Schema>
 export type Step1FormValues = z.input<typeof step1Schema>

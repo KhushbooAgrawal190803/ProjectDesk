@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { parseBookingDraft, type BookingFormData } from '@/lib/validations/booking'
 import { assertCanEditBooking } from '@/lib/auth/permissions'
 import { derivePricingFields, toNum } from '@/lib/booking/calculations'
+import { getUnitBoundaries } from '@/lib/data/flat-boundaries'
 import {
   checkUnitAvailability as queryUnitAvailability,
   isUnitConflictError,
@@ -19,8 +20,10 @@ const EDITABLE_FIELDS = [
   'applicant_pan', 'applicant_aadhaar', 'applicant_address',
   'coapplicant_name', 'coapplicant_relationship', 'coapplicant_mobile', 'coapplicant_pan', 'coapplicant_aadhaar',
   'rate_per_sqft', 'total_cost', 'gst_amount', 'booking_amount_paid', 'payment_mode', 'payment_mode_detail',
-  'txn_or_cheque_no', 'txn_date', 'payment_plan_type', 'payment_plan_custom_text',
+  'txn_or_cheque_no', 'txn_date', 'allotment_date', 'agreement_for_sale_date', 'payment_plan_type', 'payment_plan_custom_text',
   'additional_parking', 'premium_parking',
+  'applicant_relationship', 'applicant_occupation',
+  'finance_scenario', 'finance_bank_name', 'finance_loan_status',
 ] as const
 
 export async function updateBooking(bookingId: string, data: Partial<BookingFormData>) {
@@ -34,7 +37,7 @@ export async function updateBooking(bookingId: string, data: Partial<BookingForm
 
   const { data: existing, error: fetchError } = await supabase
     .from('bookings')
-    .select('id, status, created_by, deleted_at, project_name, unit_no')
+    .select('id, status, created_by, deleted_at, project_name, unit_no, total_parking_charges')
     .eq('id', bookingId)
     .single()
 
@@ -67,6 +70,18 @@ export async function updateBooking(bookingId: string, data: Partial<BookingForm
     if (!availability.available) throw new Error(availability.message)
   }
 
+  const bounds = getUnitBoundaries(nextUnit)
+  if (bounds) {
+    updateData.boundary_east = bounds.east
+    updateData.boundary_west = bounds.west
+    updateData.boundary_north = bounds.north
+    updateData.boundary_south = bounds.south
+  }
+  if (updateData.total_cost != null) {
+    updateData.basic_sale_price = updateData.total_cost
+    updateData.total_property_value = Number(updateData.total_cost) + (Number(existing.total_parking_charges) || 0)
+  }
+
   if (existing.status === 'SUBMITTED') {
     updateData.status = 'EDITED'
   }
@@ -87,6 +102,15 @@ export async function updateBooking(bookingId: string, data: Partial<BookingForm
 
   revalidatePath(`/bookings/${bookingId}`)
   revalidatePath('/bookings')
+
+  if (updateData.status === 'EDITED' || existing.status === 'EDITED' || existing.status === 'SUBMITTED') {
+    try {
+      const { reconcileBooking } = await import('@/lib/demands/issue')
+      await reconcileBooking(supabase, bookingId, { actorId: profile.id })
+    } catch (reconcileError) {
+      console.error('Demand reconciliation after edit failed:', reconcileError instanceof Error ? reconcileError.message : reconcileError)
+    }
+  }
 
   return { success: true, bookingId }
 }
