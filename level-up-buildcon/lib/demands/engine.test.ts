@@ -122,7 +122,7 @@ describe('collections', () => {
     expect(paymentFitsOutstanding(outstanding, { principal: 0n, gst: 3500001n })).toMatch(/GST/)
   })
 
-  it('shows Paid, Partially Paid, Unpaid, Not Due, and Overdue from the balance and the deadline', () => {
+  it('shows Paid, Partially Paid, Due, Not Due, and Overdue from the balance and the deadline', () => {
     const outstanding = { principal: 50000000n, gst: 2500000n }
     const received = { principal: 20000000n, gst: 1000000n }
     expect(collectionStatus({ due: false, demanded: false, outstanding, received: { principal: 0n, gst: 0n } })).toBe('not_due')
@@ -138,6 +138,8 @@ describe('collections', () => {
     expect(isOverdue({ demanded: true, outstanding, deadline: '2026-11-16', today: '2026-11-17' })).toBe(true)
     expect(isOverdue({ demanded: true, outstanding, deadline: '2026-11-16', today: '2026-11-16' })).toBe(false)
     expect(isOverdue({ demanded: true, outstanding: { principal: 0n, gst: 0n }, deadline: '2026-11-01', today: '2026-11-20' })).toBe(false)
+    expect(displayStatus('unpaid', false)).toBe('Due')
+    expect(displayStatus('partial', false)).toBe('Partially Paid')
     expect(displayStatus('partial', true)).toBe('Overdue')
     expect(displayStatus('paid', true)).toBe('Paid')
   })

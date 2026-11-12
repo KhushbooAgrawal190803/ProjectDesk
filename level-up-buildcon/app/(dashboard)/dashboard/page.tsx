@@ -8,6 +8,8 @@ import { getTowerAllocations } from '@/app/(dashboard)/lookup/tower-actions'
 import { TowerView } from '@/app/(dashboard)/lookup/tower-view'
 import { getOwnerTypeForFlat } from '@/lib/data/flat-ownership'
 import { IstDate } from './ist-date'
+import { loadLedgerTotals } from '@/lib/ledger/load'
+import { hundredthsToString } from '@/lib/booking/money'
 
 async function getDashboardStats() {
   const supabase = await createClient()
@@ -30,18 +32,23 @@ async function getDashboardStats() {
 
   const { data: bookingsData } = await supabase
     .from('bookings')
-    .select('booking_amount_paid, unit_no')
+    .select('id, unit_no')
     .neq('status', 'DRAFT')
     .is('deleted_at', null)
 
-  const totalAmount = bookingsData?.reduce((sum, b) => sum + (b.booking_amount_paid || 0), 0) || 0
+  // Received money comes from the payment ledger, the same source as the Payments page.
+  const ledger = await loadLedgerTotals(supabase, (bookingsData || []).map((b) => b.id as string)).catch(() => new Map())
+  const receivedOf = (id: string) => {
+    const money = ledger.get(id)
+    return money ? Number(hundredthsToString(money.receivedPrincipalPaise + money.receivedGstPaise)) : 0
+  }
+  const totalAmount = (bookingsData || []).reduce((sum, b) => sum + receivedOf(b.id as string), 0)
 
-  const ownerTotals = { DEVELOPER: { count: 0, amount: 0 }, LANDOWNER: { count: 0, amount: 0 } } as const
+  const ownerTotals = { DEVELOPER: { count: 0, amount: 0 }, LANDOWNER: { count: 0, amount: 0 } }
   for (const b of bookingsData || []) {
-    const owner = getOwnerTypeForFlat((b as any).unit_no) || 'DEVELOPER'
-    const amt = Number((b as any).booking_amount_paid) || 0
-    ;(ownerTotals as any)[owner].count += 1
-    ;(ownerTotals as any)[owner].amount += amt
+    const owner = getOwnerTypeForFlat(b.unit_no as string) || 'DEVELOPER'
+    ownerTotals[owner].count += 1
+    ownerTotals[owner].amount += receivedOf(b.id as string)
   }
 
   const { count: activeUsers } = await supabase
@@ -124,9 +131,9 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
           <StatTile label="Total Bookings" value={stats.totalBookings} sub="All time" />
           <StatTile label="This Week" value={stats.weekBookings} sub="Last 7 days" />
-          <StatTile label="Total Amount" value={formatCurrency(stats.totalAmount)} sub="All bookings" />
-          <StatTile label="Level Up Buildcon" value={stats.ownerTotals.DEVELOPER.count} sub={`${formatCurrency(stats.ownerTotals.DEVELOPER.amount)} booked`} />
-          <StatTile label="Balaji Hospitality" value={stats.ownerTotals.LANDOWNER.count} sub={`${formatCurrency(stats.ownerTotals.LANDOWNER.amount)} booked`} />
+          <StatTile label="Total Received" value={formatCurrency(stats.totalAmount)} sub="Cleared, incl. GST" />
+          <StatTile label="Level Up Buildcon" value={stats.ownerTotals.DEVELOPER.count} sub={`${formatCurrency(stats.ownerTotals.DEVELOPER.amount)} received`} />
+          <StatTile label="Balaji Hospitality" value={stats.ownerTotals.LANDOWNER.count} sub={`${formatCurrency(stats.ownerTotals.LANDOWNER.amount)} received`} />
           <StatTile
             label="Parking"
             value={

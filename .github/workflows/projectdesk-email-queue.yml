@@ -1,0 +1,29 @@
+# Sends queued and retry-due ProjectDesk emails every 10 minutes.
+# Vercel Hobby crons run at most once a day; this covers retries in between.
+# Repository secrets needed: PROJECTDESK_URL (https://desk.levelupbuildcon.com) and CRON_SECRET.
+name: ProjectDesk email queue
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Process the email queue
+        env:
+          PROJECTDESK_URL: ${{ secrets.PROJECTDESK_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$PROJECTDESK_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "PROJECTDESK_URL or CRON_SECRET is not set; skipping."
+            exit 0
+          fi
+          curl --fail --silent --show-error --max-time 300 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$PROJECTDESK_URL/api/cron/email-queue"

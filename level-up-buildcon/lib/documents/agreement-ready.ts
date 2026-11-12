@@ -1,5 +1,6 @@
 import { considerationOf } from '@/lib/booking/consideration'
 import { percentOfPaise, toHundredths } from '@/lib/booking/money'
+import { entryCountsAsReceived } from '@/lib/ledger/model'
 import { boundaryMatch } from '@/lib/data/flat-boundaries'
 import { getUndividedLandShare } from '@/lib/data/land-share'
 import { getOwnerTypeForFlat } from '@/lib/data/flat-ownership'
@@ -39,7 +40,10 @@ function financeOf(booking: Row): AgreementFinance {
   const stored = text(booking.finance_scenario) as FinanceScenario
   const status = text(booking.finance_loan_status).toLowerCase()
   const sanctionRecorded = Boolean(text(booking.finance_sanction_ref) || text(booking.finance_sanction_date))
-  const loanSanctioned = status ? status.startsWith('sanction') : sanctionRecorded ? true : null
+  // Sanctioned, Partially Disbursed and Fully Disbursed loans are sanctioned; Proposed and Applied are not.
+  const loanSanctioned = status
+    ? status.startsWith('sanction') || status.includes('disbursed')
+    : sanctionRecorded ? true : null
   return {
     scenario: SCENARIOS.includes(stored) ? stored : 'purchaser',
     bankName: text(booking.finance_bank_name),
@@ -132,10 +136,14 @@ export function agreementReadiness(booking: Row, extras: {
     if (payment.payer_kind === 'bank') return text(booking.finance_bank_name)
     return primaryName
   }
-  // Money a bank is still expected to pay is not a receipt and is never acknowledged.
+  // Only money that has arrived is acknowledged. Expected bank money, cheques
+  // awaiting clearance and returned payments are not receipts.
+  if (entries.some((payment) => payment.status === 'pending_clearance')) {
+    warnings.push('A booking payment is awaiting clearance. It is not acknowledged in Article I until it is cleared.')
+  }
   const payments: AgreementPayment[] = entries.length
     ? entries
-        .filter((payment) => payment.status !== 'expected' && (toHundredths(payment.amount) ?? 0n) > 0n)
+        .filter((payment) => entryCountsAsReceived(payment.status as string) && (toHundredths(payment.amount) ?? 0n) > 0n)
         .map((payment) => ({
           payer: payerName(payment),
           amountPaise: toHundredths(payment.amount) ?? 0n,
@@ -176,7 +184,7 @@ export function agreementReadiness(booking: Row, extras: {
   if (finance.scenario !== 'purchaser') {
     if (!finance.bankName) warnings.push('The financing bank is not entered. A blank line is left for its name in Article I.')
     if (finance.loanSanctioned == null) {
-      warnings.push('Loan status is not entered. Article I uses the wording for a sanctioned loan; choose "Not yet sanctioned" on the booking if the loan is still to be sanctioned.')
+      warnings.push('Loan status is not entered. Article I uses the wording for a sanctioned loan; choose Proposed or Applied on the booking if the loan is still to be sanctioned.')
     }
   }
 

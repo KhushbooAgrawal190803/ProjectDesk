@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Booking, Profile, UserRole } from '@/lib/types/database'
-import { formatPaymentMode } from '@/lib/booking/payment-mode'
+import { formatInr, toHundredths } from '@/lib/booking/money'
+import { formatPersonName } from '@/lib/booking/person'
 import {
   Table,
   TableBody,
@@ -14,6 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -24,8 +26,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, Filter, X, FileText } from 'lucide-react'
+import { BookingStatusBadge, PaymentStandingBadge } from '@/components/booking/status-badge'
+import { Search, Filter, X, FileText, ChevronDown, ChevronUp } from 'lucide-react'
 import { format } from 'date-fns'
+import type { BookingMoney } from './page'
 
 interface BookingWithCreator extends Booking {
   creator: Profile
@@ -38,40 +42,30 @@ interface BookingsTableProps {
     users: { id: string; full_name: string }[]
   }
   currentRole: UserRole
+  money: Record<string, BookingMoney>
 }
 
-export function BookingsTable({ bookings, filterOptions, currentRole }: BookingsTableProps) {
+const FILTER_KEYS = ['project', 'unit_category', 'status', 'payment_mode', 'created_by', 'from_date', 'to_date']
+
+export function BookingsTable({ bookings, filterOptions, money }: BookingsTableProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '')
-  const [showFilters, setShowFilters] = useState(false)
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(amount)
-  }
+  const activeFilterCount = FILTER_KEYS.filter((key) => searchParams.get(key)).length
+  const [showFilters, setShowFilters] = useState(activeFilterCount > 0)
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     const params = new URLSearchParams(searchParams.toString())
-    if (searchTerm) {
-      params.set('search', searchTerm)
-    } else {
-      params.delete('search')
-    }
+    if (searchTerm.trim()) params.set('search', searchTerm.trim())
+    else params.delete('search')
     router.push(`/bookings?${params.toString()}`)
   }
 
   const handleFilterChange = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString())
-    if (value && value !== 'all') {
-      params.set(key, value)
-    } else {
-      params.delete(key)
-    }
+    if (value && value !== 'all') params.set(key, value)
+    else params.delete(key)
     router.push(`/bookings?${params.toString()}`)
   }
 
@@ -81,19 +75,6 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
   }
 
   const hasActiveFilters = searchParams.toString().length > 0
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'SUBMITTED':
-        return <Badge variant="default" className="bg-green-600">Submitted</Badge>
-      case 'PENDING':
-        return <Badge variant="default" className="bg-amber-500">Pending</Badge>
-      case 'EDITED':
-        return <Badge variant="secondary">Edited</Badge>
-      default:
-        return <Badge variant="outline">{status}</Badge>
-    }
-  }
 
   if (bookings.length === 0 && !hasActiveFilters) {
     return (
@@ -116,15 +97,15 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
 
   return (
     <div className="space-y-4">
-      {/* Search and Filter Bar */}
       <Card className="border-zinc-200 shadow-sm p-4">
         <div className="space-y-4">
-          <div className="flex gap-2">
-            <form onSubmit={handleSearch} className="flex-1 flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <form onSubmit={handleSearch} className="flex min-w-72 flex-1 gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                 <Input
-                  placeholder="Search by serial, name, or mobile..."
+                  aria-label="Search bookings"
+                  placeholder="Search serial, flat, purchaser, co-applicant or phone"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-9"
@@ -132,139 +113,41 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
               </div>
               <Button type="submit">Search</Button>
             </form>
-            <Button
-              variant="outline"
-              onClick={() => setShowFilters(!showFilters)}
-              className="gap-2"
-            >
-              <Filter className="w-4 h-4" />
-              Filters
+            <Button variant="outline" onClick={() => setShowFilters(!showFilters)} className="gap-2" aria-expanded={showFilters}>
+              <Filter className="h-4 w-4" />
+              Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+              {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </Button>
             {hasActiveFilters && (
               <Button variant="ghost" onClick={clearFilters} className="gap-2">
-                <X className="w-4 h-4" />
-                Clear
+                <X className="h-4 w-4" />
+                Clear filters
               </Button>
             )}
           </div>
 
           {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4 border-t border-zinc-200">
-              <div>
-                <Select
-                  value={searchParams.get('project') || 'all'}
-                  onValueChange={(v) => handleFilterChange('project', v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Projects" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Projects</SelectItem>
-                    {filterOptions.projects.filter(Boolean).map((project) => (
-                      <SelectItem key={project} value={project}>
-                        {project}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <div className="grid grid-cols-1 gap-4 border-t border-zinc-200 pt-4 md:grid-cols-3 lg:grid-cols-4">
+              <FilterSelect label="Project" value={searchParams.get('project')} onChange={(v) => handleFilterChange('project', v)} options={filterOptions.projects.filter(Boolean).map((project) => [project, project])} allLabel="All projects" />
+              <FilterSelect label="Category" value={searchParams.get('unit_category')} onChange={(v) => handleFilterChange('unit_category', v)} options={[['Residential', 'Residential'], ['Commercial', 'Commercial']]} allLabel="All categories" />
+              <FilterSelect label="Booking status" value={searchParams.get('status')} onChange={(v) => handleFilterChange('status', v)} options={[['PENDING', 'Awaiting approval'], ['SUBMITTED', 'Submitted'], ['EDITED', 'Edited']]} allLabel="All statuses" />
+              <FilterSelect label="Booking payment mode" value={searchParams.get('payment_mode')} onChange={(v) => handleFilterChange('payment_mode', v)} options={[['Cash', 'Cash'], ['Cheque', 'Cheque'], ['NEFT_RTGS', 'NEFT / RTGS'], ['UPI', 'UPI'], ['Other', 'Other']]} allLabel="All modes" />
+              <FilterSelect label="Created by" value={searchParams.get('created_by')} onChange={(v) => handleFilterChange('created_by', v)} options={filterOptions.users.filter((user) => user.id).map((user) => [user.id, user.full_name])} allLabel="All users" />
+              <div className="space-y-1.5">
+                <Label htmlFor="from_date" className="text-xs text-zinc-500">Booked from</Label>
+                <Input id="from_date" type="date" value={searchParams.get('from_date') || ''} onChange={(e) => handleFilterChange('from_date', e.target.value)} />
               </div>
-
-              <div>
-                <Select
-                  value={searchParams.get('unit_category') || 'all'}
-                  onValueChange={(v) => handleFilterChange('unit_category', v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Categories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    <SelectItem value="Residential">Residential</SelectItem>
-                    <SelectItem value="Commercial">Commercial</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Select
-                  value={searchParams.get('status') || 'all'}
-                  onValueChange={(v) => handleFilterChange('status', v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="PENDING">Pending</SelectItem>
-                    <SelectItem value="SUBMITTED">Submitted</SelectItem>
-                    <SelectItem value="EDITED">Edited</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Select
-                  value={searchParams.get('payment_mode') || 'all'}
-                  onValueChange={(v) => handleFilterChange('payment_mode', v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Payment Modes" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Payment Modes</SelectItem>
-                    <SelectItem value="Cash">Cash</SelectItem>
-                    <SelectItem value="Cheque">Cheque</SelectItem>
-                    <SelectItem value="NEFT_RTGS">NEFT / RTGS</SelectItem>
-                    <SelectItem value="UPI">UPI</SelectItem>
-                    <SelectItem value="Other">Others</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Select
-                  value={searchParams.get('created_by') || 'all'}
-                  onValueChange={(v) => handleFilterChange('created_by', v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Users" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Users</SelectItem>
-                    {filterOptions.users.filter((user) => user.id).map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.full_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Input
-                  type="date"
-                  value={searchParams.get('from_date') || ''}
-                  onChange={(e) => handleFilterChange('from_date', e.target.value)}
-                  placeholder="From Date"
-                />
-              </div>
-
-              <div>
-                <Input
-                  type="date"
-                  value={searchParams.get('to_date') || ''}
-                  onChange={(e) => handleFilterChange('to_date', e.target.value)}
-                  placeholder="To Date"
-                />
+              <div className="space-y-1.5">
+                <Label htmlFor="to_date" className="text-xs text-zinc-500">To</Label>
+                <Input id="to_date" type="date" value={searchParams.get('to_date') || ''} onChange={(e) => handleFilterChange('to_date', e.target.value)} />
               </div>
             </div>
           )}
         </div>
       </Card>
 
-      {/* Results */}
       <div className="text-sm text-zinc-600">
-        Showing {bookings.length} booking{bookings.length !== 1 ? 's' : ''}
+        {hasActiveFilters ? `${bookings.length} matching booking${bookings.length !== 1 ? 's' : ''}` : `Showing ${bookings.length} booking${bookings.length !== 1 ? 's' : ''}`}
       </div>
 
       {bookings.length === 0 ? (
@@ -274,60 +157,102 @@ export function BookingsTable({ bookings, filterOptions, currentRole }: Bookings
               <Search className="w-8 h-8 text-zinc-400" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-zinc-900">No results found</h3>
-              <p className="text-zinc-600 mt-1">Try adjusting your search or filters</p>
+              <h3 className="text-lg font-semibold text-zinc-900">No bookings match</h3>
+              <p className="text-zinc-600 mt-1">Try a different search, or clear the filters.</p>
             </div>
+            <Button variant="outline" onClick={clearFilters}>Clear filters</Button>
           </div>
         </Card>
       ) : (
-        <Card className="border-zinc-200 shadow-sm overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-zinc-50">
-                <TableHead className="font-semibold">Serial</TableHead>
-                <TableHead className="font-semibold">Purchaser</TableHead>
-                <TableHead className="font-semibold">Phone</TableHead>
-                <TableHead className="font-semibold">Project</TableHead>
-                <TableHead className="font-semibold">Unit</TableHead>
-                <TableHead className="font-semibold">Booking Amount</TableHead>
-                <TableHead className="font-semibold">Payment</TableHead>
-                <TableHead className="font-semibold">Created By</TableHead>
-                <TableHead className="font-semibold">Date</TableHead>
-                <TableHead className="font-semibold">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {bookings.map((booking) => (
-                <TableRow key={booking.id} className="hover:bg-zinc-50 cursor-pointer" onClick={() => router.push(`/bookings/${booking.id}`)}>
-                  <TableCell>
-                    <Badge variant="outline" className="font-mono">
-                      {booking.serial_display}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-medium">{booking.applicant_name}</TableCell>
-                  <TableCell className="text-zinc-600">{booking.applicant_mobile}</TableCell>
-                  <TableCell className="text-zinc-600">{booking.project_name}</TableCell>
-                  <TableCell className="text-zinc-600">{booking.unit_no}</TableCell>
-                  <TableCell className="font-medium">
-                    {formatCurrency(booking.booking_amount_paid)}
-                  </TableCell>
-                  <TableCell className="text-zinc-600">
-                    {booking.payment_mode ? formatPaymentMode(booking.payment_mode, booking.payment_mode === 'Other' ? booking.payment_mode_detail : undefined) : '-'}
-                  </TableCell>
-                  <TableCell className="text-zinc-600 text-sm">
-                    {booking.creator?.full_name}
-                  </TableCell>
-                  <TableCell className="text-zinc-600 text-sm">
-                    {booking.submitted_at && format(new Date(booking.submitted_at), 'MMM d, yyyy')}
-                  </TableCell>
-                  <TableCell>{getStatusBadge(booking.status)}</TableCell>
+        <Card className="overflow-hidden border-zinc-200 shadow-sm">
+          <div className="overflow-x-auto">
+            <Table className="min-w-[900px]">
+              <TableHeader>
+                <TableRow className="bg-zinc-50">
+                  <TableHead className="font-semibold">Serial</TableHead>
+                  <TableHead className="font-semibold">Purchaser</TableHead>
+                  <TableHead className="font-semibold">Flat</TableHead>
+                  <TableHead className="text-right font-semibold">Consideration</TableHead>
+                  <TableHead className="text-right font-semibold">Received</TableHead>
+                  <TableHead className="font-semibold">Payment</TableHead>
+                  <TableHead className="font-semibold">Booking</TableHead>
+                  <TableHead className="font-semibold">Booked</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {bookings.map((booking) => {
+                  const row = money[booking.id]
+                  const payable = toHundredths(row?.payable) ?? 0n
+                  const received = toHundredths(row?.received) ?? 0n
+                  const percent = payable > 0n ? Number((received * 1000n) / payable) / 10 : 0
+                  return (
+                    <TableRow key={booking.id} className="cursor-pointer hover:bg-zinc-50" onClick={() => router.push(`/bookings/${booking.id}`)}>
+                      <TableCell>
+                        <Link href={`/bookings/${booking.id}`} onClick={(event) => event.stopPropagation()}>
+                          <Badge variant="outline" className="font-mono">{booking.serial_display || '—'}</Badge>
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <p className="font-medium text-zinc-900">
+                          {formatPersonName(booking.applicant_salutation, booking.applicant_name)}
+                          {row?.coapplicants ? <span className="ml-1 text-xs font-normal text-zinc-500">+{row.coapplicants}</span> : null}
+                        </p>
+                        <p className="text-xs text-zinc-500">{booking.applicant_mobile}</p>
+                      </TableCell>
+                      <TableCell className="text-zinc-700">
+                        {booking.unit_no}
+                        <div className="text-xs text-zinc-500">{booking.project_name}</div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{row ? formatInr(row.consideration) : '—'}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {row ? formatInr(row.received) : '—'}
+                        {row && <div className="text-xs text-zinc-500">{percent.toFixed(1)}% of payable</div>}
+                      </TableCell>
+                      <TableCell>{row && <PaymentStandingBadge standing={row.standing} />}</TableCell>
+                      <TableCell><BookingStatusBadge status={booking.status} /></TableCell>
+                      <TableCell className="text-sm text-zinc-600">
+                        {booking.submitted_at && format(new Date(booking.submitted_at), 'd MMM yyyy')}
+                        <div className="text-xs text-zinc-400">{booking.creator?.full_name}</div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
         </Card>
       )}
     </div>
   )
 }
 
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+  allLabel,
+}: {
+  label: string
+  value: string | null
+  onChange: (value: string) => void
+  options: Array<[string, string]>
+  allLabel: string
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs text-zinc-500">{label}</Label>
+      <Select value={value || 'all'} onValueChange={onChange}>
+        <SelectTrigger aria-label={label}>
+          <SelectValue placeholder={allLabel} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{allLabel}</SelectItem>
+          {options.map(([optionValue, optionLabel]) => (
+            <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}

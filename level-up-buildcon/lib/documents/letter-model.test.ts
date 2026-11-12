@@ -146,6 +146,101 @@ describe('NOC letters', () => {
   })
 })
 
+describe('purchaser count and addresses', () => {
+  const neha = { salutation: 'Mrs.', name: 'Neha Sharma', address: 'B-7, Lalpur Heights\nLalpur\nRanchi, Jharkhand 834001\nIndia' }
+  const rohitElsewhere = { salutation: 'Mr.', name: 'Rohit Sharma', address: 'Flat 3A, Silver Oak\nBistupur\nJamshedpur, Jharkhand 831001\nIndia' }
+  const rohitSame = { ...rohitElsewhere, address: neha.address }
+  const kavya = {
+    salutation: 'Dr.',
+    name: 'Kavya Sharma',
+    address: 'House No. 1C, First Floor, Sitaram Bhavan, Road No. 1, Gate No. 1, Ashok Nagar Colony\nArgora\nRanchi, Jharkhand 834002\nIndia',
+  }
+  const pair = (co: typeof rohitElsewhere[]) =>
+    developer({
+      applicant_salutation: neha.salutation,
+      applicant_name: neha.name,
+      applicant_address: neha.address,
+      applicant_father_or_spouse: 'Rohit Sharma',
+      coapplicants: co,
+    })
+
+  it('uses singular wording in the NOC for one purchaser', () => {
+    const text = letterPlainText(buildLetter(developer(), 'noc'))
+    expect(text).toContain('This is to certify that Miss Tanusree Dutta, hereinafter referred to as the Purchaser, has been allotted')
+    expect(text).not.toContain('the Purchasers')
+    expect(text).toContain("at the purchaser's own costs")
+    expect(text).toContain('request of the Purchaser/Allottee')
+    expect(text).toContain('Purchaser Miss Tanusree Dutta')
+  })
+
+  it('uses plural wording in the NOC for two purchasers', () => {
+    const text = letterPlainText(buildLetter(pair([rohitElsewhere]), 'noc'))
+    expect(text).toContain('This is to certify that Mrs. Neha Sharma and Mr. Rohit Sharma, hereinafter referred to as the Purchasers, have been allotted')
+    expect(text).not.toContain('the Purchaser,')
+    expect(text).not.toContain('has been allotted')
+    expect(text).toContain('to the purchasers, at their own costs')
+    expect(text).toContain('from the purchasers and/or the Bank')
+    expect(text).toContain('from the above-named purchasers')
+    expect(text).toContain('request of the Purchasers/Allottees')
+    expect(text).toContain('Purchasers Mrs. Neha Sharma and Mr. Rohit Sharma')
+  })
+
+  it('lists three purchasers in entry order with plural wording', () => {
+    const text = letterPlainText(buildLetter(pair([rohitElsewhere, kavya]), 'noc'))
+    expect(text).toContain('Mrs. Neha Sharma, Mr. Rohit Sharma and Dr. Kavya Sharma, hereinafter referred to as the Purchasers, have been allotted')
+  })
+
+  it('prints each applicant with their own different address in the allotment letter', () => {
+    const text = letterPlainText(buildLetter(pair([rohitElsewhere]), 'allotment'))
+    const nehaAt = text.indexOf('Mrs. Neha Sharma')
+    const rohitAt = text.indexOf('Mr. Rohit Sharma')
+    expect(text.slice(nehaAt, rohitAt)).toContain('B-7, Lalpur Heights')
+    expect(text.slice(rohitAt)).toContain('Flat 3A, Silver Oak')
+    expect(text.slice(rohitAt)).toContain('Jamshedpur, Jharkhand 831001')
+    expect(text.slice(rohitAt)).not.toContain('B-7, Lalpur Heights')
+  })
+
+  it('repeats a genuinely shared address under both names', () => {
+    const text = letterPlainText(buildLetter(pair([rohitSame]), 'allotment'))
+    expect(text.split('B-7, Lalpur Heights').length - 1).toBe(2)
+  })
+
+  it('prints three applicants, each with a long multiline address', () => {
+    const text = letterPlainText(buildLetter(pair([rohitElsewhere, kavya]), 'allotment'))
+    expect(text).toContain('Dr. Kavya Sharma')
+    expect(text).toContain('Sitaram Bhavan, Road No. 1')
+    expect(text).toContain('Argora')
+    expect(text).toContain('Flat 3A, Silver Oak')
+  })
+
+  it('uses a co-applicant’s own address lines when the formatted address was not saved', () => {
+    const text = letterPlainText(
+      buildLetter(
+        pair([{ salutation: 'Mr.', name: 'Rohit Sharma', address: '', address_line1: 'Flat 3A, Silver Oak', city: 'Jamshedpur', state: 'Jharkhand', pin_code: '831001' } as typeof rohitElsewhere]),
+        'allotment'
+      )
+    )
+    const rohitAt = text.indexOf('Mr. Rohit Sharma')
+    expect(text.slice(rohitAt)).toContain('Flat 3A, Silver Oak')
+    expect(text.slice(rohitAt)).toContain('Jamshedpur, Jharkhand 831001')
+    expect(text.slice(rohitAt)).not.toContain('B-7, Lalpur Heights')
+  })
+
+  it('refuses to borrow the primary address when a co-applicant has none', () => {
+    const letter = buildLetter(pair([{ salutation: 'Mr.', name: 'Rohit Sharma', address: '' }]), 'allotment')
+    expect(letter.blocks).toEqual([])
+    expect(letter.issues.join(' ')).toContain('Address is not recorded for Mr. Rohit Sharma')
+  })
+
+  it('renders the three-applicant letter and plural NOC as PDFs', async () => {
+    const files = await Promise.all([
+      generateBookingLetter(pair([rohitElsewhere, kavya]), 'allotment'),
+      generateBookingLetter(pair([rohitElsewhere]), 'noc'),
+    ])
+    for (const file of files) expect(file.subarray(0, 5).toString()).toBe('%PDF-')
+  })
+})
+
 describe('letter pdf', () => {
   it('renders developer and landowner letters, including a long name, through the same pipeline', async () => {
     const long = developer({

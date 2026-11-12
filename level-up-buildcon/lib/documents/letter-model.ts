@@ -2,10 +2,11 @@ import { getOwnerTypeForFlat, type OwnerType } from '@/lib/data/flat-ownership'
 import { considerationOf } from '@/lib/booking/consideration'
 import { percentOfPaise, toHundredths } from '@/lib/booking/money'
 import { formatPersonName } from '@/lib/booking/person'
+import { formatPostalAddress, type PostalAddressInput } from '@/lib/booking/address'
 import { CONSIDERATION_GST_PERCENT, receivingAccountFor } from '@/lib/documents/receiving-accounts'
 import { formatLetterDate, rsWithWords } from '@/lib/documents/inr-words'
 
-export interface LetterPerson {
+export interface LetterPerson extends PostalAddressInput {
   salutation?: string | null
   name?: string | null
   address?: string | null
@@ -21,6 +22,12 @@ export interface LetterSource {
   applicant_salutation?: string | null
   applicant_father_or_spouse?: string | null
   applicant_address?: string | null
+  applicant_address_line1?: string | null
+  applicant_address_line2?: string | null
+  applicant_city?: string | null
+  applicant_state?: string | null
+  applicant_pin_code?: string | null
+  applicant_country?: string | null
   coapplicant_name?: string | null
   coapplicants?: LetterPerson[] | null
   basic_sale_price?: number | string | null
@@ -94,17 +101,31 @@ function dearWord(salutation?: string | null): string {
   return 'Sir/Madam'
 }
 
+/** The person's own saved address: the formatted text, or else their own address lines. Never another person's. */
+function ownAddress(address: string | null | undefined, lines: PostalAddressInput): string {
+  if (clean(address)) return clean(address)
+  if (!clean(lines.address_line1) && !clean(lines.city)) return ''
+  return formatPostalAddress({ ...lines, country: clean(lines.country) || 'India' })
+}
+
 function peopleOf(source: LetterSource): LetterPerson[] {
   const people: LetterPerson[] = [
     {
       salutation: source.applicant_salutation,
       name: source.applicant_name,
-      address: source.applicant_address,
+      address: ownAddress(source.applicant_address, {
+        address_line1: source.applicant_address_line1,
+        address_line2: source.applicant_address_line2,
+        city: source.applicant_city,
+        state: source.applicant_state,
+        pin_code: source.applicant_pin_code,
+        country: source.applicant_country,
+      }),
     },
   ]
   if (source.coapplicants?.length) {
     for (const person of source.coapplicants) {
-      if (clean(person.name)) people.push(person)
+      if (clean(person.name)) people.push({ ...person, address: ownAddress(person.address, person) })
     }
   } else if (clean(source.coapplicant_name)) {
     people.push({ name: source.coapplicant_name })
@@ -114,6 +135,28 @@ function peopleOf(source: LetterSource): LetterPerson[] {
 
 function displayNames(people: LetterPerson[]): string {
   return people.map((person) => formatPersonName(person.salutation, person.name)).join(' & ')
+}
+
+/** "A", "A and B", "A, B and C", in the order entered. */
+export function listNames(people: LetterPerson[]): string {
+  const names = people.map((person) => formatPersonName(person.salutation, person.name))
+  if (names.length <= 1) return names[0] || ''
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
+/** Wording that changes with the number of purchasers. */
+export function purchaserGrammar(count: number) {
+  const plural = count > 1
+  return {
+    plural,
+    referredAs: plural ? 'the Purchasers' : 'the Purchaser',
+    hasBeen: plural ? 'have been' : 'has been',
+    noun: plural ? 'purchasers' : 'purchaser',
+    label: plural ? 'Purchasers' : 'Purchaser',
+    theirOwn: plural ? 'their own' : 'the purchaser\'s own',
+    them: plural ? 'them' : 'the purchaser',
+    allottee: plural ? 'Purchasers/Allottees' : 'Purchaser/Allottee',
+  }
 }
 
 function considerationPaise(source: LetterSource): bigint | null {
@@ -155,6 +198,13 @@ export function buildLetter(source: LetterSource, kind: LetterKind): LetterDocum
   if (!unit) issues.push('Unit number is missing.')
   if (!owner) issues.push('This unit is not on the developer or landowner allocation list, so the letter variant cannot be chosen.')
   if (!people.length) issues.push('Applicant name is missing.')
+  if (kind === 'allotment') {
+    for (const person of people) {
+      if (!clean(person.address)) {
+        issues.push(`Address is not recorded for ${formatPersonName(person.salutation, person.name)}. Another applicant's address will not be used in its place.`)
+      }
+    }
+  }
   if (!project) issues.push('Project name is missing.')
   if (!allotmentDate) issues.push('Allotment date is not entered. The letter will not use today\'s date in its place.')
   if (consideration == null || consideration <= 0n) issues.push('Combined property price (flat base plus parking) is missing.')
@@ -193,9 +243,7 @@ export function buildLetter(source: LetterSource, kind: LetterKind): LetterDocum
     people.forEach((person, index) => {
       blocks.push({ kind: 'line', text: formatPersonName(person.salutation, person.name), bold: true, gapAfter: 2 })
       const parents = index === 0 ? source.applicant_father_or_spouse : null
-      const ownAddress = clean(person.address)
-      const primaryAddress = clean(people[0]?.address)
-      const lines = index === 0 || (ownAddress && ownAddress !== primaryAddress) ? addressLines(person, parents) : []
+      const lines = addressLines(person, parents)
       lines.forEach((line, lineIndex) => {
         blocks.push({ kind: 'line', text: line, gapAfter: lineIndex === lines.length - 1 ? 12 : 1 })
       })
@@ -236,6 +284,8 @@ export function buildLetter(source: LetterSource, kind: LetterKind): LetterDocum
 
   const city = clean(source.project_location).split(',')[0].trim()
   const account = receivingAccountFor(owner)
+  const grammar = purchaserGrammar(people.length)
+  const certified = listNames(people)
   blocks.push({ kind: 'line', text: 'No Objection Certificate (NOC)', bold: true, center: true, gapAfter: 12 })
   blocks.push({ kind: 'line', text: `Dated: ${allotmentDate}`, gapAfter: 12 })
   blocks.push({ kind: 'line', text: 'To,', gapAfter: 1 })
@@ -254,7 +304,7 @@ export function buildLetter(source: LetterSource, kind: LetterKind): LetterDocum
   })
   blocks.push({
     kind: 'paragraph',
-    text: `This is to certify that ${names}, hereinafter referred to as the purchaser, has been allotted the ${unitLabel}. We further confirm that M/s LEVEL UP BUILDCON is the developer and is duly entitled and authorised to allot, transfer and convey the ${noun.toLowerCase()} described below in favour of ${names} subject to the terms and conditions of the agreement for sale dated ${agreementDate} and applicable laws.`,
+    text: `This is to certify that ${certified}, hereinafter referred to as ${grammar.referredAs}, ${grammar.hasBeen} allotted the ${unitLabel}. We further confirm that M/s LEVEL UP BUILDCON is the developer and is duly entitled and authorised to allot, transfer and convey the ${noun.toLowerCase()} described below in favour of ${certified} subject to the terms and conditions of the agreement for sale dated ${agreementDate} and applicable laws.`,
   })
   blocks.push({
     kind: 'table',
@@ -262,7 +312,7 @@ export function buildLetter(source: LetterSource, kind: LetterKind): LetterDocum
       { label: 'Developer', value: 'M/s LEVEL UP BUILDCON' },
       { label: 'Project', value: project },
       { label: noun === 'Flat' ? 'Flat No.' : `${noun} No.`, value: unit },
-      { label: 'Purchaser', value: names },
+      { label: grammar.label, value: certified },
       { label: 'City', value: city },
       { label: 'Plot Details', value: clean(source.project_address) },
       { label: 'Location', value: clean(source.project_location) },
@@ -278,19 +328,19 @@ export function buildLetter(source: LetterSource, kind: LetterKind): LetterDocum
   })
   blocks.push({
     kind: 'paragraph',
-    text: `4. We confirm that We have no Objection whatsoever to the purchasers, at their own costs, charges, risks and consequences creating an equitable mortgage over the said ${noun.toLowerCase()} to ${loanBank} (herein after referred to as "the Bank") as security for the amount advanced by the bank to them subject to the fulfilment of all the terms and conditions of the agreement for sale document by the said purchasers.`,
+    text: `4. We confirm that We have no Objection whatsoever to the ${grammar.noun}, at ${grammar.theirOwn} costs, charges, risks and consequences creating an equitable mortgage over the said ${noun.toLowerCase()} to ${loanBank} (herein after referred to as "the Bank") as security for the amount advanced by the bank to ${grammar.them} subject to the fulfilment of all the terms and conditions of the agreement for sale document by the said ${grammar.noun}.`,
   })
   blocks.push({
     kind: 'paragraph',
-    text: '5. We have not borrowed from any financial institution for the purchase/development of the property and have not created and will not create any encumbrances on the property allotted to the said purchasers during the currency of the loan sanctioned/to be sanctioned by the bank to them, subject to the fulfilment of all the terms and conditions of the agreement for sale document by the said purchasers.',
+    text: `5. We have not borrowed from any financial institution for the purchase/development of the property and have not created and will not create any encumbrances on the property allotted to the said ${grammar.noun} during the currency of the loan sanctioned/to be sanctioned by the bank to ${grammar.them}, subject to the fulfilment of all the terms and conditions of the agreement for sale document by the said ${grammar.noun}.`,
   })
   blocks.push({
     kind: 'paragraph',
-    text: `6. Upon creation of proper charge/mortgage in favour of ${loanBank} and upon receipt of the relevant intimation and supporting documents from the purchaser and/or the Bank, we undertake to record the Bank's charge/mortgage in our records, wherever applicable, and acknowledge the interest of the Bank in aforesaid Flat. We further undertake not to transfer, assign, or otherwise deal with the said ${noun.toLowerCase()} in any manner inconsistent with the rights of the Bank without obtaining the prior written consent/NOC of the Bank, subject to the terms and conditions of the Agreement for Sale and applicable laws.`,
+    text: `6. Upon creation of proper charge/mortgage in favour of ${loanBank} and upon receipt of the relevant intimation and supporting documents from the ${grammar.noun} and/or the Bank, we undertake to record the Bank's charge/mortgage in our records, wherever applicable, and acknowledge the interest of the Bank in aforesaid Flat. We further undertake not to transfer, assign, or otherwise deal with the said ${noun.toLowerCase()} in any manner inconsistent with the rights of the Bank without obtaining the prior written consent/NOC of the Bank, subject to the terms and conditions of the Agreement for Sale and applicable laws.`,
   })
   blocks.push({
     kind: 'paragraph',
-    text: '7. After creation of charge/mortgage and after receipt of the copies thereof and after receipt of the proper nomination in favour of the bank from the above-named purchaser, we undertake to inform the society about the Bank\'s charge on the said flat as and when the society of Apartment owners is formed.',
+    text: `7. After creation of charge/mortgage and after receipt of the copies thereof and after receipt of the proper nomination in favour of the bank from the above-named ${grammar.noun}, we undertake to inform the society about the Bank\'s charge on the said flat as and when the society of Apartment owners is formed.`,
   })
   blocks.push({
     kind: 'paragraph',
@@ -313,7 +363,7 @@ export function buildLetter(source: LetterSource, kind: LetterKind): LetterDocum
   })
   blocks.push({
     kind: 'paragraph',
-    text: '10. This NOC-cum-Confirmation is being issued at the request of the Purchaser/Allottee for the submission to the Bank for the purpose of sanctioning and disbursing the Housing Loan/Home Loan against the aforesaid Flat.',
+    text: `10. This NOC-cum-Confirmation is being issued at the request of the ${grammar.allottee} for the submission to the Bank for the purpose of sanctioning and disbursing the Housing Loan/Home Loan against the aforesaid Flat.`,
   })
   blocks.push({
     kind: 'paragraph',

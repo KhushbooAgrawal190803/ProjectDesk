@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Upload, X, FileText, Image, Loader2, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { uploadDocument, deleteDocument } from './document-actions'
+import { confirmDocumentUpload, createDocumentUpload, deleteDocument } from './document-actions'
+import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { DocumentType } from '@/lib/types/database'
 
 export interface UploadedDoc {
@@ -55,12 +56,20 @@ export function DocumentUploadField({ label, documentType, recordKey, bookingId,
 
     setUploading(true)
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('documentType', documentType)
-      formData.append('bookingId', bookingId || 'pending')
-
-      const result = await uploadDocument(formData)
+      // The file goes straight to private storage with a one-time URL, not through the app server.
+      const started = await createDocumentUpload({ documentType, fileName: file.name, fileSize: file.size, mimeType: file.type })
+      if (!started.success) {
+        toast.error('Upload failed', { description: started.error })
+        return
+      }
+      const { error: uploadError } = await createBrowserClient()
+        .storage.from('booking-documents')
+        .uploadToSignedUrl(started.path, started.token, file, { contentType: file.type })
+      if (uploadError) {
+        toast.error('Upload failed', { description: uploadError.message })
+        return
+      }
+      const result = await confirmDocumentUpload({ path: started.path, documentType, fileName: file.name, bookingId: bookingId || 'pending' })
 
       if (result.success && result.documentId) {
         onUpload({
@@ -74,8 +83,8 @@ export function DocumentUploadField({ label, documentType, recordKey, bookingId,
       } else {
         toast.error('Upload failed', { description: result.error })
       }
-    } catch (error: any) {
-      toast.error('Upload failed', { description: error.message })
+    } catch (error) {
+      toast.error('Upload failed', { description: error instanceof Error ? error.message : 'Please try again.' })
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''

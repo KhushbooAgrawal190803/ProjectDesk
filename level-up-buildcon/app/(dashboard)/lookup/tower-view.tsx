@@ -104,26 +104,37 @@ export function TowerView({ initialAllocations, showHeader = true, size = 'defau
       </div>
 
       {/* Legend */}
-      <div className="mb-5 flex shrink-0 flex-wrap items-center gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm shadow-sm">
-        <div className="flex items-center gap-2">
-          <div className={cn('size-5 rounded border-2', TOWER.developer.swatch)} />
-          <span className="font-medium text-zinc-700">{OWNER_NAMES.DEVELOPER}</span>
+      <div className="mb-5 flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">Share</span>
+          <div className="flex items-center gap-2">
+            <div className={cn('size-5 rounded border-2', TOWER.developer.swatch)} />
+            <span className="font-medium text-zinc-700">{OWNER_NAMES.DEVELOPER}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className={cn('size-5 rounded border-2', TOWER.landowner.swatch)} />
+            <span className="font-medium text-zinc-700">{OWNER_NAMES.LANDOWNER}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className={cn('size-5 rounded border-2', TOWER.landowner.swatch)} />
-          <span className="font-medium text-zinc-700">{OWNER_NAMES.LANDOWNER}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className={cn('size-5 rounded border-2', TOWER.developer.swatch, TOWER.sold.swatchRing)} />
-          <span className="font-medium text-zinc-700">Sold</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className={cn('size-5 rounded border-2', TOWER.commercial.swatch)} />
-          <span className="font-medium text-zinc-700">Commercial</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className={cn('size-5 rounded border-2', TOWER.amenity.swatch)} />
-          <span className="font-medium text-zinc-700">Amenity</span>
+        <div className="hidden h-6 w-px bg-zinc-200 sm:block" />
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">Status</span>
+          <div className="flex items-center gap-2">
+            <div className="size-5 rounded border-2 border-zinc-300 bg-white" />
+            <span className="font-medium text-zinc-700">Available</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className={cn('size-5 rounded border-2', TOWER.developer.swatch, TOWER.sold.swatchRing)} />
+            <span className="font-medium text-zinc-700">Booked (ringed)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className={cn('size-5 rounded border-2', TOWER.commercial.swatch)} />
+            <span className="font-medium text-zinc-700">Commercial</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className={cn('size-5 rounded border-2', TOWER.amenity.swatch)} />
+            <span className="font-medium text-zinc-700">Amenity</span>
+          </div>
         </div>
       </div>
 
@@ -162,14 +173,10 @@ export function TowerView({ initialAllocations, showHeader = true, size = 'defau
                         soldRing,
                         cell.status === 'allocated' && 'cursor-pointer hover:brightness-95'
                       )}
-                      onMouseEnter={
-                        cell.status === 'allocated'
-                          ? (e) => {
-                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                              setTooltip({ unitNo: cell.unitNo, x: rect.left, y: rect.top })
-                            }
-                          : undefined
-                      }
+                      onMouseEnter={(e) => {
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                        setTooltip({ unitNo: cell.unitNo, x: rect.left, y: rect.top })
+                      }}
                       onMouseLeave={() => setTooltip(null)}
                     >
                       <span className="text-xs font-bold leading-tight">{cell.unitNo}</span>
@@ -228,15 +235,23 @@ export function TowerView({ initialAllocations, showHeader = true, size = 'defau
 
       {tooltip && (() => {
         const alloc = allocations.find(a => a.unit_no === tooltip.unitNo)
-        if (!alloc) return null
+        const owner = getOwnerTypeForFlat(tooltip.unitNo)
+        const status = isAmenityFlat(tooltip.unitNo)
+          ? 'Amenity · not for sale'
+          : alloc
+            ? `Booked · ${alloc.status === 'PENDING' ? 'awaiting approval' : 'submitted'}`
+            : isCommercialFlat(tooltip.unitNo)
+              ? 'Commercial · available'
+              : 'Available · click to book'
         return (
           <div
-            className="pointer-events-none fixed z-50 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-white shadow-xl"
-            style={{ left: tooltip.x, top: tooltip.y - 64 }}
+            className="pointer-events-none fixed z-50 min-w-40 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-white shadow-xl"
+            style={{ left: tooltip.x, top: tooltip.y - (alloc ? 84 : 64) }}
           >
-            <p className="font-semibold">{alloc.applicant_name}</p>
-            {alloc.serial_display && <p className="text-zinc-400">{alloc.serial_display}</p>}
-            <p className="capitalize text-zinc-400">{alloc.status.toLowerCase()}</p>
+            <p className="font-semibold">Flat {tooltip.unitNo}</p>
+            {owner && <p className="text-zinc-300">{OWNER_NAMES[owner]} share</p>}
+            <p className="text-zinc-400">{status}</p>
+            {alloc && <p className="mt-0.5 text-zinc-200">{alloc.applicant_name}{alloc.serial_display ? ` · ${alloc.serial_display}` : ''}</p>}
           </div>
         )
       })()}

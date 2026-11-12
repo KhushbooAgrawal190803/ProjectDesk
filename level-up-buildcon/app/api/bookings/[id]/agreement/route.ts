@@ -4,10 +4,11 @@ import { createClient } from '@/lib/supabase/server'
 import { assertCanDownloadPdfs } from '@/lib/auth/permissions'
 import { jsonAuthError } from '@/lib/api/auth-response'
 import { loadAgreementDocument } from '@/lib/documents/agreement-load'
-import { OfficeConversionError, convertDocxToPdf } from '@/lib/documents/soffice'
+import { OfficeConversionError, convertDocxToPdf } from '@/lib/documents/docx-to-pdf'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 120
 
 function storedFile(row: { docx_base64?: string | null; pdf_base64?: string | null }, format: 'docx' | 'pdf') {
   const encoded = format === 'pdf' ? row.pdf_base64 : row.docx_base64
@@ -42,7 +43,9 @@ export async function GET(
         .order('version', { ascending: false })
         .limit(1)
         .maybeSingle()
-      const bytes = frozen ? storedFile(frozen, format) : null
+      let bytes: Buffer | null = frozen ? storedFile(frozen, format) : null
+      // A version frozen without a PDF: convert its own frozen Word file, not today's booking data.
+      if (!bytes && frozen?.docx_base64 && format === 'pdf') bytes = await convertDocxToPdf(Buffer.from(frozen.docx_base64, 'base64'))
       if (bytes) {
         return new NextResponse(new Uint8Array(bytes), {
           headers: {

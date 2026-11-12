@@ -1,22 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { runDueDateDemands } from '@/lib/demands/scheduler'
+import { cronAuthorized } from '@/lib/api/cron-auth'
+import { runScheduledJobs } from '@/lib/demands/scheduler'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 300
 
-export async function POST(request: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+/** Daily demand notes and their emails. Idempotent: running it twice issues and sends nothing twice. */
+async function handle(request: NextRequest) {
+  if (!cronAuthorized(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
-    const result = await runDueDateDemands()
-    return NextResponse.json({ ok: true, today: result.today, issued: result.issued })
+    const result = await runScheduledJobs()
+    return NextResponse.json({ ok: true, today: result.today, issued: result.issued, email: result.email })
   } catch (error) {
-    console.error('Demand note cron failed')
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Demand note check failed' },
-      { status: 500 }
-    )
+    console.error('Scheduled cron failed')
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Scheduled check failed' }, { status: 500 })
   }
 }
+
+export const POST = handle
+// Vercel Cron and most hosted schedulers call GET with the same bearer secret.
+export const GET = handle

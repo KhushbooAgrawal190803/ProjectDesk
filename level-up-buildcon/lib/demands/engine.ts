@@ -185,7 +185,7 @@ export function displayStatus(status: CollectionStatus, overdue: boolean): strin
   if (status === 'not_due') return 'Not Due'
   if (overdue) return 'Overdue'
   if (status === 'partial') return 'Partially Paid'
-  return 'Unpaid'
+  return 'Due'
 }
 
 export function paiseFrom(value: unknown): bigint {

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { BookingWizard } from './booking-wizard'
 import { getUserDrafts } from './actions'
+import { ledgerMigrationApplied } from '@/lib/ledger/load'
 
 /** Uses cookies/session (requireRole / Supabase); must not be statically prerendered */
 export const dynamic = 'force-dynamic'
@@ -52,11 +53,12 @@ export default async function NewBookingPage({
       redirect('/login')
     }
 
-    const [drafts, params, availableParking, availablePremiumParking] = await Promise.all([
+    const [drafts, params, availableParking, availablePremiumParking, ledgerReady] = await Promise.all([
       getUserDrafts(),
       searchParams,
       getAvailableParking(),
       getAvailablePremiumParking(),
+      createClient().then(ledgerMigrationApplied).catch(() => false),
     ])
     const prefilledUnit = params.unit ?? null
     const preselectedDraftId = params.draftId ?? null
@@ -77,6 +79,7 @@ export default async function NewBookingPage({
             preselectedDraftId={preselectedDraftId}
             availableParking={availableParking}
             availablePremiumParking={availablePremiumParking}
+            ledgerReady={ledgerReady}
           />
         </div>
       </DashboardLayout>
@@ -97,3 +100,6 @@ export default async function NewBookingPage({
   }
 }
 
+
+// Document generation and the background email after a save can take longer than the default limit.
+export const maxDuration = 300

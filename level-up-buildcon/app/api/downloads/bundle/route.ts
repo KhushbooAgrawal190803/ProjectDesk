@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import archiver from 'archiver'
-import { Writable } from 'stream'
+import { zipFiles } from '@/lib/downloads/zip'
+import { getOwnerTypeForFlat } from '@/lib/data/flat-ownership'
+import { loadAgreementDocument } from '@/lib/documents/agreement-load'
+import { OfficeConversionError, convertDocxToPdf } from '@/lib/documents/docx-to-pdf'
 import { requireStaff } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import { jsonAuthError } from '@/lib/api/auth-response'
@@ -9,28 +11,11 @@ import { generateBookingLetter, renderLetterPdf } from '@/lib/documents/letter-p
 import { LetterNotReadyError } from '@/lib/documents/letter-model'
 import { demandBlocks, snapshotFromStorage } from '@/lib/documents/demand-model'
 import { DEMAND_TIMEZONE, todayInTimeZone } from '@/lib/demands/engine'
-import { groupDemandDownloads } from '@/lib/downloads/groups'
+import { loadDemandGroups } from '@/lib/downloads/groups'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-
-function zipFiles(files: { name: string; buffer: Buffer }[]): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    const stream = new Writable({
-      write(chunk: Buffer, _encoding, callback) {
-        chunks.push(chunk)
-        callback()
-      },
-    })
-    const archive = archiver('zip', { zlib: { level: 9 } })
-    archive.on('error', reject)
-    stream.on('finish', () => resolve(Buffer.concat(chunks)))
-    archive.pipe(stream)
-    for (const file of files) archive.append(file.buffer, { name: file.name })
-    archive.finalize()
-  })
-}
+export const maxDuration = 300
 
 export async function GET(request: NextRequest) {
   try {
@@ -54,45 +39,57 @@ export async function GET(request: NextRequest) {
         }
       }
     } else if (kind === 'agreement') {
-      const { data, error } = await supabase
+      // The same file as each booking's agreement download: the finalized copy, otherwise generated now.
+      const { data: bookings, error } = await supabase.from('bookings').select('id, serial_display, unit_no').neq('status', 'DRAFT').is('deleted_at', null).order('serial_no')
+      if (error) throw new Error(error.message)
+      const { data: frozen } = await supabase
         .from('booking_generated_documents')
         .select('booking_id, version, pdf_base64, docx_base64')
         .eq('kind', 'agreement')
         .eq('finalized', true)
-      if (error) throw new Error(error.message)
-      for (const row of data || []) {
-        const encoded = row.pdf_base64 || row.docx_base64
-        if (!encoded) continue
-        const extension = row.pdf_base64 ? 'pdf' : 'docx'
-        files.push({
-          name: `agreement-${row.booking_id}-v${row.version}.${extension}`,
-          buffer: Buffer.from(encoded, 'base64'),
-        })
+        .order('version', { ascending: false })
+      for (const booking of bookings || []) {
+        if (getOwnerTypeForFlat(booking.unit_no) !== 'DEVELOPER') continue
+        const name = `${booking.serial_display || booking.unit_no}-agreement`.replace(/[^\w.-]+/g, '_')
+        const stored = (frozen || []).find((row) => row.booking_id === booking.id)
+        if (stored?.pdf_base64) {
+          files.push({ name: `${name}.pdf`, buffer: Buffer.from(stored.pdf_base64, 'base64') })
+          continue
+        }
+        if (stored?.docx_base64) {
+          files.push({ name: `${name}.pdf`, buffer: await convertDocxToPdf(Buffer.from(stored.docx_base64, 'base64')) })
+          continue
+        }
+        try {
+          const { docx } = await loadAgreementDocument(supabase, booking.id)
+          files.push({ name: `${name}.pdf`, buffer: await convertDocxToPdf(docx) })
+        } catch (notReady) {
+          if (!(notReady instanceof Error && notReady.name === 'AgreementNotReady')) throw notReady
+        }
       }
     } else if (kind === 'demand') {
       const groupKey = request.nextUrl.searchParams.get('group') || ''
       const today = todayInTimeZone(new Date(), DEMAND_TIMEZONE)
-      const [{ data: notes }, { data: rows }] = await Promise.all([
-        supabase.from('demand_notes').select('*'),
-        supabase.from('booking_schedule_rows').select('id, label, trigger_type, milestone_date'),
-      ])
-      const noteByRow = new Map((notes || []).map((note) => [note.schedule_row_id as string, note]))
-      const match = groupDemandDownloads((rows || []).map((row) => {
-        const note = noteByRow.get(row.id as string)
-        const dateTitle = row.trigger_type === 'date' && row.milestone_date
-          ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${row.milestone_date}T00:00:00Z`))
-          : ''
-        return {
-          trigger: dateTitle || (note?.trigger_label as string) || (row.label as string) || 'Installment',
-          due: Boolean(note) || (row.trigger_type === 'date' && String(row.milestone_date) <= today),
-          noteId: (note?.id as string) || null,
-        }
-      })).find((group) => group.key === groupKey)
+      const { groups, notes } = await loadDemandGroups(supabase, today)
+      const match = groups.find((group) => group.key === groupKey)
       const chosen = new Set(match?.noteIds || [])
-      for (const note of notes || []) {
-        if (!chosen.has(note.id)) continue
+      for (const note of notes) {
+        if (!chosen.has(String(note.id))) continue
         const pdf = await renderLetterPdf(demandBlocks(snapshotFromStorage(note.snapshot as Record<string, unknown>)))
         files.push({ name: `${String(note.reference_number).replace(/[^\w.-]+/g, '_')}.pdf`, buffer: pdf })
+      }
+    } else if (kind === 'demand_all') {
+      const today = todayInTimeZone(new Date(), DEMAND_TIMEZONE)
+      const { groups, notes } = await loadDemandGroups(supabase, today)
+      const byId = new Map(notes.map((note) => [String(note.id), note]))
+      for (const group of groups) {
+        const folder = group.kind === 'date' ? `Scheduled ${group.title}` : group.title
+        for (const id of group.noteIds) {
+          const note = byId.get(id)
+          if (!note) continue
+          const pdf = await renderLetterPdf(demandBlocks(snapshotFromStorage(note.snapshot as Record<string, unknown>)))
+          files.push({ name: `Demand Notes/${folder.replace(/[\\/:*?"<>|]+/g, '-')}/${String(note.reference_number).replace(/[^\w.-]+/g, '_')}.pdf`, buffer: pdf })
+        }
       }
     } else {
       return NextResponse.json({ error: 'Choose a download group' }, { status: 400 })
@@ -110,6 +107,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const authResp = jsonAuthError(error)
     if (authResp) return authResp
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Could not build the archive' }, { status: 500 })
+    const status = error instanceof OfficeConversionError ? 503 : 500
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Could not build the archive' }, { status })
   }
 }

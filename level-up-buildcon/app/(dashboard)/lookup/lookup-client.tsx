@@ -45,11 +45,27 @@ export function LookupClient({ towerAllocations }: LookupClientProps) {
     setSearched(true)
     try {
       const supabase = createClient()
+      const term = searchTerm.replace(/[,()%*]/g, ' ').trim()
+      const { data: people } = await supabase
+        .from('booking_coapplicants')
+        .select('booking_id')
+        .or(`name.ilike.%${term}%,mobile.ilike.%${term}%`)
+        .limit(50)
+      const coapplicantBookings = [...new Set((people || []).map((row) => row.booking_id as string))]
+      const clauses = [
+        `serial_display.ilike.%${term}%`,
+        `applicant_name.ilike.%${term}%`,
+        `applicant_mobile.ilike.%${term}%`,
+        `unit_no.ilike.%${term}%`,
+        `coapplicant_name.ilike.%${term}%`,
+        ...(coapplicantBookings.length ? [`id.in.(${coapplicantBookings.join(',')})`] : []),
+      ]
       const { data, error } = await supabase
         .from('bookings')
         .select('id, serial_display, applicant_name, applicant_mobile, project_name, unit_no, booking_amount_paid, status')
         .neq('status', 'DRAFT')
-        .or(`serial_display.ilike.%${searchTerm}%,applicant_name.ilike.%${searchTerm}%,applicant_mobile.ilike.%${searchTerm}%`)
+        .is('deleted_at', null)
+        .or(clauses.join(','))
         .order('submitted_at', { ascending: false })
         .limit(20)
       if (error) throw error
@@ -106,7 +122,7 @@ export function LookupClient({ towerAllocations }: LookupClientProps) {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
                   <Input
-                    placeholder="Enter serial number, name, or mobile..."
+                    placeholder="Serial, flat number, purchaser, co-applicant or phone"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-11 h-12 text-base"

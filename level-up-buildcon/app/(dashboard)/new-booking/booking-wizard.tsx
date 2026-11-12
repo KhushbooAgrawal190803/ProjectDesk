@@ -35,7 +35,7 @@ type WizardForm = Partial<BookingFormData> & {
 const STEPS = [
   { number: 1, title: 'Project & Unit', description: 'Property details' },
   { number: 2, title: 'Applicant(s)', description: 'Customer information' },
-  { number: 3, title: 'Pricing & Payment', description: 'Financial details' },
+  { number: 3, title: 'Price & Payments', description: 'Price, financing and payments received' },
   { number: 4, title: 'Bank NOC', description: 'If a bank letter is needed' },
   { number: 5, title: 'Payment Schedule', description: 'Slabs on the flat price' },
   { number: 6, title: 'Review', description: 'Confirm & submit' },
@@ -47,6 +47,8 @@ interface BookingWizardProps {
   preselectedDraftId?: string | null
   availableParking?: number
   availablePremiumParking?: number
+  /** Payment ledger migration 010 is installed. */
+  ledgerReady?: boolean
 }
 
 export function BookingWizard({
@@ -55,6 +57,7 @@ export function BookingWizard({
   preselectedDraftId = null,
   availableParking = 27,
   availablePremiumParking = 9,
+  ledgerReady = false,
 }: BookingWizardProps) {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState(1)
@@ -149,7 +152,7 @@ export function BookingWizard({
         'noc_required', 'noc_bank_name', 'noc_addressee', 'noc_bank_address',
         'noc_bank_address_line1', 'noc_bank_address_line2', 'noc_bank_city', 'noc_bank_state', 'noc_bank_pin_code', 'noc_bank_country',
         'payment_plan_type',
-        'finance_scenario', 'finance_bank_name', 'finance_bank_branch', 'finance_loan_status',
+        'finance_scenario', 'finance_bank_name', 'finance_bank_branch', 'finance_bank_address', 'finance_loan_status',
         'finance_sanction_ref', 'finance_sanction_amount', 'finance_sanction_date', 'undivided_land_share',
       ]
       const sanitized: Record<string, any> = {}
@@ -345,6 +348,7 @@ export function BookingWizard({
                 onBack={() => goToStep(2)}
                 availableParking={availableParking}
                 availablePremiumParking={availablePremiumParking}
+                ledgerReady={ledgerReady}
               />
             )}
             {currentStep === 4 && (

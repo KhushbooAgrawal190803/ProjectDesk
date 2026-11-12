@@ -4,28 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { generateCompanyPDF, generateCustomerPDF } from '@/lib/pdf/generator'
 import { loadExtrasForBookings } from '@/lib/booking/persist-details'
 import { jsonAuthError } from '@/lib/api/auth-response'
-import archiver from 'archiver'
-import { Writable } from 'stream'
+import { zipFiles as createZipBuffer } from '@/lib/downloads/zip'
 
 type Kind = 'company' | 'customer' | 'both'
-
-const createZipBuffer = async (files: { name: string; buffer: Buffer }[]): Promise<Buffer> => {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    const stream = new Writable({
-      write(chunk: Buffer, _encoding, callback) {
-        chunks.push(chunk)
-        callback()
-      },
-    })
-    const archive = archiver('zip', { zlib: { level: 9 } })
-    archive.on('error', reject)
-    stream.on('finish', () => resolve(Buffer.concat(chunks)))
-    archive.pipe(stream)
-    files.forEach(({ name, buffer }) => archive.append(buffer, { name }))
-    archive.finalize()
-  })
-}
 
 export async function GET(request: NextRequest) {
   try {

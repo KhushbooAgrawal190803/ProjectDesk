@@ -7,17 +7,30 @@ import { Users, UserCheck, UserX, Shield } from 'lucide-react'
 import { getUserStats, getUsers, getSettings } from './actions'
 import { UsersTable } from './users-table'
 import { SettingsForm } from './settings-form'
+import { createServiceClient } from '@/lib/supabase/server'
+import { loadEmailHistory, loadEmailOverview } from '@/lib/email/admin-data'
+import { EmailDeliveryPanel } from './email-delivery-panel'
+import { EmailHistory, type HistoryRow } from './email-history'
 
-export default async function AdminPage() {
+export const dynamic = 'force-dynamic'
+
+const TABS = ['users', 'settings', 'email', 'email-history']
+
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const profile = await requireAdminPage()
   if (!profile) {
     redirect('/login')
   }
+  const { tab } = await searchParams
+  const initialTab = TABS.includes(tab || '') ? (tab as string) : 'users'
 
-  const [stats, users, settings] = await Promise.all([
+  const service = await createServiceClient()
+  const [stats, users, settings, email, history] = await Promise.all([
     getUserStats(),
     getUsers(),
     getSettings(),
+    loadEmailOverview(service),
+    loadEmailHistory(service),
   ])
 
   return (
@@ -94,10 +107,12 @@ export default async function AdminPage() {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="users" className="space-y-6">
+        <Tabs defaultValue={initialTab} className="space-y-6">
           <TabsList className="bg-white border border-zinc-200">
             <TabsTrigger value="users">User Management</TabsTrigger>
             <TabsTrigger value="settings">System Settings</TabsTrigger>
+            <TabsTrigger value="email">Email Delivery</TabsTrigger>
+            <TabsTrigger value="email-history">Email History</TabsTrigger>
           </TabsList>
 
           <TabsContent value="users">
@@ -127,9 +142,37 @@ export default async function AdminPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="email">
+            <EmailDeliveryPanel
+              tablesReady={email.tablesReady}
+              problems={email.problems}
+              fromAddress={email.config.fromAddress}
+              sender={email.config.sender}
+              appUrl={email.config.appUrl}
+              appUrlIsLocal={email.config.appUrlIsLocal}
+              webhookSecretPresent={email.config.webhookSecretPresent}
+              cronSecretPresent={email.config.cronSecretPresent}
+              paused={email.config.paused}
+              dailyLimit={email.config.dailyLimit}
+              monthlyLimit={email.config.monthlyLimit}
+              sentToday={email.sentToday}
+              sentThisMonth={email.sentThisMonth}
+              awaiting={email.awaiting}
+              failing={email.failing}
+              recipients={email.recipients}
+            />
+          </TabsContent>
+
+          <TabsContent value="email-history">
+            <EmailHistory rows={history as HistoryRow[]} tablesReady={email.tablesReady} />
+          </TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>
   )
 }
 
+
+// Document generation and the background email after a save can take longer than the default limit.
+export const maxDuration = 300

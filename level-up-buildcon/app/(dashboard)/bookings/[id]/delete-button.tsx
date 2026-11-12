@@ -19,11 +19,17 @@ import { deleteBooking } from '../actions'
 interface DeleteBookingButtonProps {
   bookingId: string
   canDelete: boolean
+  /** Controlled from a menu; the button itself is not shown. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-export function DeleteBookingButton({ bookingId, canDelete }: DeleteBookingButtonProps) {
+export function DeleteBookingButton({ bookingId, canDelete, open: controlledOpen, onOpenChange }: DeleteBookingButtonProps) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const [ownOpen, setOwnOpen] = useState(false)
+  const controlled = controlledOpen !== undefined
+  const open = controlled ? controlledOpen : ownOpen
+  const setOpen = (next: boolean) => (controlled ? onOpenChange?.(next) : setOwnOpen(next))
   const [deleting, setDeleting] = useState(false)
 
   const handleDelete = async () => {
@@ -46,14 +52,16 @@ export function DeleteBookingButton({ bookingId, canDelete }: DeleteBookingButto
 
   return (
     <>
-      <Button
-        variant="destructive"
-        className="gap-2"
-        onClick={() => setOpen(true)}
-      >
-        <Trash2 className="w-4 h-4" />
-        Delete
-      </Button>
+      {!controlled && (
+        <Button
+          variant="destructive"
+          className="gap-2"
+          onClick={() => setOpen(true)}
+        >
+          <Trash2 className="w-4 h-4" />
+          Delete
+        </Button>
+      )}
 
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>

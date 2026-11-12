@@ -27,6 +27,7 @@ import {
   type InstallmentCandidate,
   type MoneySplit,
 } from '@/lib/demands/engine'
+import { planAllocations } from '@/lib/ledger/model'
 
 type Row = Record<string, unknown>
 
@@ -82,7 +83,51 @@ function blockersFor(booking: Row, owner: OwnerType | null, property: bigint | n
   return blockers
 }
 
+/**
+ * Booking-form cheques awaiting clearance become their own receipts so they can be
+ * cleared later. They are not applied to any installment until cleared.
+ */
+async function ensurePendingEntryReceipts(supabase: SupabaseClient, booking: Row, actorId?: string | null) {
+  const { data: entries, error } = await supabase
+    .from('booking_payment_entries')
+    .select('*')
+    .eq('booking_id', booking.id)
+    .eq('status', 'pending_clearance')
+  if (error || !entries?.length) return
+  for (const entry of entries) {
+    const principal = paiseFrom(entry.amount)
+    const gst = paiseFrom(entry.gst_amount)
+    if (principal <= 0n && gst <= 0n) continue
+    const { error: insertError } = await supabase.from('payment_receipts').insert({
+      booking_id: booking.id,
+      source: 'booking_advance_entry',
+      principal_amount: hundredthsToString(principal),
+      gst_amount: hundredthsToString(gst),
+      payment_date: String(entry.payment_date || booking.txn_date || new Date().toISOString()).slice(0, 10),
+      payment_mode: entry.payment_mode || null,
+      reference_no: entry.reference_no || null,
+      payer_kind: entry.payer_kind || null,
+      payer_name: entry.payer_name || null,
+      bank_name: entry.originating_bank || null,
+      clearance_status: 'pending_clearance',
+      notes: entry.notes || null,
+      payment_entry_id: entry.id,
+      remarks: 'Booking-form payment awaiting clearance.',
+      recorded_by: actorId || null,
+    })
+    if (insertError && insertError.code !== '23505') {
+      console.error('Pending booking payment could not be recorded:', insertError.message)
+    }
+  }
+}
+
+/**
+ * The booking amount becomes one receipt. When that receipt is created here, it is
+ * applied straight away to the booking installment, then the next installments in order.
+ * Receipts that already existed are left for staff to review and apply.
+ */
 async function ensureBookingAdvance(supabase: SupabaseClient, booking: Row, actorId?: string | null) {
+  await ensurePendingEntryReceipts(supabase, booking, actorId)
   const principal = paiseFrom(booking.booking_amount_paid)
   const gst = paiseFrom(booking.gst_collected)
   if (principal <= 0n && gst <= 0n) return
@@ -94,7 +139,7 @@ async function ensureBookingAdvance(supabase: SupabaseClient, booking: Row, acto
     .maybeSingle()
   if (existing) return
   const rawDate = String(booking.txn_date || booking.submitted_at || new Date().toISOString())
-  const { error } = await supabase.from('payment_receipts').insert({
+  const { data: created, error } = await supabase.from('payment_receipts').insert({
     booking_id: booking.id,
     source: 'booking_advance',
     principal_amount: hundredthsToString(principal),
@@ -102,10 +147,77 @@ async function ensureBookingAdvance(supabase: SupabaseClient, booking: Row, acto
     payment_date: rawDate.slice(0, 10),
     payment_mode: booking.payment_mode || null,
     reference_no: booking.txn_or_cheque_no || null,
-    remarks: 'Booking amount recorded on the booking form. It is not applied to an installment until someone allocates it.',
+    remarks: 'Booking amount recorded on the booking form.',
     recorded_by: actorId || null,
-  })
-  if (error && error.code !== '23505') throw new Error(error.message)
+  }).select('id').single()
+  if (error) {
+    if (error.code !== '23505') throw new Error(error.message)
+    return
+  }
+  await applyNewBookingReceipt(supabase, booking, created.id as string, principal, gst, actorId)
+}
+
+async function applyNewBookingReceipt(
+  supabase: SupabaseClient,
+  booking: Row,
+  receiptId: string,
+  principal: bigint,
+  gst: bigint,
+  actorId?: string | null
+) {
+  const rules = await loadDemandRules(supabase)
+  const { data: rows, error } = await supabase
+    .from('booking_schedule_rows')
+    .select('id, sort_order, calculated_amount')
+    .eq('booking_id', booking.id)
+    .order('sort_order')
+  if (error || !rows?.length) return
+  const { data: existing } = await supabase
+    .from('installment_allocations')
+    .select('schedule_row_id, principal_amount, gst_amount')
+    .in('schedule_row_id', rows.map((row) => row.id))
+  const used = new Map<string, MoneySplit>()
+  for (const item of existing || []) {
+    const current = used.get(item.schedule_row_id) || { principal: 0n, gst: 0n }
+    current.principal += paiseFrom(item.principal_amount)
+    current.gst += paiseFrom(item.gst_amount)
+    used.set(item.schedule_row_id, current)
+  }
+  const plan = planAllocations(
+    rows.map((row) => {
+      const amount = paiseFrom(row.calculated_amount)
+      return {
+        id: row.id as string,
+        sort: Number(row.sort_order),
+        principalPaise: amount,
+        gstPaise: installmentGstPaise(amount, rules.gstPercent),
+        receivedPaise: used.get(row.id)?.principal ?? 0n,
+        gstReceivedPaise: used.get(row.id)?.gst ?? 0n,
+      }
+    }),
+    [{ id: receiptId, clearance: 'cleared', principalPaise: principal, gstPaise: gst, allocatedPrincipalPaise: 0n, allocatedGstPaise: 0n }]
+  )
+  for (const item of plan) {
+    const { error: allocationError } = await supabase.from('installment_allocations').insert({
+      receipt_id: receiptId,
+      schedule_row_id: item.scheduleRowId,
+      principal_amount: hundredthsToString(item.principalPaise),
+      gst_amount: hundredthsToString(item.gstPaise),
+      created_by: actorId || null,
+    })
+    if (allocationError) {
+      console.error('Booking receipt could not be applied:', allocationError.message)
+      return
+    }
+  }
+  if (plan.length && actorId) {
+    await supabase.from('booking_audit_log').insert({
+      booking_id: booking.id,
+      changed_by: actorId,
+      action: 'RECEIPT_ALLOCATED',
+      reason: 'Booking receipt applied to the booking installment automatically',
+    })
+  }
 }
 
 export interface InstallmentState {
@@ -214,7 +326,9 @@ export async function getBookingDemandState(supabase: SupabaseClient, bookingId:
     })
     const status = collectionStatus({ due, demanded: Boolean(demand), outstanding, received })
     const label = row.trigger_type === 'date'
-      ? String(row.milestone_date || row.label || 'Dated installment')
+      ? row.milestone_date
+        ? `Scheduled ${String(row.milestone_date).slice(0, 10).split('-').reverse().join('.')}`
+        : String(row.label || 'Dated installment')
       : labels.get(row.milestone_id) || String(row.label || 'Milestone')
     return {
       id: row.id,

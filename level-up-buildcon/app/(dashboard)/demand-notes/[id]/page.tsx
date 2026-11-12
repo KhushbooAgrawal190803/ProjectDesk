@@ -116,3 +116,6 @@ export default async function DemandNotePage({ params }: { params: Promise<{ id:
     </DashboardLayout>
   )
 }
+
+// Document generation and the background email after a save can take longer than the default limit.
+export const maxDuration = 300

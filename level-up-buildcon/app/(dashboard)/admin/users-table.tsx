@@ -93,13 +93,14 @@ export function UsersTable({ users }: UsersTableProps) {
   }
 
   const handleDisable = async (userId: string, currentStatus: UserStatus) => {
-    setLoading(userId)
     const newStatus: UserStatus = currentStatus === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
+    if (newStatus === 'DISABLED' && !window.confirm('Disable this user? They will not be able to sign in until an admin enables them again.')) return
+    setLoading(userId)
     try {
       await changeUserStatus(userId, newStatus)
       toast.success(newStatus === 'DISABLED' ? 'User disabled' : 'User enabled')
     } catch (error) {
-      toast.error('Failed to update status')
+      toast.error('Failed to update status', { description: error instanceof Error ? error.message : undefined })
     } finally {
       setLoading(null)
     }

@@ -127,6 +127,12 @@ export async function approveBooking(bookingId: string) {
   } catch (reconcileError) {
     console.error('Demand reconciliation after approval failed:', reconcileError instanceof Error ? reconcileError.message : reconcileError)
   }
+  try {
+    const { queueBookingFinalized } = await import('@/lib/email/service')
+    await queueBookingFinalized(bookingId, profile.id)
+  } catch (emailError) {
+    console.error('[email] new booking email could not be queued:', emailError instanceof Error ? emailError.message : emailError)
+  }
 
   await supabase.from('booking_audit_log').insert({
     booking_id: bookingId,

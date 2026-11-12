@@ -81,6 +81,7 @@ export const step3Schema = z.object({
   finance_scenario: z.enum(['purchaser', 'split_50_50', 'split_10_90', '']).optional(),
   finance_bank_name: optionalString,
   finance_bank_branch: optionalString,
+  finance_bank_address: optionalString,
   finance_loan_status: optionalString,
   finance_sanction_ref: optionalString,
   finance_sanction_amount: optionalNumber,

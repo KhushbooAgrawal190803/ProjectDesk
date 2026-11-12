@@ -10,7 +10,8 @@ import {
   UNIT_CONFLICT_MESSAGE,
 } from '@/lib/booking/availability'
 import { derivePricingFields, toNum } from '@/lib/booking/calculations'
-import { buildBookingScalars, loadBookingExtras, replaceBookingChildren } from '@/lib/booking/persist-details'
+import { buildBookingScalars, loadBookingExtras, replaceBookingChildren, withoutLedgerColumns } from '@/lib/booking/persist-details'
+import { ledgerMigrationApplied } from '@/lib/ledger/load'
 import { assertCanEditOwnDraft, submitStatusForRole } from '@/lib/auth/permissions'
 
 const DRAFT_FIELDS = [
@@ -58,10 +59,11 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
   const profile = await requireStaff()
   const supabase = await createClient()
   const raw = asRaw(data)
-  const bookingData = {
+  let bookingData: Record<string, unknown> = {
     ...mapDraftFields(parsed.data),
     ...buildBookingScalars(raw, 'draft'),
   }
+  if (!(await ledgerMigrationApplied(supabase))) bookingData = withoutLedgerColumns(bookingData)
 
   if (draftId) {
     const { data: existing } = await supabase
@@ -202,7 +204,8 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
   const supabase = await createClient()
   const baseData = parsed.data
   const raw = asRaw(data)
-  const scalars = buildBookingScalars(raw, 'submit')
+  let scalars = buildBookingScalars(raw, 'submit')
+  if (!(await ledgerMigrationApplied(supabase))) scalars = withoutLedgerColumns(scalars)
 
   if (baseData.project_name && baseData.unit_no) {
     const unitCheck = await checkUnitAvailability(
@@ -318,6 +321,13 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
       await reconcileBooking(supabase, bookingId, { actorId: profile.id })
     } catch (error) {
       console.error('Demand reconciliation after submit failed:', error instanceof Error ? error.message : error)
+    }
+    // After reconciliation, so demand notes already due are in the same email.
+    try {
+      const { queueBookingFinalized } = await import('@/lib/email/service')
+      await queueBookingFinalized(bookingId, profile.id)
+    } catch (error) {
+      console.error('[email] new booking email could not be queued:', error instanceof Error ? error.message : error)
     }
   }
 

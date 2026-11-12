@@ -10,10 +10,11 @@ const nextConfigDir = path.dirname(fileURLToPath(import.meta.url));
  */
 const nextConfig: NextConfig = {
   serverExternalPackages: ['archiver'],
-  // Document uploads use a Server Action (FormData). Default limit is 1 MB.
+  // Uploads go straight to Supabase Storage, so server actions only carry form data.
+  // Kept under Vercel's 4.5 MB request limit.
   experimental: {
     serverActions: {
-      bodySizeLimit: '12mb',
+      bodySizeLimit: '4mb',
     },
   },
   ...(process.env.VERCEL

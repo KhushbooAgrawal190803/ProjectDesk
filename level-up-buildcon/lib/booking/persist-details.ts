@@ -10,6 +10,7 @@ import {
   toHundredths,
 } from './money'
 import { resolveSchedule, standardScheduleRows, type ScheduleRowInput } from './schedule'
+import { entryCountsAsReceived, normalizeEntryStatus, type EntryStatus } from '@/lib/ledger/model'
 
 export interface ParkingSpaceInput {
   id: string
@@ -31,7 +32,19 @@ export interface PaymentEntryInput {
   reference_no?: string | null
   payment_date?: string | null
   originating_bank?: string | null
-  status?: 'received' | 'expected' | null
+  status?: EntryStatus | null
+  /** GST included in this payment. */
+  gst_amount?: number | string | null
+  notes?: string | null
+}
+
+/** Booking columns added by migration 010. Dropped from writes until it is run. */
+export const LEDGER_BOOKING_COLUMNS = ['finance_bank_address'] as const
+
+export function withoutLedgerColumns<T extends Record<string, unknown>>(patch: T): T {
+  const copy = { ...patch }
+  for (const key of LEDGER_BOOKING_COLUMNS) delete copy[key]
+  return copy
 }
 
 export interface CoApplicantInput extends PostalAddressInput {
@@ -103,15 +116,17 @@ export function buildBookingScalars(
   const parkingTotal = parkingPaise.reduce((sum, value) => sum + value, 0n)
 
   const paymentEntries = Array.isArray(input.payment_entries) ? (input.payment_entries as PaymentEntryInput[]) : null
-  const receivedFromEntries = paymentEntries
-    ? paymentEntries
-        .filter((entry) => entry.status !== 'expected')
-        .reduce((sum, entry) => sum + (toHundredths(entry.amount) ?? 0n), 0n)
+  const counted = paymentEntries ? paymentEntries.filter((entry) => entryCountsAsReceived(entry.status)) : null
+  const receivedFromEntries = counted
+    ? counted.reduce((sum, entry) => sum + (toHundredths(entry.amount) ?? 0n), 0n)
+    : null
+  const gstFromEntries = counted && counted.some((entry) => (toHundredths(entry.gst_amount) ?? 0n) > 0n)
+    ? counted.reduce((sum, entry) => sum + (toHundredths(entry.gst_amount) ?? 0n), 0n)
     : null
   const paid = receivedFromEntries ?? toHundredths(input.booking_amount_paid ?? 0) ?? 0n
   if (paid < 0n) throw new Error('Booking amount cannot be negative')
   const gst = gstApplicablePaise(hundredthsToString(paid)) ?? 0n
-  const collected = toHundredths(input.gst_collected ?? 0) ?? 0n
+  const collected = gstFromEntries ?? toHundredths(input.gst_collected ?? 0) ?? 0n
   if (collected < 0n) throw new Error('GST collected cannot be negative')
   if (collected > gst) throw new Error('GST collected cannot exceed the GST applicable')
 
@@ -146,6 +161,7 @@ export function buildBookingScalars(
     finance_scenario: text(input.finance_scenario) || 'purchaser',
     finance_bank_name: text(input.finance_bank_name),
     finance_bank_branch: text(input.finance_bank_branch),
+    ...('finance_bank_address' in input ? { finance_bank_address: text(input.finance_bank_address) } : {}),
     finance_loan_status: text(input.finance_loan_status),
     finance_sanction_ref: text(input.finance_sanction_ref),
     finance_sanction_amount: toHundredths(input.finance_sanction_amount) == null
@@ -287,9 +303,21 @@ export async function replaceBookingChildren(
         reference_no: text(entry.reference_no),
         payment_date: text(entry.payment_date),
         originating_bank: text(entry.originating_bank),
-        status: entry.status === 'expected' ? 'expected' : 'received',
+        status: normalizeEntryStatus(entry.status),
+        gst_amount: hundredthsToString(toHundredths(entry.gst_amount) ?? 0n),
+        notes: text(entry.notes),
       }))
-      const { error } = await supabase.from('booking_payment_entries').insert(rows)
+      let { error } = await supabase.from('booking_payment_entries').insert(rows)
+      if (error && /gst_amount|notes|schema cache/i.test(error.message)) {
+        const legacy = rows.map(({ gst_amount: _gst, notes: _notes, ...row }) => row)
+        if (legacy.some((row) => row.status !== 'received' && row.status !== 'expected')) {
+          throw new Error('Pending, cleared and returned payments need supabase/migrations/010_payment_ledger.sql. Run it in the Supabase SQL editor, or mark the payment Received.')
+        }
+        error = (await supabase.from('booking_payment_entries').insert(legacy)).error
+      }
+      if (error && /status_check/i.test(error.message)) {
+        throw new Error('Pending, cleared and returned payments need supabase/migrations/010_payment_ledger.sql. Run it in the Supabase SQL editor, or mark the payment Received.')
+      }
       if (error) throw new Error(`Failed to save payments: ${error.message}`)
     }
   }

@@ -21,11 +21,17 @@ interface RevertToDraftButtonProps {
   bookingId: string
   canRevert: boolean
   bookingStatus: string
+  /** Controlled from a menu; the button itself is not shown. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-export function RevertToDraftButton({ bookingId, canRevert, bookingStatus }: RevertToDraftButtonProps) {
+export function RevertToDraftButton({ bookingId, canRevert, bookingStatus, open: controlledOpen, onOpenChange }: RevertToDraftButtonProps) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const [ownOpen, setOwnOpen] = useState(false)
+  const controlled = controlledOpen !== undefined
+  const open = controlled ? controlledOpen : ownOpen
+  const setOpen = (next: boolean) => (controlled ? onOpenChange?.(next) : setOwnOpen(next))
   const [reverting, setReverting] = useState(false)
   const [reason, setReason] = useState('')
 
@@ -52,14 +58,16 @@ export function RevertToDraftButton({ bookingId, canRevert, bookingStatus }: Rev
 
   return (
     <>
-      <Button
-        variant="outline"
-        className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
-        onClick={() => setOpen(true)}
-      >
-        <Undo2 className="w-4 h-4" />
-        Back to Draft
-      </Button>
+      {!controlled && (
+        <Button
+          variant="outline"
+          className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+          onClick={() => setOpen(true)}
+        >
+          <Undo2 className="w-4 h-4" />
+          Back to Draft
+        </Button>
+      )}
 
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
