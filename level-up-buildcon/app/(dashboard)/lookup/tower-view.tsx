@@ -16,7 +16,7 @@ const PROJECT = 'Anandam'
 
 const ALL_FLATS = getAllKnownFlats(PROJECT)
 
-type FlatStatus = 'available' | 'allocated' | 'amenity' | 'commercial'
+type FlatStatus = 'available' | 'allocated' | 'amenity' | 'sold'
 
 interface FlatCell {
   unitNo: string
@@ -40,7 +40,7 @@ function buildGrid(allocations: AllocatedUnit[]): FlatCell[][] {
       let status: FlatStatus = 'available'
       if (amenity) status = 'amenity'
       else if (allocation) status = 'allocated'
-      else if (commercial) status = 'commercial'
+      else if (commercial) status = 'sold'
       row.push({ unitNo, floor, unit, status, allocation })
     }
     rows.push(row)
@@ -50,7 +50,6 @@ function buildGrid(allocations: AllocatedUnit[]): FlatCell[][] {
 
 function flatCellStyle(cell: FlatCell): string {
   if (cell.status === 'amenity') return TOWER.amenity.cell
-  if (cell.status === 'commercial') return TOWER.commercial.cell
   const owner = getOwnerTypeForFlat(cell.unitNo)
   return owner === 'LANDOWNER' ? TOWER.landowner.cell : TOWER.developer.cell
 }
@@ -79,12 +78,13 @@ export function TowerView({ initialAllocations, showHeader = true, size = 'defau
   }
 
   const grid = buildGrid(allocations)
-  const totalAllocated = allocations.length
+  const allocatedUnits = new Set(allocations.map(a => a.unit_no))
+  const commercialSold = ALL_FLATS.filter(f => isCommercialFlat(f) && !allocatedUnits.has(f)).length
+  const totalSold = allocations.length + commercialSold
   const totalAmenity = ALL_FLATS.filter(f => isAmenityFlat(f)).length
-  const totalCommercial = ALL_FLATS.filter(f => isCommercialFlat(f)).length
-  const totalAvailable = ALL_FLATS.length - totalAmenity - totalCommercial - totalAllocated
+  const totalAvailable = ALL_FLATS.length - totalAmenity - totalSold
 
-  const summary = `${totalAllocated} sold · ${totalAvailable} available · ${totalCommercial} commercial · ${totalAmenity} amenity`
+  const summary = `${totalSold} sold · ${totalAvailable} available · ${totalAmenity} amenity`
 
   return (
     <div className={cn('flex flex-col', isLarge && 'min-h-0 flex-1')}>
@@ -128,10 +128,6 @@ export function TowerView({ initialAllocations, showHeader = true, size = 'defau
             <span className="font-medium text-zinc-700">Booked (ringed)</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className={cn('size-5 rounded border-2', TOWER.commercial.swatch)} />
-            <span className="font-medium text-zinc-700">Commercial</span>
-          </div>
-          <div className="flex items-center gap-2">
             <div className={cn('size-5 rounded border-2', TOWER.amenity.swatch)} />
             <span className="font-medium text-zinc-700">Amenity</span>
           </div>
@@ -162,7 +158,7 @@ export function TowerView({ initialAllocations, showHeader = true, size = 'defau
 
                 {row.map((cell, cellIdx) => {
                   const baseStyle = flatCellStyle(cell)
-                  const soldRing = cell.status === 'allocated' ? TOWER.sold.ring : ''
+                  const soldRing = cell.status === 'allocated' || cell.status === 'sold' ? TOWER.sold.ring : ''
                   const inner = (
                     <div
                       className={cn(
@@ -185,9 +181,9 @@ export function TowerView({ initialAllocations, showHeader = true, size = 'defau
                           Amenity
                         </span>
                       )}
-                      {cell.status === 'commercial' && (
+                      {cell.status === 'sold' && (
                         <span className="mt-0.5 text-[9px] font-medium uppercase leading-tight tracking-wide">
-                          Comm.
+                          Sold
                         </span>
                       )}
                       {cell.status === 'allocated' && (
@@ -210,7 +206,7 @@ export function TowerView({ initialAllocations, showHeader = true, size = 'defau
                       </Fragment>
                     )
                   }
-                  if (cell.status === 'available' || cell.status === 'commercial') {
+                  if (cell.status === 'available') {
                     return (
                       <Fragment key={cell.unitNo}>
                         {gap}
@@ -241,7 +237,7 @@ export function TowerView({ initialAllocations, showHeader = true, size = 'defau
           : alloc
             ? `Booked · ${alloc.status === 'PENDING' ? 'awaiting approval' : 'submitted'}`
             : isCommercialFlat(tooltip.unitNo)
-              ? 'Commercial · available'
+              ? 'Sold'
               : 'Available · click to book'
         return (
           <div

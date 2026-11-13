@@ -112,14 +112,10 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
     if (!isFlatAreaLookupProject(projectName)) { setFlatError(null); return }
     const trimmed = unitNo.trim()
 
-    if (unitCategory === 'Commercial') {
-      if (!isCommercialFlat(trimmed)) {
-        setFlatError(`Flat ${unitNo} is not a commercial unit. Only 101–104 and 201–204 can be booked under Commercial.`)
-      } else {
-        setFlatError(null)
-      }
-    } else if (isCommercialFlat(trimmed)) {
-      setFlatError(`Flat ${unitNo} is a commercial unit. Select "Commercial" to book it.`)
+    if (isCommercialFlat(trimmed)) {
+      setFlatError(`Flat ${unitNo} is sold and is not available for booking.`)
+    } else if (unitCategory === 'Commercial') {
+      setFlatError('Commercial units 101–104 and 201–204 are sold.')
     } else if (isAmenityFlat(trimmed)) {
       setFlatError(`Flat ${unitNo} is an amenity unit and is not available for booking`)
     } else {

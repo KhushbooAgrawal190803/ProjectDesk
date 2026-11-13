@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isCommercialFlat } from '@/lib/data/flat-areas'
 
 export const UNIT_CONFLICT_MESSAGE =
   'This unit was just booked or is no longer available. Please choose another unit.'
@@ -22,6 +23,10 @@ export async function checkUnitAvailability(
 ): Promise<{ available: true } | { available: false; message: string } | { error: string }> {
   if (!projectName?.trim() || !unitNo?.trim()) {
     return { available: true }
+  }
+
+  if (isCommercialFlat(unitNo)) {
+    return { available: false, message: `Unit ${unitNo.trim()} is sold.` }
   }
 
   let query = supabase

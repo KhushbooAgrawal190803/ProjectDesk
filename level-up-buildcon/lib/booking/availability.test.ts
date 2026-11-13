@@ -28,7 +28,7 @@ describe('isUnitConflictError', () => {
 describe('checkUnitAvailability', () => {
   it('fail closed on query error', async () => {
     const supabase = mockSupabase({ data: null, error: { message: 'db down' } })
-    const result = await checkUnitAvailability(supabase, 'Anandam', '101')
+    const result = await checkUnitAvailability(supabase, 'Anandam', '301')
     expect(result).toEqual({ error: AVAILABILITY_CHECK_FAILED_MESSAGE })
   })
 
@@ -37,13 +37,19 @@ describe('checkUnitAvailability', () => {
       data: [{ serial_display: 'LUBC 01', applicant_name: 'Test' }],
       error: null,
     })
-    const result = await checkUnitAvailability(supabase, 'Anandam', '101')
+    const result = await checkUnitAvailability(supabase, 'Anandam', '301')
     expect(result).toMatchObject({ available: false })
   })
 
   it('returns available when no conflict', async () => {
     const supabase = mockSupabase({ data: [], error: null })
-    const result = await checkUnitAvailability(supabase, 'Anandam', '101')
+    const result = await checkUnitAvailability(supabase, 'Anandam', '301')
     expect(result).toEqual({ available: true })
+  })
+
+  it('treats commercial units as sold without a booking', async () => {
+    const supabase = mockSupabase({ data: [], error: null })
+    const result = await checkUnitAvailability(supabase, 'Anandam', '101')
+    expect(result).toEqual({ available: false, message: 'Unit 101 is sold.' })
   })
 })
