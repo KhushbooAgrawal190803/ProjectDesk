@@ -122,12 +122,16 @@ export function UsersTable({ users }: UsersTableProps) {
     e.preventDefault()
     setLoading('create')
     try {
-      await createUser({
+      const result = await createUser({
         email: newUserEmail,
         fullName: newUserName,
         role: newUserRole,
         password: newUserPassword,
       })
+      if (!result.success) {
+        toast.error('Failed to create user', { description: result.error })
+        return
+      }
       toast.success('User created successfully')
       setCreateDialogOpen(false)
       setNewUserEmail('')

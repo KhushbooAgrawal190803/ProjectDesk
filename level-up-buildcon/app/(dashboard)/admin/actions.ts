@@ -145,44 +145,54 @@ export async function createUser(data: {
   fullName: string
   role: UserRole
   password: string
-}) {
+}): Promise<{ success: true; userId: string } | { success: false; error: string }> {
   const profile = await requireAdmin()
 
   if (!data.password || data.password.length < 6) {
-    throw new Error('Password must be at least 6 characters')
+    return { success: false, error: 'Password must be at least 6 characters.' }
   }
-  if (data.role !== 'EXECUTIVE') {
-    throw new Error('Only executive accounts can be created from the admin panel')
+  if (data.role !== 'EXECUTIVE' && data.role !== 'ADMIN') {
+    return { success: false, error: 'Choose Executive or Admin.' }
+  }
+  const email = data.email.trim().toLowerCase()
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return { success: false, error: 'Enter a valid email address.' }
   }
 
   // The only service-role use in the app: creating (and on failure, deleting)
   // a Supabase Auth user requires the Auth Admin API. requireAdmin() above is
   // the authorization check; the service client bypasses RLS from here on.
-  const supabase = await createServiceClient()
+  let supabase
+  try {
+    supabase = await createServiceClient()
+  } catch {
+    return { success: false, error: 'User creation is not configured on this server. Add SUPABASE_SERVICE_ROLE_KEY in the Vercel project settings, then redeploy.' }
+  }
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-    email: data.email,
+    email,
     password: data.password,
     email_confirm: true,
   })
 
   if (authError || !authData.user) {
-    throw new Error(`Failed to create user: ${authError?.message}`)
+    const message = authError?.message || 'The account could not be created.'
+    return { success: false, error: /already.*(registered|exists)/i.test(message) ? 'An account with this email already exists.' : message }
   }
 
   const { error: profileError } = await supabase
     .from('profiles')
     .insert({
       id: authData.user.id,
-      email: data.email,
-      full_name: data.fullName,
+      email,
+      full_name: data.fullName.trim(),
       role: data.role,
       status: 'ACTIVE',
     })
 
   if (profileError) {
     await supabase.auth.admin.deleteUser(authData.user.id)
-    throw new Error(`Failed to create profile: ${profileError.message}`)
+    return { success: false, error: profileError.message }
   }
 
   await supabase
