@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { loadExtrasForBookings } from '@/lib/booking/persist-details'
 import { agreementReadiness } from '@/lib/documents/agreement-ready'
 import { loadAgreementDocument } from '@/lib/documents/agreement-load'
-import { convertDocxToPdf } from '@/lib/documents/docx-to-pdf'
+import { agreementPdf } from '@/lib/documents/agreement-pdf'
 import { demandBlocks, snapshotFromStorage } from '@/lib/documents/demand-model'
 import { buildLetter } from '@/lib/documents/letter-model'
 import { generateBookingLetter, renderLetterPdf } from '@/lib/documents/letter-pdf'
@@ -48,12 +48,14 @@ export function supabaseRenderer(service: SupabaseClient): DocumentRenderer {
       }
       if (doc.document_type === 'agreement' && !doc.document_id) {
         // Generated now with the approved template, exactly as the agreement download does.
-        // A PDF or nothing: if the PDF service is down the event is retried, never sent as Word only.
+        // The PDF is attached; the Word file it was set from is kept with it in storage.
         const { booking, docx } = await loadAgreementDocument(service, doc.booking_id as string)
+        const name = { type: 'agreement' as const, serial: booking.serial_display, unit: booking.unit_no }
         return {
-          buffer: await convertDocxToPdf(docx),
+          buffer: await agreementPdf(docx),
           folder: doc.folder || FOLDERS.agreement,
-          fileName: documentFileName({ type: 'agreement', serial: booking.serial_display, unit: booking.unit_no }),
+          fileName: documentFileName(name),
+          companion: { fileName: documentFileName({ ...name, extension: 'docx' }), buffer: docx },
         }
       }
       if (doc.document_type === 'agreement') {
@@ -65,14 +67,15 @@ export function supabaseRenderer(service: SupabaseClient): DocumentRenderer {
         if (error || !file || !file.finalized) throw new Error('Finalized Agreement for Sale not found')
         const { data: booking } = await service.from('bookings').select('serial_display, unit_no').eq('id', file.booking_id).single()
         if (!file.pdf_base64 && !file.docx_base64) throw new Error('The finalized agreement has no stored file')
-        // A version frozen without a PDF is converted from its own frozen Word file, unchanged.
-        const buffer = file.pdf_base64
-          ? Buffer.from(file.pdf_base64, 'base64')
-          : await convertDocxToPdf(Buffer.from(file.docx_base64 as string, 'base64'))
+        // A version frozen without a PDF is set from its own frozen Word file, unchanged.
+        const docx = file.docx_base64 ? Buffer.from(file.docx_base64, 'base64') : null
+        const buffer = file.pdf_base64 ? Buffer.from(file.pdf_base64, 'base64') : await agreementPdf(docx as Buffer)
+        const name = { type: 'agreement' as const, serial: booking?.serial_display, unit: booking?.unit_no, version: Number(file.version) }
         return {
           buffer,
           folder: doc.folder || FOLDERS.agreement,
-          fileName: documentFileName({ type: 'agreement', serial: booking?.serial_display, unit: booking?.unit_no, version: Number(file.version) }),
+          fileName: documentFileName(name),
+          companion: docx ? { fileName: documentFileName({ ...name, extension: 'docx' }), buffer: docx } : undefined,
         }
       }
       const { data: note, error } = await service.from('demand_notes').select('*').eq('id', doc.document_id).single()
@@ -113,7 +116,7 @@ type Extras = Awaited<ReturnType<typeof loadExtrasForBookings>> extends Map<stri
 /**
  * The booking's Agreement for Sale, the same file the agreement download returns: the frozen
  * copy if one was finalized, otherwise generated from the booking with the approved template.
- * A flat without an approved template (landowner share) is never given a substitute.
+ * Developer and landowner flats use the same approved template.
  */
 async function agreementSelection(service: SupabaseClient, booking: Row, extras: Extras | undefined): Promise<DocumentSelection | Omission> {
   const serial = String(booking.serial_display || 'Booking')

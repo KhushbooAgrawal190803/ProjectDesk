@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { CheckCircle2, Loader2, Mail, Pencil, Plus, Trash2, XCircle } from 'lucide-react'
+import { Loader2, Mail, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -31,13 +31,6 @@ interface Recipient {
 export interface EmailPanelProps {
   tablesReady: boolean
   problems: string[]
-  fromAddress: string | null
-  sender: 'resend' | 'mock'
-  appUrl: string
-  appUrlIsLocal: boolean
-  webhookSecretPresent: boolean
-  cronSecretPresent: boolean
-  paused: boolean
   dailyLimit: number
   monthlyLimit: number
   sentToday: number
@@ -45,18 +38,6 @@ export interface EmailPanelProps {
   awaiting: number
   failing: number
   recipients: Recipient[]
-}
-
-function StatusLine({ ok, label, detail }: { ok: boolean; label: string; detail?: string }) {
-  return (
-    <div className="flex items-start gap-2 py-1.5 text-sm">
-      {ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />}
-      <div>
-        <p className="text-zinc-900">{label}</p>
-        {detail && <p className="text-xs text-zinc-500">{detail}</p>}
-      </div>
-    </div>
-  )
 }
 
 export function EmailDeliveryPanel(props: EmailPanelProps) {
@@ -103,38 +84,24 @@ export function EmailDeliveryPanel(props: EmailPanelProps) {
           <CardTitle>Email Delivery</CardTitle>
           <CardDescription>Booking documents and demand notes are emailed only to the company addresses below. Purchasers, co-applicants and banks never receive automatic emails.</CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div>
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-500">Configuration</p>
-            <StatusLine ok={!props.problems.some((item) => item.includes('RESEND_API_KEY'))} label={props.sender === 'mock' ? 'Mock sender (no real emails)' : 'Resend API key'} detail={props.problems.find((item) => item.includes('RESEND_API_KEY'))} />
-            <StatusLine ok={!props.problems.some((item) => item.includes('EMAIL_FROM_ADDRESS'))} label={props.fromAddress ? `Sender: ${props.fromAddress}` : 'Sender address'} detail={props.problems.find((item) => item.includes('EMAIL_FROM_ADDRESS'))} />
-            <StatusLine ok={active.length > 0} label={`${active.length} active recipient${active.length === 1 ? '' : 's'}`} detail={active.length ? undefined : 'Emails wait as Awaiting Recipients until one is added.'} />
-            <StatusLine ok={props.webhookSecretPresent} label="Delivery confirmations" detail={props.webhookSecretPresent ? 'Resend webhook signing secret is set.' : 'Without RESEND_WEBHOOK_SECRET, history shows "Accepted by Resend", not "Delivered".'} />
-            <StatusLine ok={!props.appUrlIsLocal} label={`App address: ${props.appUrl}`} detail={props.appUrlIsLocal ? 'Large-package download links only work on this computer until the app is deployed.' : undefined} />
-            <StatusLine ok={props.cronSecretPresent} label="Scheduled sending" detail={props.cronSecretPresent ? 'CRON_SECRET is set for a hosted scheduler.' : 'Runs every 5 minutes while this server is running. A hosted scheduler needs CRON_SECRET.'} />
-            {props.paused && <StatusLine ok={false} label="Delivery is paused" detail="EMAIL_DELIVERY_PAUSED=true. Emails are queued but not sent." />}
-          </div>
-          <div>
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-500">Usage</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-zinc-200 px-3 py-2">
-                <p className="text-xs text-zinc-500">Today (IST)</p>
-                <p className="font-semibold tabular-nums">{props.sentToday} / {props.dailyLimit}</p>
-              </div>
-              <div className="rounded-lg border border-zinc-200 px-3 py-2">
-                <p className="text-xs text-zinc-500">This month</p>
-                <p className="font-semibold tabular-nums">{props.sentThisMonth} / {props.monthlyLimit}</p>
-              </div>
+        <CardContent>
+          <div className="grid max-w-md grid-cols-2 gap-3">
+            <div className="rounded-lg border border-zinc-200 px-3 py-2">
+              <p className="text-xs text-zinc-500">Today (IST)</p>
+              <p className="font-semibold tabular-nums">{props.sentToday} / {props.dailyLimit}</p>
             </div>
-            <p className="mt-2 text-xs text-zinc-500">Each recipient counts as one email. When a limit is reached, sending waits and resumes automatically.</p>
-            {(props.awaiting > 0 || props.failing > 0) && (
-              <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                {props.awaiting > 0 && `${props.awaiting} email${props.awaiting === 1 ? ' is' : 's are'} awaiting recipients. `}
-                {props.failing > 0 && `${props.failing} email${props.failing === 1 ? '' : 's'} had failed deliveries. `}
-                Open Email History to send or retry.
-              </p>
-            )}
+            <div className="rounded-lg border border-zinc-200 px-3 py-2">
+              <p className="text-xs text-zinc-500">This month</p>
+              <p className="font-semibold tabular-nums">{props.sentThisMonth} / {props.monthlyLimit}</p>
+            </div>
           </div>
+          {(props.awaiting > 0 || props.failing > 0) && (
+            <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {props.awaiting > 0 && `${props.awaiting} email${props.awaiting === 1 ? ' is' : 's are'} awaiting recipients. `}
+              {props.failing > 0 && `${props.failing} email${props.failing === 1 ? '' : 's'} had failed deliveries. `}
+              Open Email History to send or retry.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -251,7 +218,6 @@ export function EmailDeliveryPanel(props: EmailPanelProps) {
               Send test email
             </Button>
           </div>
-          {!configured && <p className="text-sm text-amber-700">{props.problems[0] || 'Email is not configured.'} Restart the dev server after saving .env.local.</p>}
           {testResult && (
             <ul className="space-y-1 text-sm">
               {testResult.map((item) => (

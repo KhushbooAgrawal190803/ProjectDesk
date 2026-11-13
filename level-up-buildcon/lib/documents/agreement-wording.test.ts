@@ -142,6 +142,54 @@ describe('agreement wording', () => {
     expect(lines.reduce((sum, line) => sum + line.amountPaise, 0n)).toBe(900000000n)
     expect(scheduleCLines(STANDARD, 500000000n).bookingShown).toBe(false)
   })
+
+  it('splits the received amount out of an agreement instalment under equivalent labels', () => {
+    const received = 175000000n
+    const agreement = 243572000n
+    const interim = 365358000n
+    const handover = 608930000n
+    const total = agreement + interim + handover
+    for (const label of ['At agreement', 'At execution of agreement', 'On signing of agreement']) {
+      const { lines, bookingShown } = scheduleCLines([
+        { code: null, label, amountPaise: agreement },
+        { code: null, label: 'Interim payment', date: '2026-09-15', amountPaise: interim },
+        { code: 'HANDOVER', label: 'At the time of Handover/ Registry of flat', amountPaise: handover },
+      ], received)
+      expect(bookingShown).toBe(true)
+      expect(lines.map((line) => [line.code, line.amountPaise])).toEqual([
+        ['BOOKING', received],
+        ['AGREEMENT', 68572000n],
+        [null, interim],
+        ['HANDOVER', handover],
+      ])
+      expect(lines.reduce((sum, line) => sum + line.amountPaise, 0n)).toBe(total)
+      expect(lines.filter((line) => line.code === 'BOOKING')).toHaveLength(1)
+    }
+
+    const other = scheduleCLines([
+      { code: null, label: 'Token recorded on the booking form', amountPaise: 100000000n },
+      { code: null, label: 'At execution of agreement', amountPaise: 400000000n },
+      { code: 'HANDOVER', label: 'At handover', amountPaise: 500000000n },
+    ], 250000000n)
+    expect(other.lines.map((line) => [line.code, line.amountPaise])).toEqual([
+      ['BOOKING', 250000000n],
+      [null, 100000000n],
+      ['AGREEMENT', 150000000n],
+      ['HANDOVER', 500000000n],
+    ])
+    expect(other.lines.reduce((sum, line) => sum + line.amountPaise, 0n)).toBe(1000000000n)
+
+    const tooMuch = scheduleCLines([
+      { code: null, label: 'At agreement', amountPaise: 100000000n },
+      { code: 'HANDOVER', label: 'At handover', amountPaise: 100000000n },
+    ], 150000000n)
+    expect(tooMuch.bookingShown).toBe(false)
+    expect(tooMuch.lines.map((line) => line.amountPaise)).toEqual([100000000n, 100000000n])
+
+    const unpaid = scheduleCLines([{ code: null, label: 'On signing of agreement', amountPaise: agreement }], 0n)
+    expect(unpaid.bookingShown).toBe(false)
+    expect(unpaid.lines).toEqual([{ code: null, label: 'On signing of agreement', amountPaise: agreement }])
+  })
 })
 
 describe('boundaries from the new schedule', () => {
@@ -326,6 +374,31 @@ describe('agreement document', () => {
     expect(rows[16]).toBe('Total:Rs.90,00,000/- (Rupees Ninety Lakhs Only)')
   })
 
+  it('prints Flat 601 as a booking line and the balance due on signing', async () => {
+    const received = 175000000n
+    const agreement = 243572000n
+    const interim = 365358000n
+    const handover = 608930000n
+    const total = agreement + interim + handover
+    const schedule = scheduleCLines([
+      { code: null, label: 'At agreement', amountPaise: agreement },
+      { code: null, label: 'Interim payment', date: '2026-09-15', amountPaise: interim },
+      { code: 'HANDOVER', label: 'At the time of Handover/ Registry of flat', amountPaise: handover },
+    ], received).lines
+    const docx = await buildAgreementDocx(sampleInput({
+      considerationPaise: total,
+      bookingPaidPaise: received,
+      schedule,
+    }))
+    const { xml } = readDocumentXml(docx)
+    const table = (xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g) || []).find((item) => rawText(item).includes('Milestone')) || ''
+    const rows = (table.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) || []).map(rawText)
+    expect(rows[1]).toBe('(i)At the time of Booking17,50,000/-')
+    expect(rows[2]).toBe('(ii)At the time of execution of agreement 6,85,720/-')
+    expect(rows[rows.length - 1]).toBe(`Total:${rs(total)} (${amountWords(total)} Only)`)
+    expect(rows.slice(1, -1).join('')).not.toContain('17,50,000/-6,85,720')
+  })
+
   it('lays out a custom plan and joint allottees in the same table and paragraph styles', async () => {
     const custom: ScheduleSource[] = [
       { code: 'AGREEMENT', label: 'At the time of execution of the Agreement', amountPaise: 300000000n },
@@ -418,7 +491,40 @@ describe('agreement readiness', () => {
     expect(agreementReadiness({ ...booking, payment_mode_detail: 'Bank of India' }, { schedule }).input?.payments[0].bank).toBe('Bank of India')
   })
 
-  it('refuses a landowner flat', () => {
-    expect(agreementReadiness({ ...booking, unit_no: '702' }, { schedule }).issues[0]).toContain('landowner allocation')
+  it('takes the received booking amount out of an instalment labelled At agreement', () => {
+    const ready = agreementReadiness({
+      ...booking,
+      unit_no: '601',
+      floor_no: '6',
+      total_property_value: 12178600,
+      booking_amount_paid: 1750000,
+    }, {
+      schedule: [
+        { trigger_type: 'milestone', label: 'At agreement', calculated_amount: 2435720 },
+        { trigger_type: 'date', label: 'Interim payment', milestone_date: '2026-09-15', calculated_amount: 3653580 },
+        { trigger_type: 'milestone', label: 'At handover', calculated_amount: 6089300 },
+      ],
+      payments: [
+        { payer_kind: 'applicant', amount: 1500000, payment_mode: 'Cheque', reference_no: 'CHQ-77821', payment_date: '2026-04-21', originating_bank: 'Indian Bank', status: 'received' },
+        { payer_kind: 'coapplicant', amount: 250000, payment_mode: 'UPI', reference_no: 'UPI-19', payment_date: '2026-04-22', status: 'received' },
+      ],
+    })
+    expect(ready.issues).toEqual([])
+    expect(ready.warnings.join(' ')).not.toContain('Schedule C has no separate')
+    expect(ready.input?.schedule.map((line) => [line.code, line.amountPaise])).toEqual([
+      ['BOOKING', 175000000n],
+      ['AGREEMENT', 68572000n],
+      [null, 365358000n],
+      [null, 608930000n],
+    ])
+    const total = ready.input?.schedule.reduce((sum, line) => sum + line.amountPaise, 0n)
+    expect(total).toBe(ready.input?.considerationPaise)
+    expect(total).toBe(1217860000n)
+  })
+
+  it('uses the same agreement for a landowner flat', () => {
+    const ready = agreementReadiness({ ...booking, unit_no: '702', floor_no: '7' }, { schedule })
+    expect(ready.issues.filter((issue) => /landowner/i.test(issue))).toEqual([])
+    expect(ready.input?.unitNo).toBe('702')
   })
 })

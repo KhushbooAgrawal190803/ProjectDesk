@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { zipFiles } from '@/lib/downloads/zip'
 import { getOwnerTypeForFlat } from '@/lib/data/flat-ownership'
 import { loadAgreementDocument } from '@/lib/documents/agreement-load'
-import { OfficeConversionError, convertDocxToPdf } from '@/lib/documents/docx-to-pdf'
+import { AgreementPdfError, agreementPdf } from '@/lib/documents/agreement-pdf'
 import { requireStaff } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import { jsonAuthError } from '@/lib/api/auth-response'
@@ -57,12 +57,12 @@ export async function GET(request: NextRequest) {
           continue
         }
         if (stored?.docx_base64) {
-          files.push({ name: `${name}.pdf`, buffer: await convertDocxToPdf(Buffer.from(stored.docx_base64, 'base64')) })
+          files.push({ name: `${name}.pdf`, buffer: await agreementPdf(Buffer.from(stored.docx_base64, 'base64')) })
           continue
         }
         try {
           const { docx } = await loadAgreementDocument(supabase, booking.id)
-          files.push({ name: `${name}.pdf`, buffer: await convertDocxToPdf(docx) })
+          files.push({ name: `${name}.pdf`, buffer: await agreementPdf(docx) })
         } catch (notReady) {
           if (!(notReady instanceof Error && notReady.name === 'AgreementNotReady')) throw notReady
         }
@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const authResp = jsonAuthError(error)
     if (authResp) return authResp
-    const status = error instanceof OfficeConversionError ? 503 : 500
+    const status = error instanceof AgreementPdfError ? 422 : 500
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Could not build the archive' }, { status })
   }
 }

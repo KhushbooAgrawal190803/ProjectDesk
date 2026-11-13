@@ -1,0 +1,16 @@
+Fonts embedded in the Agreement for Sale PDF. Copied from the fonts bundled with LibreOffice.
+
+Carlito-Regular.ttf, Carlito-Bold.ttf, Carlito-Italic.ttf, Carlito-BoldItalic.ttf
+  Copyright (c) 2010-2013 by tyPoland Lukasz Dziedzic, Reserved Font Name "Carlito".
+  SIL Open Font License, Version 1.1 (https://openfontlicense.org).
+  Metric-compatible with Calibri, the font of the agreement master.
+
+LinLibertine_R_G.ttf
+  Linux Libertine G by Philipp H. Poll.
+  GPL with font exception, and SIL Open Font License, Version 1.1.
+  Used where the master asks for Bookman Old Style, as LibreOffice does.
+
+FrankRuhlHofshi-Bold.otf
+  Copyright 2015 The Frank Ruhl Hofshi Project Authors.
+  SIL Open Font License, Version 1.1.
+  Used for bold clause numbers set in Tahoma or Bookman Old Style, as LibreOffice does.

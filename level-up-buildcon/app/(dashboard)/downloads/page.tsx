@@ -8,7 +8,6 @@ import { Download, FileArchive, FileText } from 'lucide-react'
 import { loadDemandGroups, type DemandDownloadGroup } from '@/lib/downloads/groups'
 import { DEMAND_TIMEZONE, todayInTimeZone } from '@/lib/demands/engine'
 import { isAdmin } from '@/lib/auth/permissions'
-import { getOwnerTypeForFlat } from '@/lib/data/flat-ownership'
 import { formatLetterDate } from '@/lib/documents/inr-words'
 import { EmailBulkButton } from '@/components/email/email-bulk-button'
 import type { ManualCategory } from '@/lib/email/documents'
@@ -26,8 +25,7 @@ export default async function DownloadsPage() {
     supabase.from('bookings').select('unit_no').neq('status', 'DRAFT').is('deleted_at', null),
     loadDemandGroups(supabase, today),
   ])
-  // Every developer-share booking has an Agreement for Sale; landowner flats have no approved template.
-  const agreementCount = (units || []).filter((row) => getOwnerTypeForFlat(row.unit_no) === 'DEVELOPER').length
+  const agreementCount = (units || []).length
   const milestoneGroups = demandGroups.filter((group) => group.kind === 'milestone')
   const dateGroups = demandGroups.filter((group) => group.kind === 'date')
   const statusLabel = { ready: 'Issued', waiting: 'Due, not issued yet', not_due: 'Not yet due' }

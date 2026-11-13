@@ -90,7 +90,13 @@ export interface EmailStore {
 }
 
 export interface DocumentRenderer {
-  render(doc: DocumentRow): Promise<{ buffer: Buffer; fileName: string; folder: string }>
+  render(doc: DocumentRow): Promise<{
+    buffer: Buffer
+    fileName: string
+    folder: string
+    /** Kept in storage beside the attached file, never attached: the agreement's Word file. */
+    companion?: { fileName: string; buffer: Buffer }
+  }>
 }
 
 export interface WorkerDeps {
@@ -108,6 +114,10 @@ export interface WorkerDeps {
 
 const PACKAGE_FAILURE_LIMIT = 5
 
+function contentType(fileName: string) {
+  return fileName.endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf'
+}
+
 function fileKey(eventId: string, folder: string, fileName: string) {
   return `email-events/${eventId}/${slug(folder)}/${fileName}`
 }
@@ -124,7 +134,10 @@ async function buildPackage(deps: WorkerDeps, event: EventRow, token: string): P
     }
     const rendered = await deps.renderer.render(doc)
     const path = fileKey(event.id, rendered.folder, rendered.fileName)
-    await deps.store.putFile(path, rendered.buffer, rendered.fileName.endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf')
+    await deps.store.putFile(path, rendered.buffer, contentType(rendered.fileName))
+    if (rendered.companion) {
+      await deps.store.putFile(fileKey(event.id, rendered.folder, rendered.companion.fileName), rendered.companion.buffer, contentType(rendered.companion.fileName))
+    }
     await deps.store.saveDocument(doc.id, { storage_path: path, file_bytes: rendered.buffer.length, file_name: rendered.fileName, folder: rendered.folder })
     files.push({ name: `${rendered.folder}/${rendered.fileName}`, buffer: rendered.buffer })
   }

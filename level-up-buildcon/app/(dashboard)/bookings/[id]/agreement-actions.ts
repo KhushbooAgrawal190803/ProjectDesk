@@ -5,7 +5,7 @@ import { requireStaff } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import { assertCanDownloadPdfs } from '@/lib/auth/permissions'
 import { loadAgreementDocument } from '@/lib/documents/agreement-load'
-import { convertDocxToPdf } from '@/lib/documents/docx-to-pdf'
+import { agreementPdf } from '@/lib/documents/agreement-pdf'
 
 export async function finalizeAgreement(bookingId: string) {
   const profile = await requireStaff()
@@ -24,12 +24,12 @@ export async function finalizeAgreement(bookingId: string) {
   if (existing && existing.length) throw new Error('This agreement is already finalized. Later payments do not change it.')
 
   const { docx, input } = await loadAgreementDocument(supabase, bookingId)
-  // The frozen version always has its PDF. If the PDF service is unavailable, nothing is frozen.
+  // The frozen version always has its PDF. If the PDF cannot be set, nothing is frozen.
   let pdf: Buffer
   try {
-    pdf = await convertDocxToPdf(docx)
+    pdf = await agreementPdf(docx)
   } catch (error) {
-    throw new Error(`The agreement was not finalized because its PDF could not be created. ${error instanceof Error ? error.message : ''} Try again shortly.`)
+    throw new Error(`The agreement was not finalized because its PDF could not be created. ${error instanceof Error ? error.message : ''}`)
   }
   const pdfWarning = ''
 

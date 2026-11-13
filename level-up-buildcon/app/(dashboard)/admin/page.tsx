@@ -147,13 +147,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             <EmailDeliveryPanel
               tablesReady={email.tablesReady}
               problems={email.problems}
-              fromAddress={email.config.fromAddress}
-              sender={email.config.sender}
-              appUrl={email.config.appUrl}
-              appUrlIsLocal={email.config.appUrlIsLocal}
-              webhookSecretPresent={email.config.webhookSecretPresent}
-              cronSecretPresent={email.config.cronSecretPresent}
-              paused={email.config.paused}
               dailyLimit={email.config.dailyLimit}
               monthlyLimit={email.config.monthlyLimit}
               sentToday={email.sentToday}

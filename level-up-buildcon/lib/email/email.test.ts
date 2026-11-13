@@ -17,6 +17,9 @@ import { MockSender } from './sender'
 import { renderEmail } from './templates'
 import { processEvent, runQueue, type DeliveryRow, type DocumentRow, type EmailStore, type EventRow, type WorkerDeps } from './worker'
 import type { DocumentSelection } from './documents'
+import { buildAgreementDocx } from '@/lib/documents/agreement'
+import { agreementPdf } from '@/lib/documents/agreement-pdf'
+import { agreementSamples } from '@/lib/documents/agreement-samples'
 
 /** One in-memory database for both event creation and the worker. */
 class MemoryDb implements EventDb, EmailStore {
@@ -251,6 +254,32 @@ describe('email delivery', () => {
     expect(sender.sent[0].attachments).toHaveLength(3)
     expect(db.events[0].status).toBe('sent')
   })
+
+  it('attaches the agreement as the PDF set from its Word file, and keeps the Word file in storage only', async () => {
+    const db = new MemoryDb()
+    const sender = new MockSender()
+    addRecipients(db, 'legal@levelupbuildcon.com')
+    const docx = await buildAgreementDocx(agreementSamples()[0].input)
+    const agreement: DocumentSelection = { document_type: 'agreement', booking_id: 'b1', document_id: null, folder: 'Agreements for Sale', label: 'Agreement for Sale' }
+    const created = await createEmailEvent(db, event([agreement, ...notes(1)]))
+    await runQueue(
+      deps(db, sender, {
+        renderer: {
+          async render(doc) {
+            if (doc.document_type !== 'agreement') return { buffer: Buffer.from('%PDF-note'), fileName: 'note.pdf', folder: 'Demand Notes' }
+            return { buffer: await agreementPdf(docx), fileName: 'LUBC-01_Flat-506_Agreement-for-Sale.pdf', folder: 'Agreements for Sale', companion: { fileName: 'LUBC-01_Flat-506_Agreement-for-Sale.docx', buffer: docx } }
+          },
+        },
+      }),
+      { eventIds: [created.id] }
+    )
+    const files = sender.sent[0].attachments
+    expect(files.map((file) => file.filename)).toEqual(['LUBC-01_Flat-506_Agreement-for-Sale.pdf', 'note.pdf'])
+    expect(files[0].content.subarray(0, 5).toString()).toBe('%PDF-')
+    const stored = [...db.files.keys()]
+    expect(stored.some((key) => key.endsWith('LUBC-01_Flat-506_Agreement-for-Sale.docx'))).toBe(true)
+    expect(stored.some((key) => key.endsWith('LUBC-01_Flat-506_Agreement-for-Sale.pdf'))).toBe(true)
+  }, 30_000)
 
   it('gives every active recipient the same package, and skips disabled ones', async () => {
     const db = new MemoryDb()

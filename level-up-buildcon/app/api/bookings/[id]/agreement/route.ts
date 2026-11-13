@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { assertCanDownloadPdfs } from '@/lib/auth/permissions'
 import { jsonAuthError } from '@/lib/api/auth-response'
 import { loadAgreementDocument } from '@/lib/documents/agreement-load'
-import { OfficeConversionError, convertDocxToPdf } from '@/lib/documents/docx-to-pdf'
+import { AgreementPdfError, agreementPdf } from '@/lib/documents/agreement-pdf'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -44,8 +44,8 @@ export async function GET(
         .limit(1)
         .maybeSingle()
       let bytes: Buffer | null = frozen ? storedFile(frozen, format) : null
-      // A version frozen without a PDF: convert its own frozen Word file, not today's booking data.
-      if (!bytes && frozen?.docx_base64 && format === 'pdf') bytes = await convertDocxToPdf(Buffer.from(frozen.docx_base64, 'base64'))
+      // A version frozen without a PDF: set its own frozen Word file, not today's booking data.
+      if (!bytes && frozen?.docx_base64 && format === 'pdf') bytes = await agreementPdf(Buffer.from(frozen.docx_base64, 'base64'))
       if (bytes) {
         return new NextResponse(new Uint8Array(bytes), {
           headers: {
@@ -58,7 +58,7 @@ export async function GET(
     }
 
     const { docx } = await loadAgreementDocument(supabase, id)
-    const body = format === 'docx' ? docx : await convertDocxToPdf(docx)
+    const body = format === 'docx' ? docx : await agreementPdf(docx)
     return new NextResponse(new Uint8Array(body), {
       headers: {
         'Content-Type': format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -70,7 +70,7 @@ export async function GET(
     const authResp = jsonAuthError(error)
     if (authResp) return authResp
     const message = error instanceof Error ? error.message : 'Could not create the agreement'
-    const status = error instanceof OfficeConversionError ? 503 : error instanceof Error && error.name === 'AgreementNotReady' ? 422 : 500
+    const status = error instanceof AgreementPdfError || (error instanceof Error && error.name === 'AgreementNotReady') ? 422 : 500
     return NextResponse.json({ error: message }, { status })
   }
 }

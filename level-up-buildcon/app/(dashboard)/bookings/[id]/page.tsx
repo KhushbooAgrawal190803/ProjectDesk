@@ -205,11 +205,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
 
   const allotment = buildLetter(booking, 'allotment')
   const noc = booking.noc_required ? buildLetter(booking, 'noc') : null
-  const agreementStatus = owner === 'LANDOWNER'
-    ? { label: 'Template not supplied', tone: 'muted' as const }
-    : agreementFile
-      ? { label: `Finalized · v${agreementFile.version}`, tone: 'final' as const }
-      : { label: 'Draft', tone: 'warn' as const }
+  const agreementStatus = agreementFile
+    ? { label: `Finalized · v${agreementFile.version}`, tone: 'final' as const }
+    : { label: 'Draft', tone: 'warn' as const }
   const receiptsById = new Map((ledger?.receipts || []).map((receipt) => [receipt.id, receipt]))
 
   type HistoryEvent = { at: string; title: string; who?: string | null; detail?: string | null }
@@ -684,21 +682,17 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
                 status={agreementStatus.label}
                 tone={agreementStatus.tone}
                 detail={
-                  owner === 'LANDOWNER'
-                    ? 'This flat is in the landowner allocation. No approved landowner template has been supplied, so no agreement is generated.'
-                    : agreementFile
-                      ? `Version ${agreementFile.version} was finalized on ${format(new Date(agreementFile.created_at), 'd MMM yyyy')}. Downloads return that frozen file.`
-                      : 'The draft is built from the current booking each time. Finalize freezes it.'
+                  agreementFile
+                    ? `Version ${agreementFile.version} was finalized on ${format(new Date(agreementFile.created_at), 'd MMM yyyy')}. Downloads return that frozen file.`
+                    : 'The draft is built from the current booking each time. Finalize freezes it.'
                 }
               >
-                {owner !== 'LANDOWNER' && (
-                  <>
-                    <Link href={`/bookings/${booking.id}/agreement`}><Button variant="outline" size="sm">{agreementFile ? 'Preview' : 'Preview draft'}</Button></Link>
-                    <a href={`/api/bookings/${booking.id}/agreement?format=docx&download=1`}><Button variant="outline" size="sm">Word</Button></a>
-                    <a href={`/api/bookings/${booking.id}/agreement?format=pdf&download=1`}><Button variant="outline" size="sm">PDF</Button></a>
-                    {!agreementFile && active && <FinalizeAgreementButton bookingId={booking.id} />}
-                  </>
-                )}
+                <>
+                  <Link href={`/bookings/${booking.id}/agreement`}><Button variant="outline" size="sm">{agreementFile ? 'Preview' : 'Preview draft'}</Button></Link>
+                  <a href={`/api/bookings/${booking.id}/agreement?format=docx&download=1`}><Button variant="outline" size="sm">Word</Button></a>
+                  <a href={`/api/bookings/${booking.id}/agreement?format=pdf&download=1`}><Button variant="outline" size="sm">PDF</Button></a>
+                  {!agreementFile && active && <FinalizeAgreementButton bookingId={booking.id} />}
+                </>
               </DocumentRow>
             </Panel>
 

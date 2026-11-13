@@ -233,10 +233,23 @@ export function financeParagraphs(finance: AgreementFinance): string[] {
 }
 
 /**
+ * The agreement-signing instalment. The booking form does not use one label:
+ * "At agreement", "At execution of agreement" and "On signing of agreement"
+ * are the same stage as the master's "execution of the Agreement". A row that
+ * already carries another milestone code is left on that milestone.
+ */
+export function isAgreementStage(code: string | null | undefined, label: string | null | undefined): boolean {
+  if ((code || '').trim().toUpperCase() === 'AGREEMENT') return true
+  if ((code || '').trim()) return false
+  const text = (label || '').toLowerCase()
+  return /\bagreements?\b/.test(text) || /\bsigning\b/.test(text)
+}
+
+/**
  * Schedule C lists the booking amount on its own line and the balance of the
- * first instalment "at the time of execution of agreement". The booking form
- * keeps those two as one instalment, so the received booking amount is taken
- * out of that instalment here. Nothing else is moved.
+ * agreement-signing instalment "at the time of execution of agreement". The
+ * booking form keeps those two as one instalment, so the received booking
+ * amount is taken out of that instalment here. Nothing else is moved.
  */
 export function scheduleCLines(rows: ScheduleSource[], bookingPaidPaise: bigint): { lines: ScheduleLine[]; bookingShown: boolean } {
   const lines: ScheduleLine[] = rows.map((row) => {
@@ -244,11 +257,11 @@ export function scheduleCLines(rows: ScheduleSource[], bookingPaidPaise: bigint)
     const label = date ? (row.label.trim() ? `${row.label.trim()} (${date})` : `On or before ${date}`) : row.label.trim()
     return { code: row.code, label, amountPaise: row.amountPaise }
   })
-  const first = lines.findIndex((line) => line.code === 'AGREEMENT')
+  const first = lines.findIndex((line) => isAgreementStage(line.code, line.label))
   if (first < 0 || bookingPaidPaise <= 0n || bookingPaidPaise > lines[first].amountPaise) {
     return { lines, bookingShown: false }
   }
-  lines[first] = { ...lines[first], amountPaise: lines[first].amountPaise - bookingPaidPaise }
+  lines[first] = { ...lines[first], code: 'AGREEMENT', amountPaise: lines[first].amountPaise - bookingPaidPaise }
   lines.unshift({ code: 'BOOKING', label: 'At the time of Booking', amountPaise: bookingPaidPaise })
   return { lines, bookingShown: true }
 }

@@ -60,9 +60,7 @@ export function agreementReadiness(booking: Row, extras: {
   const warnings: string[] = []
   const unit = text(booking.unit_no)
   const owner = getOwnerTypeForFlat(unit)
-  if (owner === 'LANDOWNER') {
-    issues.push('This flat is in the landowner allocation. A landowner agreement template has not been supplied, so a developer agreement will not be used.')
-  } else if (!owner) {
+  if (!owner) {
     issues.push('The flat number is not a known Anandam unit.')
   }
   const executionDate = text(booking.agreement_for_sale_date).slice(0, 10)
