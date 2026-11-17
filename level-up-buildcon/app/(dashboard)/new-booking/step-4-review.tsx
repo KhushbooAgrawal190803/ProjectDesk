@@ -6,8 +6,8 @@ import { Separator } from '@/components/ui/separator'
 import { ChevronLeft, CheckCircle2, Loader2, FileText, Image } from 'lucide-react'
 import { BookingFormData } from '@/lib/validations/booking'
 import { UploadedDoc } from './document-upload'
-import { considerationOf, financeContributions, type FinanceScenario } from '@/lib/booking/consideration'
-import { formatInr } from '@/lib/booking/money'
+import { considerationOf, financeContributions, financeSplitFrom, type FinanceScenario } from '@/lib/booking/consideration'
+import { formatInr, percentOfPaise } from '@/lib/booking/money'
 import { formatPaymentMode } from '@/lib/booking/payment-mode'
 import { formatPostalAddress } from '@/lib/booking/address'
 import { formatPersonName } from '@/lib/booking/person'
@@ -27,9 +27,10 @@ interface Step4ReviewProps {
   onBack: () => void
   onSubmit: () => void
   submitting: boolean
+  submitLabel?: string
 }
 
-export function Step4Review({ data: rawData, onBack, onSubmit, submitting, documents = {} }: Step4ReviewProps) {
+export function Step4Review({ data: rawData, onBack, onSubmit, submitting, submitLabel = 'Submit Booking', documents = {} }: Step4ReviewProps) {
   const data = rawData as any
   const formatCurrency = (amount: number) => formatInr(amount)
   const priced = considerationOf(data)
@@ -42,8 +43,10 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting, docum
   const financeScenario = (data.finance_scenario || 'purchaser') as FinanceScenario
   const bookingInstallment = schedule?.rows[0]?.calculatedPaise
   const financeSplit = priced && bookingInstallment != null
-    ? financeContributions(bookingInstallment, priced.totalPaise, financeScenario, 'booking')
+    ? financeContributions(bookingInstallment, priced.totalPaise, financeScenario, 'booking', financeSplitFrom(data))
     : null
+  const flatGst = priced ? percentOfPaise(priced.flatPaise, 5) ?? 0n : 0n
+  const considerationGst = priced ? percentOfPaise(priced.totalPaise, 5) ?? 0n : 0n
 
   const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
     <div className="space-y-3">
@@ -142,9 +145,9 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting, docum
         ) : (
           <Field label="Rate per Sq.ft." value={formatCurrency(data.rate_per_sqft || 0)} />
         )}
-        <Field label="Flat consideration" value={formatCurrency(Number(data.total_cost) || 0)} />
+        <Field label="Flat consideration" value={priced ? `${formatInr(priced.flatPaise)} · GST ${formatInr(flatGst)}` : formatCurrency(Number(data.total_cost) || 0)} />
         <Field label="Parking charges" value={formatCurrency(Number(data.total_parking_charges) || 0)} />
-        <Field label="Total Consideration" value={formatCurrency(Number(data.total_property_value) || Number(data.total_cost) || 0)} />
+        <Field label="Total Consideration" value={priced ? `${formatInr(priced.totalPaise)} · GST ${formatInr(considerationGst)}` : formatCurrency(Number(data.total_property_value) || Number(data.total_cost) || 0)} />
         <Separator />
         {(data.parking_spaces || []).map((space: any) => (
           <Field
@@ -256,7 +259,7 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting, docum
           ) : (
             <>
               <CheckCircle2 className="w-4 h-4" />
-              Submit Booking
+              {submitLabel}
             </>
           )}
         </Button>

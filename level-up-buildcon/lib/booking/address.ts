@@ -9,7 +9,7 @@ export interface PostalAddressInput {
 
 /**
  * Postal lines with no blank lines and no comma before a missing part.
- * City and state share one line; the PIN follows them with a space.
+ * City and state share one line; a dash comes before the PIN.
  */
 export function formatPostalAddress(input: PostalAddressInput): string {
   const line1 = input.address_line1?.trim() || ''
@@ -20,7 +20,7 @@ export function formatPostalAddress(input: PostalAddressInput): string {
   const country = input.country?.trim() || ''
 
   const cityState = [city, state].filter(Boolean).join(', ')
-  const locality = [cityState, pin].filter(Boolean).join(' ')
+  const locality = cityState && pin ? `${cityState} - ${pin}` : cityState || pin
 
   return [line1, line2, locality, country].filter(Boolean).join('\n')
 }

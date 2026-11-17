@@ -11,6 +11,7 @@ import { boundaryMatch, getUnitBoundaries } from '@/lib/data/flat-boundaries'
 import { checkUnitAvailability } from './actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { ChevronRight, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
@@ -202,7 +203,7 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
 
           <div className="space-y-2">
             <Label htmlFor="allotment_date">Allotment Date</Label>
-            <Input id="allotment_date" type="date" {...register('allotment_date')} />
+            <DateField id="allotment_date" value={watch('allotment_date') || ''} onChange={(value) => setValue('allotment_date', value)} />
             <p className="text-xs text-zinc-500">Printed on the allotment letter and the NOC. This is not the Agreement for Sale date.</p>
           </div>
         </div>

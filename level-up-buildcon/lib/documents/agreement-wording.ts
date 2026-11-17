@@ -1,3 +1,4 @@
+import { percentOfPaise } from '@/lib/booking/money'
 import { formatAmountFigures, formatLetterDate, rupeesInWords } from '@/lib/documents/inr-words'
 
 /** Printed where a fact has not been entered, so it can be written in by hand. */
@@ -5,7 +6,10 @@ export const BLANK = '____________'
 
 export interface AgreementPayment {
   payer: string
+  /** Principal of this cheque or transfer. GST is not included. */
   amountPaise: bigint
+  /** GST on this payment. When omitted, 5% of the principal is used. */
+  gstPaise?: bigint | null
   mode?: string | null
   modeDetail?: string | null
   reference?: string | null
@@ -98,6 +102,16 @@ export function countWithWord(count: number): string {
   return word ? `${count} (${word})` : String(count)
 }
 
+/** Names the primary and secondary counts separately, including a count of zero. */
+export function parkingPhrase(primary: number, secondary: number): string {
+  const line = (count: number, kind: string) => {
+    const safe = count > 0 ? count : 0
+    return `${countWithWord(safe)} ${kind} covered car parking ${safe === 1 ? 'space' : 'spaces'}`
+  }
+  if (primary <= 0 && secondary <= 0) return BLANK
+  return `${line(primary, 'primary')} and ${line(secondary, 'secondary')}`
+}
+
 const TITLE = /^(mr|mrs|ms|miss|dr|shri|sri|smt|late|md|prof|kumari)\b\.?/i
 
 function withTitle(name: string, title: string): string {
@@ -130,8 +144,8 @@ export function joinNames(names: string[]): string {
   return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
 }
 
-/** How the booking amount is funded. The three approved wordings of Article I. */
-export type FinanceScenario = 'purchaser' | 'split_50_50' | 'split_10_90'
+/** How the booking amount is funded. */
+export type FinanceScenario = 'purchaser' | 'split_50_50' | 'split_10_90' | 'split'
 
 export interface AgreementFinance {
   scenario: FinanceScenario
@@ -139,6 +153,12 @@ export interface AgreementFinance {
   bankName: string
   /** true when the loan is sanctioned, false when it is not yet, null when this was not stated. */
   loanSanctioned: boolean | null
+  /** Used when the scenario is `split`: the purchaser's share of the instalment. */
+  purchaserPercent?: number | null
+  /** Used when the scenario is `split`: the bank's share of the instalment. */
+  bankPercent?: number | null
+  /** `booking` applies the split to the booking instalment only. `every` applies it to each instalment. */
+  scope?: 'booking' | 'every' | null
 }
 
 /** Rs. 5,00,000/- as the approved booking-amount wording writes it. */
@@ -179,18 +199,30 @@ function instrument(payment: AgreementPayment): string {
   }
 }
 
+function gstOf(payment: AgreementPayment): bigint {
+  if (payment.gstPaise != null) return payment.gstPaise > 0n ? payment.gstPaise : 0n
+  return percentOfPaise(payment.amountPaise, 5) ?? 0n
+}
+
+function moneyWithWords(paise: bigint): string {
+  return `${rsSpaced(paise)} (${amountWords(paise)} Only)`
+}
+
 /**
  * One entry per payment actually received, for "details of which are as follows:".
- * "(a) Rs. 5,00,000/- (Rupees Five Lakhs Only) vide Cheque No. 004512 dated 01.11.2026, issued in the name of ...;"
+ * Principal, GST and the total (principal + GST) are each written in figures and words.
  * With nothing recorded, one entry is printed with blanks to be written in.
  */
 export function paymentEntryLines(payments: AgreementPayment[]): string[] {
   if (!payments.length) {
-    return [`(a) Rs. ${BLANK}/- (Rupees ${BLANK} Only) vide Cheque No. ${BLANK} dated ${BLANK}, issued in the name of ${BLANK};`]
+    const blank = `Rs. ${BLANK}/- (Rupees ${BLANK} Only)`
+    return [`(a) ${blank}, GST ${blank}, total ${blank} vide Cheque No. ${BLANK} dated ${BLANK}, issued in the name of ${BLANK};`]
   }
-  return payments.map((payment, index) =>
-    `(${entryLetter(index)}) ${rsSpaced(payment.amountPaise)} (${amountWords(payment.amountPaise)} Only) ${instrument(payment)};`
-  )
+  return payments.map((payment, index) => {
+    const gst = gstOf(payment)
+    const total = payment.amountPaise + gst
+    return `(${entryLetter(index)}) ${moneyWithWords(payment.amountPaise)}, GST ${moneyWithWords(gst)}, total ${moneyWithWords(total)} ${instrument(payment)};`
+  })
 }
 
 /**
@@ -226,6 +258,22 @@ export function financeParagraphs(finance: AgreementFinance): string[] {
     return [
       `Out of the 20% booking amount specified in Schedule 'C' of the Agreement, 10% of the said booking amount shall be paid directly by the Allottee(s) (Client), and the remaining 90% shall be disbursed by ${bank}, ${loan}.`,
       `The same payment arrangement shall apply to all subsequent construction-linked installments/slabs mentioned in Schedule 'C', whereby 10% of each installment amount shall be contributed by the Allottee(s) (Client), and the remaining 90% shall be disbursed by ${bank}, subject to the terms and conditions of the housing loan.`,
+      `Any amount to be disbursed by the financing bank, whether towards the booking amount or any subsequent installment, shall remain payable until actually received by the Promoter.`,
+    ]
+  }
+  if (finance.scenario === 'split') {
+    const purchaser = finance.purchaserPercent == null ? BLANK : String(finance.purchaserPercent)
+    const bankShare = finance.bankPercent == null ? BLANK : String(finance.bankPercent)
+    const bookingLine = `Out of the booking amount specified in Schedule 'C' of the Agreement, ${purchaser}% of that amount shall be paid directly by the Allottee(s) (Client), and the remaining ${bankShare}% shall be disbursed by ${bank}, ${loan}.`
+    if (finance.scope === 'booking') {
+      return [
+        bookingLine,
+        `The amount to be disbursed by the financing bank shall remain payable until actually received by the Promoter. All subsequent installments shall be payable in full by the Allottee(s) in accordance with Schedule 'C' of this Agreement.`,
+      ]
+    }
+    return [
+      bookingLine,
+      `The same payment arrangement shall apply to all subsequent construction-linked installments/slabs mentioned in Schedule 'C', whereby ${purchaser}% of each installment amount shall be contributed by the Allottee(s) (Client), and the remaining ${bankShare}% shall be disbursed by ${bank}, subject to the terms and conditions of the housing loan.`,
       `Any amount to be disbursed by the financing bank, whether towards the booking amount or any subsequent installment, shall remain payable until actually received by the Promoter.`,
     ]
   }

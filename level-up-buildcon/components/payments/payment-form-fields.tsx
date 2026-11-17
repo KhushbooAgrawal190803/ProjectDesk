@@ -1,6 +1,7 @@
 'use client'
 
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import type { PaymentEntryInput } from '@/lib/booking/persist-details'
@@ -130,7 +131,7 @@ export function PaymentFormFields({
       </div>
       <div className="space-y-2">
         <Label htmlFor="payment-date">Date</Label>
-        <Input id="payment-date" type="date" value={(value.payment_date || '').slice(0, 10)} onChange={(event) => onChange({ payment_date: event.target.value })} />
+        <DateField id="payment-date" value={(value.payment_date || '').slice(0, 10)} onChange={(next) => onChange({ payment_date: next })} />
       </div>
       {value.payment_mode === 'Other' && (
         <div className="space-y-2 md:col-span-2">

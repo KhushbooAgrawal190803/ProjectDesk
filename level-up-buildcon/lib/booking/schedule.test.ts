@@ -13,7 +13,7 @@ describe('formatPostalAddress', () => {
       state: 'Jharkhand',
       pin_code: '834001',
       country: 'India',
-    })).toBe('12 Main Road\nRanchi, Jharkhand 834001\nIndia')
+    })).toBe('12 Main Road\nRanchi, Jharkhand - 834001\nIndia')
   })
 })
 

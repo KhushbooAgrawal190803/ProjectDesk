@@ -108,6 +108,29 @@ describe('financing scenarios', () => {
     expect(later.purchaserPaise + later.bankPaise).toBe(68760000n)
     expect(later.purchaserPaise).toBe(6876000n)
   })
+
+  it('uses the typed purchaser and bank percentages, on the booking instalment or on every instalment', () => {
+    const bookingOnly = financeContributions(booking, TOTAL_506, 'split', 'booking', {
+      purchaserPercent: 80,
+      bankPercent: 20,
+      scope: 'booking',
+    })
+    expect(bookingOnly.purchaserPaise + bookingOnly.bankPaise).toBe(booking)
+    expect(bookingOnly.bankPaise).toBe(28404000n)
+    const later = financeContributions(68760000n, TOTAL_506, 'split', 'later', {
+      purchaserPercent: 80,
+      bankPercent: 20,
+      scope: 'booking',
+    })
+    expect(later).toEqual({ purchaserPaise: 68760000n, bankPaise: 0n })
+    const every = financeContributions(68760000n, TOTAL_506, 'split', 'later', {
+      purchaserPercent: 80,
+      bankPercent: 20,
+      scope: 'every',
+    })
+    expect(every.purchaserPaise).toBe(55008000n)
+    expect(every.bankPaise).toBe(13752000n)
+  })
 })
 
 describe('schedule audit', () => {

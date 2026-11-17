@@ -13,6 +13,7 @@ import {
   joinNames,
   ordinal,
   ordinalSuffix,
+  parkingPhrase,
   paymentEntryLines,
   relationPhrase,
   roman,
@@ -61,6 +62,10 @@ export interface AgreementDocumentInput {
   /** ISO date of the allotment letter. */
   allotmentDate: string
   parkingCount: number
+  /** Main / primary covered spaces. When set with secondaryParking, both counts are named. */
+  primaryParking?: number
+  /** Secondary covered spaces. */
+  secondaryParking?: number
   boundaries: { east: string; west: string; north: string; south: string }
   considerationPaise: bigint
   gstPaise: bigint
@@ -169,6 +174,24 @@ function scheduleTable(xml: string, schedule: ScheduleLine[]): string {
   return xml.slice(0, found.index) + rebuilt + xml.slice(found.index + table.length)
 }
 
+const SIGNATURE_LINES = [
+  'WITNESSES:-',
+  '1. Signature ________________________',
+  'Name ________________________',
+  '2. Signature ________________________',
+  'Name ________________________',
+  'For LEVEL UP BUILDCON',
+  'through its Partner',
+  'Signature ________________________',
+  'ALLOTTEE(S)',
+  'Signature ________________________',
+]
+
+function signatureParagraph(modelRun: string, text: string): string {
+  const bold = text === 'WITNESSES:-' || text === 'For LEVEL UP BUILDCON' || text === 'ALLOTTEE(S)'
+  return `<w:p><w:pPr><w:spacing w:before="280" w:after="80"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="left"/></w:pPr>${runLike(modelRun, text, { bold })}</w:p>`
+}
+
 export async function buildAgreementDocx(input: AgreementDocumentInput): Promise<Buffer> {
   let template: Buffer
   try {
@@ -199,7 +222,10 @@ export async function buildAgreementDocx(input: AgreementDocumentInput): Promise
   const floorFigure = numberedFloor ? String(floorNumber) : input.floorNo.trim() || BLANK
   const floorSuffix = numberedFloor ? ordinalSuffix(floorNumber) : ''
   const floorOrdinal = numberedFloor ? ordinal(floorNumber) : floorFigure
-  const parking = input.parkingCount > 0 ? countWithWord(input.parkingCount) : BLANK
+  const namedParking = input.primaryParking != null || input.secondaryParking != null
+  const parking = namedParking
+    ? parkingPhrase(input.primaryParking ?? 0, input.secondaryParking ?? 0)
+    : input.parkingCount > 0 ? countWithWord(input.parkingCount) : BLANK
   const allotmentDate = formatLetterDate(input.allotmentDate) || BLANK
   const primary = input.parties[0]
 
@@ -229,7 +255,8 @@ export async function buildAgreementDocx(input: AgreementDocumentInput): Promise
   edit(purchaseIndex, /(?<=on the )Xth(?= floor)/, floorOrdinal, 'floor in recital F')
   edit(purchaseIndex, /(?<=area )1387(?= Square Feet of Built-Up Area)/, input.builtUp, 'built-up area in recital F')
   edit(purchaseIndex, /(?<=Super built up Area )1803/, input.superBuiltUp, 'super built-up area in recital F')
-  edit(purchaseIndex, /X \(XXX\)(?= covered car parking)/, parking, 'parking in recital F')
+  if (namedParking) edit(purchaseIndex, /X \(XXX\) covered car parking space/, parking, 'parking in recital F')
+  else edit(purchaseIndex, /X \(XXX\)(?= covered car parking)/, parking, 'parking in recital F')
 
   // Article I: consideration, then the approved booking-amount wording for
   // the way this booking is funded. Both paragraphs take the spacing and
@@ -298,7 +325,8 @@ export async function buildAgreementDocx(input: AgreementDocumentInput): Promise
   edit(scheduleB, /(?<=Flat No\. )X01/, input.unitNo, 'flat number in Schedule B')
   edit(scheduleB, /(?<=on the )X(?=th\s+Floor)/, floorFigure, 'floor in Schedule B', true)
   edit(scheduleB, /(?<=on the \S+)th(?=\s+Floor)/, floorSuffix, 'floor suffix in Schedule B')
-  edit(scheduleB, /XXXX(?= covered car parking)/, parking, 'parking in Schedule B')
+  if (namedParking) edit(scheduleB, /XXXX covered car parking space/, parking, 'parking in Schedule B')
+  else edit(scheduleB, /XXXX(?= covered car parking)/, parking, 'parking in Schedule B')
   edit(scheduleB, /546(?= sq\. ft\.)/, input.landShare, 'undivided land share')
   parts[scheduleB + 1] = boundaryParagraph(parts[scheduleB + 1], 'North', input.boundaries.north)
   parts[scheduleB + 2] = boundaryParagraph(parts[scheduleB + 2], 'South', input.boundaries.south)
@@ -306,10 +334,29 @@ export async function buildAgreementDocx(input: AgreementDocumentInput): Promise
   parts[scheduleB + 4] = boundaryParagraph(parts[scheduleB + 4], 'West', input.boundaries.west)
 
   const parkingIndex = find('«Parking»', 'parking note')
-  edit(parkingIndex, '«Parking»', input.parkingCount > 0 ? `${parking} covered car parking space` : BLANK, 'parking note')
+  edit(parkingIndex, '«Parking»', namedParking ? parking : input.parkingCount > 0 ? `${parking} covered car parking space` : BLANK, 'parking note')
+
+  // The master's signature lines use large character indents and empty paragraphs.
+  // Replace them with one left edge: two witnesses, then the promoter and the allottee.
+  const witnessHeading = texts.findIndex((text) => text.trim() === 'WITNESSES:-')
+  if (witnessHeading < 0) throw new TemplateMismatch('witnesses')
+  SIGNATURE_LINES.forEach((line, offset) => {
+    const index = witnessHeading + offset
+    if (index >= parts.length || /<w:sectPr\b/.test(parts[index])) return
+    parts[index] = signatureParagraph(plainRun, line)
+  })
+  for (let index = witnessHeading + SIGNATURE_LINES.length; index < parts.length; index += 1) {
+    if (/<w:sectPr\b/.test(parts[index])) continue
+    parts[index] = ''
+  }
 
   // Layout last: the wording is settled, only page breaks are guided.
   holdParagraphsTogether(glue, parts, texts)
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    if (!parts[index]) continue
+    parts[index] = parts[index].replace(/<w:keepNext\/>/g, '')
+    break
+  }
   avoidStrayLines(zip)
   return writeDocumentXml(zip, printInBlack(holdTablesTogether(joinParagraphs(glue, parts))))
 }

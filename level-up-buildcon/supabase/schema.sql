@@ -1035,12 +1035,20 @@ ALTER TABLE bookings
   ADD COLUMN IF NOT EXISTS finance_loan_status TEXT,
   ADD COLUMN IF NOT EXISTS finance_sanction_ref TEXT,
   ADD COLUMN IF NOT EXISTS finance_sanction_amount NUMERIC(14, 2),
-  ADD COLUMN IF NOT EXISTS finance_sanction_date DATE;
+  ADD COLUMN IF NOT EXISTS finance_sanction_date DATE,
+  ADD COLUMN IF NOT EXISTS finance_purchaser_percent NUMERIC,
+  ADD COLUMN IF NOT EXISTS finance_bank_percent NUMERIC,
+  ADD COLUMN IF NOT EXISTS finance_split_scope TEXT;
 
 ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_finance_scenario_check;
 ALTER TABLE bookings
   ADD CONSTRAINT bookings_finance_scenario_check
-  CHECK (finance_scenario IS NULL OR finance_scenario IN ('purchaser', 'split_50_50', 'split_10_90'));
+  CHECK (finance_scenario IS NULL OR finance_scenario IN ('purchaser', 'split_50_50', 'split_10_90', 'split'));
+
+ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_finance_split_scope_check;
+ALTER TABLE bookings
+  ADD CONSTRAINT bookings_finance_split_scope_check
+  CHECK (finance_split_scope IS NULL OR finance_split_scope IN ('booking', 'every'));
 
 ALTER TABLE booking_coapplicants
   ADD COLUMN IF NOT EXISTS relationship TEXT,

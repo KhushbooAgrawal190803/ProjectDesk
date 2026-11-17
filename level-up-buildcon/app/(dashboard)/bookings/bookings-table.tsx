@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -135,11 +136,11 @@ export function BookingsTable({ bookings, filterOptions, money }: BookingsTableP
               <FilterSelect label="Created by" value={searchParams.get('created_by')} onChange={(v) => handleFilterChange('created_by', v)} options={filterOptions.users.filter((user) => user.id).map((user) => [user.id, user.full_name])} allLabel="All users" />
               <div className="space-y-1.5">
                 <Label htmlFor="from_date" className="text-xs text-zinc-500">Booked from</Label>
-                <Input id="from_date" type="date" value={searchParams.get('from_date') || ''} onChange={(e) => handleFilterChange('from_date', e.target.value)} />
+                <DateField id="from_date" value={searchParams.get('from_date') || ''} onChange={(value) => handleFilterChange('from_date', value)} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="to_date" className="text-xs text-zinc-500">To</Label>
-                <Input id="to_date" type="date" value={searchParams.get('to_date') || ''} onChange={(e) => handleFilterChange('to_date', e.target.value)} />
+                <DateField id="to_date" value={searchParams.get('to_date') || ''} onChange={(value) => handleFilterChange('to_date', value)} />
               </div>
             </div>
           )}

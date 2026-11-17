@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { DateField } from '@/components/ui/date-field'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -52,14 +53,7 @@ export function MarkCompleteForm({ id, label, today, affectedBookings }: { id: s
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <input
-        type="date"
-        max={today}
-        value={date}
-        onChange={(event) => setDate(event.target.value)}
-        className="h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
-        aria-label="Completion date"
-      />
+      <DateField value={date} onChange={setDate} className="w-72" />
       <Button type="button" onClick={() => setOpen(true)} disabled={!date}>Mark completed</Button>
       <AlertDialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
         <AlertDialogContent>

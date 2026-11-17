@@ -89,6 +89,7 @@ export function BookingWizard({
   const [documents, setDocuments] = useState<Record<string, UploadedDoc>>({})
   const [formKey, setFormKey] = useState(0)
   const [draftLoaded, setDraftLoaded] = useState(false)
+  const [editingSubmitted, setEditingSubmitted] = useState(false)
 
   // Auto-load a pending/draft booking when navigated via /new-booking?draftId=...
   // (Used for Accounts editing their own PENDING bookings)
@@ -121,8 +122,8 @@ export function BookingWizard({
       const result = await saveDraft(formData, draftId)
       setDraftId(result.draftId)
       await linkUploadedDocuments(result.draftId)
-      toast.success('Draft saved', {
-        description: 'Your progress has been saved.',
+      toast.success(editingSubmitted ? 'Changes saved' : 'Draft saved', {
+        description: editingSubmitted ? 'The booking has been updated.' : 'Your progress has been saved.',
       })
     } catch (error) {
       toast.error('Failed to save draft')
@@ -153,6 +154,7 @@ export function BookingWizard({
         'noc_bank_address_line1', 'noc_bank_address_line2', 'noc_bank_city', 'noc_bank_state', 'noc_bank_pin_code', 'noc_bank_country',
         'payment_plan_type',
         'finance_scenario', 'finance_bank_name', 'finance_bank_branch', 'finance_bank_address', 'finance_loan_status',
+        'finance_purchaser_percent', 'finance_bank_percent', 'finance_split_scope',
         'finance_sanction_ref', 'finance_sanction_amount', 'finance_sanction_date', 'undivided_land_share',
       ]
       const sanitized: Record<string, any> = {}
@@ -189,6 +191,9 @@ export function BookingWizard({
         }
       }
       
+      const status = String((draft as { status?: string }).status || '')
+      const alreadySubmitted = status === 'SUBMITTED' || status === 'EDITED'
+      setEditingSubmitted(alreadySubmitted)
       setFormData(sanitized)
       setDocuments(restoredDocs)
       setDraftId(id)
@@ -196,7 +201,7 @@ export function BookingWizard({
       setCurrentStep(1)
       setFormKey((k) => k + 1)
       setDraftLoaded(true)
-      toast.success('Draft loaded')
+      toast.success(alreadySubmitted ? 'Booking opened for editing' : 'Draft loaded')
     } catch (error) {
       toast.error('Failed to load draft')
     }
@@ -375,6 +380,7 @@ export function BookingWizard({
                 onBack={() => goToStep(5)}
                 onSubmit={handleSubmit}
                 submitting={submitting}
+                submitLabel={editingSubmitted ? 'Save changes' : 'Submit Booking'}
                 documents={documents}
               />
             )}
@@ -389,7 +395,7 @@ export function BookingWizard({
                   className="gap-2"
                 >
                   <Save className="w-4 h-4" />
-                  {saving ? 'Saving...' : 'Save Draft'}
+                  {saving ? 'Saving...' : editingSubmitted ? 'Save changes' : 'Save Draft'}
                 </Button>
               </div>
             )}
@@ -455,9 +461,11 @@ export function BookingWizard({
               </div>
             </div>
             <div>
-              <h3 className="text-2xl font-semibold text-zinc-900">Booking Submitted!</h3>
+              <h3 className="text-2xl font-semibold text-zinc-900">{editingSubmitted ? 'Changes saved' : 'Booking Submitted!'}</h3>
               <p className="text-zinc-600 mt-2">
-                Your booking has been successfully created and assigned a serial number.
+                {editingSubmitted
+                  ? 'The booking has been updated.'
+                  : 'Your booking has been successfully created and assigned a serial number.'}
               </p>
             </div>
             <div className="flex flex-col gap-3 pt-4">

@@ -101,16 +101,17 @@ describe('agreement wording', () => {
 
   it('words each received payment as approved, and names the instrument actually used', () => {
     expect(paymentEntryLines([cheque])).toEqual([
-      '(a) Rs. 5,00,000/- (Rupees Five Lakhs Only) vide Cheque No. 004512 dated 01.11.2026, issued in the name of Mrs. Meera Kapoor;',
+      '(a) Rs. 5,00,000/- (Rupees Five Lakhs Only), GST Rs. 25,000/- (Rupees Twenty-Five Thousand Only), total Rs. 5,25,000/- (Rupees Five Lakhs Twenty-Five Thousand Only) vide Cheque No. 004512 dated 01.11.2026, issued in the name of Mrs. Meera Kapoor;',
     ])
     const neft = { payer: 'Mr. Rohan Kapoor', amountPaise: 25000000n, mode: 'NEFT_RTGS', reference: 'UTR99', date: '2026-11-03', bank: 'HDFC Bank' }
     const cash = { payer: 'Mr. Rohan Kapoor', amountPaise: 10000000n, mode: 'Cash', reference: '', date: '2026-11-04' }
     expect(paymentEntryLines([cheque, neft, cash]).slice(1)).toEqual([
-      '(b) Rs. 2,50,000/- (Rupees Two Lakhs Fifty Thousand Only) vide NEFT/RTGS Reference No. UTR99 dated 03.11.2026, remitted by Mr. Rohan Kapoor;',
-      '(c) Rs. 1,00,000/- (Rupees One Lakh Only) in cash on 04.11.2026, paid by Mr. Rohan Kapoor;',
+      '(b) Rs. 2,50,000/- (Rupees Two Lakhs Fifty Thousand Only), GST Rs. 12,500/- (Rupees Twelve Thousand Five Hundred Only), total Rs. 2,62,500/- (Rupees Two Lakhs Sixty-Two Thousand Five Hundred Only) vide NEFT/RTGS Reference No. UTR99 dated 03.11.2026, remitted by Mr. Rohan Kapoor;',
+      '(c) Rs. 1,00,000/- (Rupees One Lakh Only), GST Rs. 5,000/- (Rupees Five Thousand Only), total Rs. 1,05,000/- (Rupees One Lakh Five Thousand Only) in cash on 04.11.2026, paid by Mr. Rohan Kapoor;',
     ])
+    expect(paymentEntryLines([{ ...cheque, gstPaise: 1000000n }])[0]).toContain('GST Rs. 10,000/-')
     expect(paymentEntryLines([])).toEqual([
-      `(a) Rs. ${BLANK}/- (Rupees ${BLANK} Only) vide Cheque No. ${BLANK} dated ${BLANK}, issued in the name of ${BLANK};`,
+      `(a) Rs. ${BLANK}/- (Rupees ${BLANK} Only), GST Rs. ${BLANK}/- (Rupees ${BLANK} Only), total Rs. ${BLANK}/- (Rupees ${BLANK} Only) vide Cheque No. ${BLANK} dated ${BLANK}, issued in the name of ${BLANK};`,
     ])
     // Only cheques are "drawn on" a bank.
     expect(chequeBanks([cheque, neft])).toBe('State Bank of India')
@@ -244,7 +245,9 @@ describe('agreement document', () => {
     const text = filled.join('\n')
 
     // Every paragraph of the master that has no blank in it is still there, word for word and in order.
-    const fixed = paragraphsOf(MASTER).filter((paragraph) => paragraph.trim() && !VARIABLE.test(paragraph))
+    const masterParagraphs = paragraphsOf(MASTER)
+    const signatureStart = masterParagraphs.findIndex((paragraph) => paragraph.startsWith('IN WITNESS WHEREOF'))
+    const fixed = masterParagraphs.slice(0, signatureStart + 1).filter((paragraph) => paragraph.trim() && !VARIABLE.test(paragraph))
     expect(fixed.length).toBeGreaterThan(250)
     let cursor = 0
     for (const paragraph of fixed) {
@@ -267,7 +270,7 @@ describe('agreement document', () => {
     expect(text).toContain('along with 1 (One) covered car parking space')
     expect(text).toContain('consideration of Rs.90,00,000/- (Rupees Ninety Lakhs Only) ("TotalPrice")')
     expect(text).toContain('The Allottee(s) have hereby paid a total sum of Rs. 5,00,000/- (Rupees Five Lakhs Only) towards the booking amount, details of which are as follows:')
-    expect(text).toContain('(a) Rs. 5,00,000/- (Rupees Five Lakhs Only) vide Cheque No. 004512 dated 01.11.2026, issued in the name of Mrs. Meera Kapoor;')
+    expect(text).toContain('(a) Rs. 5,00,000/- (Rupees Five Lakhs Only), GST Rs. 25,000/- (Rupees Twenty-Five Thousand Only), total Rs. 5,25,000/- (Rupees Five Lakhs Twenty-Five Thousand Only) vide Cheque No. 004512 dated 01.11.2026, issued in the name of Mrs. Meera Kapoor;')
     expect(text).toContain('The aforesaid cheque(s) are drawn on State Bank of India, and the Promoter hereby acknowledges receipt of the aforesaid total booking amount, subject to realization of the said cheque(s).')
     expect(text).not.toContain('₹')
     expect(text).toContain('Rs. 4,50,000/-')
@@ -293,8 +296,17 @@ describe('agreement document', () => {
     expect(texts[witness - 1].trim()).toBe('Yoga Deck.')
     const master = paragraphsOf(MASTER)
     const masterWitness = master.findIndex((text) => text.startsWith('IN WITNESS WHEREOF'))
-    expect(texts.slice(witness)).toEqual(master.slice(masterWitness))
-    for (const paragraph of parts.slice(witness, -1)) expect(paragraph).toContain('<w:keepNext/>')
+    expect(texts[witness]).toBe(master[masterWitness])
+    const signed = texts.join('\n')
+    expect(signed).toContain('WITNESSES:-')
+    expect(signed).toContain('1. Signature ________________________')
+    expect(signed).toContain('2. Signature ________________________')
+    expect(signed).toContain('For LEVEL UP BUILDCON')
+    expect(signed).toContain('ALLOTTEE(S)')
+    expect(signed).not.toContain('(ALLOTEES )')
+    for (const paragraph of parts.slice(witness, -1)) {
+      if (paragraph) expect(paragraph).toContain('<w:keepNext/>')
+    }
     expect(parts[parts.length - 1]).not.toContain('<w:keepNext/>')
 
     // No row breaks across a page or cuts off its text; the two money tables stay whole.
@@ -342,7 +354,7 @@ describe('agreement document', () => {
 
     const neft = { payer: 'Mrs. Meera Kapoor', amountPaise: 50000000n, mode: 'NEFT_RTGS', reference: 'UTR1', date: '2026-11-01' }
     const transfer = await articleOne({ payments: [neft] })
-    expect(transfer.texts[1]).toBe('(a) Rs. 5,00,000/- (Rupees Five Lakhs Only) vide NEFT/RTGS Reference No. UTR1 dated 01.11.2026, remitted by Mrs. Meera Kapoor;')
+    expect(transfer.texts[1]).toBe('(a) Rs. 5,00,000/- (Rupees Five Lakhs Only), GST Rs. 25,000/- (Rupees Twenty-Five Thousand Only), total Rs. 5,25,000/- (Rupees Five Lakhs Twenty-Five Thousand Only) vide NEFT/RTGS Reference No. UTR1 dated 01.11.2026, remitted by Mrs. Meera Kapoor;')
     expect(transfer.texts[2]).toBe('The Promoter hereby acknowledges receipt of the aforesaid total booking amount.')
 
     const nothing = await articleOne({ payments: [], bookingPaidPaise: 0n })
@@ -351,7 +363,7 @@ describe('agreement document', () => {
 
     const tenTen = await articleOne({ finance: { scenario: 'split_50_50', bankName: 'HDFC Bank', loanSanctioned: false } })
     expect(tenTen.texts.slice(1)).toEqual([
-      '(a) Rs. 5,00,000/- (Rupees Five Lakhs Only) vide Cheque No. 004512 dated 01.11.2026, issued in the name of Mrs. Meera Kapoor;',
+      '(a) Rs. 5,00,000/- (Rupees Five Lakhs Only), GST Rs. 25,000/- (Rupees Twenty-Five Thousand Only), total Rs. 5,25,000/- (Rupees Five Lakhs Twenty-Five Thousand Only) vide Cheque No. 004512 dated 01.11.2026, issued in the name of Mrs. Meera Kapoor;',
       ...financeParagraphs({ scenario: 'split_50_50', bankName: 'HDFC Bank', loanSanctioned: false }),
     ])
     expect(tenTen.texts.join(' ')).not.toContain('aforesaid cheque')
@@ -479,9 +491,10 @@ describe('agreement readiness', () => {
   })
 
   it('reads the funding scenario, the bank and the loan status from the booking', () => {
-    expect(agreementReadiness(booking, { schedule }).input?.finance).toEqual({ scenario: 'purchaser', bankName: '', loanSanctioned: null })
+    const emptySplit = { purchaserPercent: null, bankPercent: null, scope: null }
+    expect(agreementReadiness(booking, { schedule }).input?.finance).toEqual({ scenario: 'purchaser', bankName: '', loanSanctioned: null, ...emptySplit })
     const proposed = agreementReadiness({ ...booking, finance_scenario: 'split_10_90', finance_bank_name: 'HDFC Bank', finance_loan_status: 'Not yet sanctioned' }, { schedule })
-    expect(proposed.input?.finance).toEqual({ scenario: 'split_10_90', bankName: 'HDFC Bank', loanSanctioned: false })
+    expect(proposed.input?.finance).toEqual({ scenario: 'split_10_90', bankName: 'HDFC Bank', loanSanctioned: false, ...emptySplit })
     const sanctioned = agreementReadiness({ ...booking, finance_scenario: 'split_50_50', finance_loan_status: 'Sanctioned' }, { schedule })
     expect(sanctioned.input?.finance.loanSanctioned).toBe(true)
     expect(sanctioned.warnings.join(' ')).toContain('financing bank is not entered')

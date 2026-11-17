@@ -6,6 +6,7 @@ import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { InstallmentStatusBadge } from '@/components/booking/status-badge'
 import { formatInr } from '@/lib/booking/money'
 import { formatPersonName } from '@/lib/booking/person'
@@ -206,11 +207,11 @@ export default async function DemandNotesPage({
           </label>
           <label className="text-sm text-zinc-600">
             Issued from
-            <Input type="date" name="from" defaultValue={filters.from} className="mt-1" />
+            <DateField name="from" defaultValue={filters.from} className="mt-1" />
           </label>
           <label className="text-sm text-zinc-600">
             To
-            <Input type="date" name="to" defaultValue={filters.to} className="mt-1" />
+            <DateField name="to" defaultValue={filters.to} className="mt-1" />
           </label>
           <Button type="submit">Apply</Button>
           {filtered && (

@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { step3Schema, Step3Data, Step3FormValues } from '@/lib/validations/booking'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
@@ -26,23 +27,23 @@ const getErrorMessage = (error: any): string | null => {
   return typeof error.message === 'string' ? error.message : null
 }
 
-const FINANCE_OPTIONS: Array<{ value: FinanceScenario; title: string; detail: string }> = [
-  {
-    value: 'purchaser',
-    title: 'Option 1: Purchaser-funded',
-    detail: 'The purchaser(s) pay the booking installment. Several contributors can pay.',
-  },
-  {
-    value: 'split_50_50',
-    title: 'Option 2: Booking installment shared with a bank',
-    detail: 'Purchaser pays 10% of Total Consideration; the bank funds the rest of the booking installment only.',
-  },
-  {
-    value: 'split_10_90',
-    title: 'Option 3: 10% purchaser, 90% bank on every installment',
-    detail: 'Purchaser pays 10% and the bank pays 90% of each installment.',
-  },
-]
+function storedSplit(data: {
+  finance_scenario?: string | null
+  finance_purchaser_percent?: number | null
+  finance_bank_percent?: number | null
+  finance_split_scope?: string | null
+}) {
+  if (data.finance_scenario === 'split_10_90') return { purchaser: '10', bank: '90', scope: 'every' as const }
+  if (data.finance_scenario === 'split_50_50') return { purchaser: '50', bank: '50', scope: 'booking' as const }
+  if (data.finance_scenario === 'split') {
+    return {
+      purchaser: data.finance_purchaser_percent == null ? '' : String(data.finance_purchaser_percent),
+      bank: data.finance_bank_percent == null ? '' : String(data.finance_bank_percent),
+      scope: data.finance_split_scope === 'booking' ? 'booking' as const : 'every' as const,
+    }
+  }
+  return { purchaser: '', bank: '', scope: 'every' as const }
+}
 
 export const LOAN_STATUSES = ['Proposed', 'Applied', 'Sanctioned', 'Partially Disbursed', 'Fully Disbursed'] as const
 
@@ -116,6 +117,10 @@ export function Step3PricingPayment({
   const initialMain = saved.main.count
   const initialSecondary = saved.secondary.count
   const [payments, setPayments] = useState<PaymentEntryInput[]>(() => initialPayments(data))
+  const initialSplit = storedSplit(data)
+  const [purchaserPercent, setPurchaserPercent] = useState(initialSplit.purchaser)
+  const [bankPercent, setBankPercent] = useState(initialSplit.bank)
+  const [splitScope, setSplitScope] = useState<'booking' | 'every'>(initialSplit.scope)
   const [expected, setExpected] = useState(() => initialExpected(data))
   const [pricingMode, setPricingMode] = useState<'rate' | 'lump_sum'>(
     data.pricing_mode === 'lump_sum' || (!data.rate_per_sqft && data.total_cost) ? 'lump_sum' : 'rate'
@@ -129,7 +134,10 @@ export function Step3PricingPayment({
     formState: { errors },
   } = useForm<Step3FormValues, unknown, Step3Data>({
     resolver: zodResolver(step3Schema),
-    defaultValues: { ...data, finance_scenario: data.finance_scenario || 'purchaser' },
+    defaultValues: {
+      ...data,
+      finance_scenario: data.finance_scenario && data.finance_scenario !== 'purchaser' ? 'split' : 'purchaser',
+    },
   })
 
   const ratePerSqft = watch('rate_per_sqft')
@@ -137,7 +145,19 @@ export function Step3PricingPayment({
   const scenario = (watch('finance_scenario') || 'purchaser') as FinanceScenario
   const loanStatus = watch('finance_loan_status')
   const bankName = watch('finance_bank_name')
+  const originalScenario = data.finance_scenario || 'purchaser'
+  const typedSame = purchaserPercent === initialSplit.purchaser && bankPercent === initialSplit.bank && splitScope === initialSplit.scope
+  const scenarioToSave: FinanceScenario = scenario === 'purchaser'
+    ? 'purchaser'
+    : (originalScenario === 'split_10_90' || originalScenario === 'split_50_50') && typedSame
+      ? originalScenario
+      : 'split'
   const financed = scenario !== 'purchaser'
+  const splitInput = {
+    purchaserPercent: Number(purchaserPercent),
+    bankPercent: Number(bankPercent),
+    scope: splitScope,
+  }
 
   const rateBase = flatBaseFromPricing({ super_builtup_area: superBuiltupArea, rate_per_sqft: ratePerSqft })
   const basePaise = pricingMode === 'lump_sum'
@@ -166,7 +186,7 @@ export function Step3PricingPayment({
     return resolved.rows[0]?.calculatedPaise ?? null
   }, [considerationPaise, data.schedule_mode, data.schedule_rows])
   const shares = bookingInstallment != null && considerationPaise != null
-    ? financeContributions(bookingInstallment, considerationPaise, scenario, 'booking')
+    ? financeContributions(bookingInstallment, considerationPaise, scenarioToSave, 'booking', splitInput)
     : null
 
   useEffect(() => {
@@ -240,6 +260,14 @@ export function Step3PricingPayment({
       toast.error('GST collected cannot exceed 5% of the amount received')
       return
     }
+    if (scenarioToSave === 'split') {
+      const purchaserShare = Math.round(Number(purchaserPercent) * 100)
+      const bankShare = Math.round(Number(bankPercent) * 100)
+      if (!Number.isFinite(purchaserShare) || !Number.isFinite(bankShare) || purchaserShare + bankShare !== 10000) {
+        toast.error('Purchaser and bank percentages must add up to 100')
+        return
+      }
+    }
     const spaces = parkingSelection(main, mainPrice, secondary, secondaryPrice)
     const chosenBase = pricingMode === 'lump_sum'
       ? flatBaseFromPricing({ pricing_mode: 'lump_sum', total_cost: formData.total_cost })
@@ -259,7 +287,10 @@ export function Step3PricingPayment({
     const first = payments.find((entry) => entryCountsAsReceived(entry.status)) || payments[0]
     onUpdate({
       ...formData,
-      finance_scenario: scenario,
+      finance_scenario: scenarioToSave,
+      finance_purchaser_percent: scenarioToSave === 'split' ? Number(purchaserPercent) : undefined,
+      finance_bank_percent: scenarioToSave === 'split' ? Number(bankPercent) : undefined,
+      finance_split_scope: scenarioToSave === 'split' ? splitScope : '',
       finance_bank_name: financed ? formData.finance_bank_name : '',
       finance_bank_branch: financed ? formData.finance_bank_branch : '',
       finance_bank_address: financed ? formData.finance_bank_address : '',
@@ -378,10 +409,17 @@ export function Step3PricingPayment({
           <aside className="h-fit rounded-xl border border-zinc-200 bg-zinc-50 p-4 lg:sticky lg:top-4">
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Price summary</p>
             <dl className="mt-3 space-y-2 text-sm">
-              <SummaryRow label="Flat price" value={basePaise == null ? '—' : formatInr(basePaise)} />
+              <SummaryRow
+                label="Flat price"
+                value={basePaise == null ? '—' : `${formatInr(basePaise)} · GST ${formatInr(percentOfPaise(basePaise, GST_PERCENT) ?? 0n)}`}
+              />
               <SummaryRow label={`Parking (${main + secondary} space${main + secondary === 1 ? '' : 's'})`} value={formatInr(parkingTotal)} />
               <div className="border-t border-zinc-200 pt-2">
-                <SummaryRow label="Total Consideration (excl. GST)" value={considerationPaise == null ? '—' : formatInr(considerationPaise)} strong />
+                <SummaryRow
+                  label="Total Consideration"
+                  value={considerationPaise == null || considerationGst == null ? '—' : `${formatInr(considerationPaise)} · GST ${formatInr(considerationGst)}`}
+                  strong
+                />
               </div>
               <SummaryRow label={`GST @ ${GST_PERCENT}%`} value={considerationGst == null ? '—' : formatInr(considerationGst)} />
               <SummaryRow
@@ -397,17 +435,48 @@ export function Step3PricingPayment({
       <section className="space-y-6">
         <SectionTitle letter="B" title="Booking payment and financing" detail="Who pays the booking installment, and what has been received." />
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3" role="radiogroup" aria-label="Financing option">
-          {FINANCE_OPTIONS.map((option) => (
-            <label key={option.value} className="block cursor-pointer">
-              <input type="radio" value={option.value} className="peer sr-only" {...register('finance_scenario')} />
-              <div className="h-full rounded-lg border-2 border-zinc-200 p-3 peer-checked:border-zinc-900 peer-checked:bg-zinc-50 peer-focus-visible:ring-2 peer-focus-visible:ring-zinc-900">
-                <p className="text-sm font-medium text-zinc-900">{option.title}</p>
-                <p className="mt-1 text-xs text-zinc-500">{option.detail}</p>
-              </div>
-            </label>
-          ))}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2" role="radiogroup" aria-label="Financing option">
+          <label className="block cursor-pointer">
+            <input type="radio" value="purchaser" className="peer sr-only" {...register('finance_scenario')} />
+            <div className="h-full rounded-lg border-2 border-zinc-200 p-3 peer-checked:border-zinc-900 peer-checked:bg-zinc-50 peer-focus-visible:ring-2 peer-focus-visible:ring-zinc-900">
+              <p className="text-sm font-medium text-zinc-900">Purchaser-funded</p>
+              <p className="mt-1 text-xs text-zinc-500">The purchaser(s) pay the booking installment. Several contributors can pay.</p>
+            </div>
+          </label>
+          <label className="block cursor-pointer">
+            <input type="radio" value="split" className="peer sr-only" {...register('finance_scenario')} />
+            <div className="h-full rounded-lg border-2 border-zinc-200 p-3 peer-checked:border-zinc-900 peer-checked:bg-zinc-50 peer-focus-visible:ring-2 peer-focus-visible:ring-zinc-900">
+              <p className="text-sm font-medium text-zinc-900">Bank share</p>
+              <p className="mt-1 text-xs text-zinc-500">Type the purchaser percentage and the bank percentage. They must add up to 100.</p>
+            </div>
+          </label>
         </div>
+
+        {scenario === 'split' && (
+          <div className="grid grid-cols-1 gap-4 rounded-lg border border-zinc-200 p-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="finance_purchaser_percent">Purchaser pays (%)</Label>
+              <Input id="finance_purchaser_percent" type="number" min="0" max="100" step="0.01" value={purchaserPercent} onChange={(event) => setPurchaserPercent(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="finance_bank_percent">Bank pays (%)</Label>
+              <Input id="finance_bank_percent" type="number" min="0" max="100" step="0.01" value={bankPercent} onChange={(event) => setBankPercent(event.target.value)} />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <p className="text-sm font-medium text-zinc-900">This split applies to</p>
+              <div className="flex flex-col gap-2 text-sm">
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="finance_split_scope" checked={splitScope === 'booking'} onChange={() => setSplitScope('booking')} />
+                  The booking installment only. Later installments are paid by the purchaser.
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="finance_split_scope" checked={splitScope === 'every'} onChange={() => setSplitScope('every')} />
+                  Every installment.
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
 
         {bookingInstallment != null && shares && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -450,7 +519,7 @@ export function Step3PricingPayment({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="finance_sanction_date">Sanction date (optional)</Label>
-                <Input id="finance_sanction_date" type="date" {...register('finance_sanction_date')} />
+                <DateField id="finance_sanction_date" value={watch('finance_sanction_date') || ''} onChange={(value) => setValue('finance_sanction_date', value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="finance_sanction_amount">Sanction amount (optional, ₹)</Label>
@@ -470,11 +539,10 @@ export function Step3PricingPayment({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="expected_disbursement_date">Expected disbursement date (optional)</Label>
-                <Input
+                <DateField
                   id="expected_disbursement_date"
-                  type="date"
                   value={expected.date.slice(0, 10)}
-                  onChange={(event) => setExpected((current) => ({ ...current, date: event.target.value }))}
+                  onChange={(value) => setExpected((current) => ({ ...current, date: value }))}
                 />
               </div>
             </div>

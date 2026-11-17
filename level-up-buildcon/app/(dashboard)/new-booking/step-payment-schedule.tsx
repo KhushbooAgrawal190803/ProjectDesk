@@ -3,9 +3,10 @@
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { considerationOf } from '@/lib/booking/consideration'
-import { formatInr } from '@/lib/booking/money'
+import { formatInr, percentOfPaise } from '@/lib/booking/money'
 import { resolveSchedule, standardScheduleRows, type ScheduleRowInput } from '@/lib/booking/schedule'
 import { CONSTRUCTION_MILESTONES } from '@/lib/demands/milestones'
 
@@ -67,9 +68,9 @@ export function StepPaymentSchedule({ data, onUpdate, onNext, onBack }: StepPaym
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
-        <p>Flat: <span className="font-semibold">{priced == null ? '—' : formatInr(priced.flatPaise)}</span>
+        <p>Flat: <span className="font-semibold">{priced == null ? '—' : `${formatInr(priced.flatPaise)} · GST ${formatInr(percentOfPaise(priced.flatPaise, 5) ?? 0n)}`}</span>
           {' · '}Parking: <span className="font-semibold">{priced == null ? '—' : formatInr(priced.parkingPaise)}</span>
-          {' · '}Total Consideration: <span className="font-semibold">{priced == null ? '—' : formatInr(priced.totalPaise)}</span></p>
+          {' · '}Total Consideration: <span className="font-semibold">{priced == null ? '—' : `${formatInr(priced.totalPaise)} · GST ${formatInr(percentOfPaise(priced.totalPaise, 5) ?? 0n)}`}</span></p>
         <p className="mt-1 text-xs text-zinc-500">Each percentage is of Total Consideration (flat + parking). Parking is not a separate installment. GST is charged separately.</p>
       </div>
 
@@ -116,7 +117,7 @@ export function StepPaymentSchedule({ data, onUpdate, onNext, onBack }: StepPaym
                   <td className="py-2 pr-3">
                     {mode === 'custom' ? (
                       row.trigger_type === 'date' ? (
-                        <Input type="date" value={row.milestone_date || ''} onChange={(e) => updateRow(index, { milestone_date: e.target.value, label: e.target.value })} />
+                        <DateField value={row.milestone_date || ''} onChange={(value) => updateRow(index, { milestone_date: value, label: value })} />
                       ) : (
                         <select
                           value={row.milestone_code || ''}

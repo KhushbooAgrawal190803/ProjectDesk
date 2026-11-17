@@ -67,9 +67,11 @@ export default async function NewBookingPage({
       <DashboardLayout profile={profile}>
         <div className="max-w-5xl mx-auto space-y-8">
           <div>
-            <h1 className="text-3xl font-semibold text-zinc-900">New Booking</h1>
+            <h1 className="text-3xl font-semibold text-zinc-900">{preselectedDraftId ? 'Edit Booking' : 'New Booking'}</h1>
             <p className="text-zinc-600 mt-1">
-              {prefilledUnit ? `Creating booking for flat ${prefilledUnit}` : 'Create a new property booking'}
+              {preselectedDraftId
+                ? 'Every field from the original booking form can be changed.'
+                : prefilledUnit ? `Creating booking for flat ${prefilledUnit}` : 'Create a new property booking'}
             </p>
           </div>
 

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { getUnitBoundaries } from '@/lib/data/flat-boundaries'
 import { getUndividedLandShare } from '@/lib/data/land-share'
 import { formatPostalAddress, type PostalAddressInput } from './address'
+import { normalizeAadhaar, normalizePan } from './identity'
 import { flatBaseFromPricing } from './calculations'
 import { considerationOf } from './consideration'
 import {
@@ -159,6 +160,13 @@ export function buildBookingScalars(
     applicant_occupation: text(input.applicant_occupation),
     undivided_land_share: getUndividedLandShare(text(input.project_name) || 'Anandam', text(input.unit_no)),
     finance_scenario: text(input.finance_scenario) || 'purchaser',
+    finance_purchaser_percent: input.finance_purchaser_percent == null || input.finance_purchaser_percent === ''
+      ? null
+      : Number(input.finance_purchaser_percent),
+    finance_bank_percent: input.finance_bank_percent == null || input.finance_bank_percent === ''
+      ? null
+      : Number(input.finance_bank_percent),
+    finance_split_scope: text(input.finance_split_scope) || null,
     finance_bank_name: text(input.finance_bank_name),
     finance_bank_branch: text(input.finance_bank_branch),
     ...('finance_bank_address' in input ? { finance_bank_address: text(input.finance_bank_address) } : {}),
@@ -193,8 +201,8 @@ export function buildBookingScalars(
     patch.coapplicant_name = text(first?.name)
     patch.coapplicant_relationship = text(first?.father_or_spouse)
     patch.coapplicant_mobile = text(first?.mobile)
-    patch.coapplicant_pan = text(first?.pan)
-    patch.coapplicant_aadhaar = text(first?.aadhaar)
+    patch.coapplicant_pan = normalizePan(first?.pan)
+    patch.coapplicant_aadhaar = normalizeAadhaar(first?.aadhaar)
   }
 
   if (input.pricing_mode === 'lump_sum') patch.rate_per_sqft = null
@@ -251,8 +259,8 @@ export async function replaceBookingChildren(
           occupation: text(person.occupation),
           mobile: text(person.mobile),
           email: text(person.email),
-          pan: text(person.pan),
-          aadhaar: text(person.aadhaar),
+          pan: normalizePan(person.pan),
+          aadhaar: normalizeAadhaar(person.aadhaar),
           address_line1: text(person.address_line1),
           address_line2: text(person.address_line2),
           city: text(person.city),

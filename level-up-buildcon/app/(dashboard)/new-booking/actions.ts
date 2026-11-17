@@ -12,7 +12,8 @@ import {
 import { derivePricingFields, toNum } from '@/lib/booking/calculations'
 import { buildBookingScalars, loadBookingExtras, replaceBookingChildren, withoutLedgerColumns } from '@/lib/booking/persist-details'
 import { ledgerMigrationApplied } from '@/lib/ledger/load'
-import { assertCanEditOwnDraft, submitStatusForRole } from '@/lib/auth/permissions'
+import { assertCanEditBooking, submitStatusForRole } from '@/lib/auth/permissions'
+import { normalizeAadhaar, normalizePan } from '@/lib/booking/identity'
 
 const DRAFT_FIELDS = [
   'project_name', 'project_location', 'project_address', 'rera_regn_no', 'building_permit_no',
@@ -39,6 +40,10 @@ function mapDraftFields(data: Partial<BookingFormData>): Record<string, unknown>
       bookingData[key] = toNum(value)
     } else if (value === '') {
       bookingData[key] = null
+    } else if (key === 'applicant_pan') {
+      bookingData[key] = normalizePan(value) || null
+    } else if (key === 'applicant_aadhaar') {
+      bookingData[key] = normalizeAadhaar(value) || null
     } else {
       bookingData[key] = value
     }
@@ -48,6 +53,13 @@ function mapDraftFields(data: Partial<BookingFormData>): Record<string, unknown>
 
 function asRaw(data: Partial<BookingFormData>): Record<string, unknown> {
   return data as Record<string, unknown>
+}
+
+function databaseError(action: string, error: { message: string }) {
+  if (/finance_purchaser_percent|finance_bank_percent|finance_split_scope/.test(error.message)) {
+    return new Error('The bank-share update is not installed yet. Run supabase/migrations/012_finance_split.sql in the Supabase SQL editor, then save again.')
+  }
+  return new Error(`${action}: ${error.message}`)
 }
 
 export async function saveDraft(data: Partial<BookingFormData>, draftId?: string) {
@@ -73,20 +85,24 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
       .single()
 
     if (!existing || existing.deleted_at) {
-      throw new Error('Draft not found')
+      throw new Error('Booking not found')
     }
-    assertCanEditOwnDraft(profile, existing)
+    assertCanEditBooking(profile, existing)
+    const live = existing.status === 'SUBMITTED' || existing.status === 'EDITED'
+    if (!live && existing.status !== 'DRAFT' && existing.status !== 'PENDING') {
+      throw new Error('This booking cannot be edited')
+    }
+    if (live) bookingData.status = 'EDITED'
 
     const { data: updated, error } = await supabase
       .from('bookings')
       .update(bookingData)
       .eq('id', draftId)
-      .eq('created_by', profile.id)
-      .in('status', ['DRAFT', 'PENDING'])
+      .is('deleted_at', null)
       .select()
       .single()
 
-    if (error) throw new Error(`Failed to update draft: ${error.message}`)
+    if (error) throw databaseError('Failed to update the booking', error)
     await replaceBookingChildren(supabase, updated.id, raw, 'draft')
     return { success: true, draftId: updated.id }
   }
@@ -100,7 +116,7 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
     .select()
     .single()
 
-  if (error) throw new Error(`Failed to save draft: ${error.message}`)
+  if (error) throw databaseError('Failed to save draft', error)
   await replaceBookingChildren(supabase, created.id, raw, 'draft')
   return { success: true, draftId: created.id }
 }
@@ -113,12 +129,14 @@ export async function getDraft(draftId: string) {
     .from('bookings')
     .select('*')
     .eq('id', draftId)
-    .eq('created_by', profile.id)
-    .in('status', ['DRAFT', 'PENDING'])
     .is('deleted_at', null)
     .single()
 
-  if (error || !data) throw new Error('Draft not found')
+  if (error || !data) throw new Error('Booking not found')
+  assertCanEditBooking(profile, data)
+  if (!['DRAFT', 'PENDING', 'SUBMITTED', 'EDITED'].includes(data.status)) {
+    throw new Error('This booking cannot be edited')
+  }
 
   const extras = await loadBookingExtras(supabase, data.id)
   let coapplicants = extras.coapplicants as Array<Record<string, unknown>>
@@ -218,6 +236,19 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
     }
   }
 
+  let existing: { status: string; created_by: string; deleted_at: string | null } | null = null
+  if (draftId) {
+    const { data: row } = await supabase
+      .from('bookings')
+      .select('id, status, created_by, deleted_at')
+      .eq('id', draftId)
+      .maybeSingle()
+    if (!row || row.deleted_at) throw new Error('Booking not found')
+    assertCanEditBooking(profile, row)
+    existing = row
+  }
+  const live = existing?.status === 'SUBMITTED' || existing?.status === 'EDITED'
+
   const pricing = derivePricingFields(baseData)
   const bookingData = {
     project_name: baseData.project_name || null,
@@ -237,14 +268,14 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
     applicant_father_or_spouse: baseData.applicant_father_or_spouse || null,
     applicant_mobile: baseData.applicant_mobile || null,
     applicant_email: baseData.applicant_email || null,
-    applicant_pan: baseData.applicant_pan || null,
-    applicant_aadhaar: baseData.applicant_aadhaar || null,
+    applicant_pan: normalizePan(baseData.applicant_pan) || null,
+    applicant_aadhaar: normalizeAadhaar(baseData.applicant_aadhaar) || null,
     applicant_address: baseData.applicant_address || null,
     coapplicant_name: baseData.coapplicant_name || null,
     coapplicant_relationship: baseData.coapplicant_relationship || null,
     coapplicant_mobile: baseData.coapplicant_mobile || null,
-    coapplicant_pan: baseData.coapplicant_pan || null,
-    coapplicant_aadhaar: baseData.coapplicant_aadhaar || null,
+    coapplicant_pan: normalizePan(baseData.coapplicant_pan) || null,
+    coapplicant_aadhaar: normalizeAadhaar(baseData.coapplicant_aadhaar) || null,
     rate_per_sqft: pricing.rate_per_sqft,
     total_cost: pricing.total_cost,
     gst_amount: pricing.gst_amount,
@@ -256,9 +287,8 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
     payment_plan_type: baseData.payment_plan_type || null,
     payment_plan_custom_text: baseData.payment_plan_custom_text || null,
     ...scalars,
-    status: submitStatusForRole(profile.role),
-    created_by: profile.id,
-    submitted_at: new Date().toISOString(),
+    status: live ? 'EDITED' as const : submitStatusForRole(profile.role),
+    ...(live ? {} : { created_by: profile.id, submitted_at: new Date().toISOString() }),
   }
 
   let bookingId: string
@@ -268,31 +298,16 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
       .from('bookings')
       .update(bookingData)
       .eq('id', draftId)
-      .eq('created_by', profile.id)
-      .in('status', ['DRAFT', 'PENDING'])
+      .is('deleted_at', null)
       .select()
       .maybeSingle()
 
     if (error) {
       if (isUnitConflictError(error)) throw new Error(UNIT_CONFLICT_MESSAGE)
-      throw new Error(`Failed to submit booking: ${error.message}`)
+      throw databaseError('Failed to submit booking', error)
     }
-
-    if (updated) {
-      bookingId = updated.id
-    } else {
-      const { data: created, error: insertError } = await supabase
-        .from('bookings')
-        .insert([bookingData])
-        .select()
-        .single()
-
-      if (insertError) {
-        if (isUnitConflictError(insertError)) throw new Error(UNIT_CONFLICT_MESSAGE)
-        throw new Error(`Failed to submit booking: ${insertError.message}`)
-      }
-      bookingId = created.id
-    }
+    if (!updated) throw new Error('Booking not found')
+    bookingId = updated.id
   } else {
     const { data: created, error } = await supabase
       .from('bookings')
@@ -302,7 +317,7 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
 
     if (error) {
       if (isUnitConflictError(error)) throw new Error(UNIT_CONFLICT_MESSAGE)
-      throw new Error(`Failed to submit booking: ${error.message}`)
+      throw databaseError('Failed to submit booking', error)
     }
     bookingId = created.id
   }
@@ -315,13 +330,15 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
     action: draftId ? 'EDITED' : 'CREATED',
   })
 
-  if (bookingData.status === 'SUBMITTED') {
+  if (bookingData.status === 'SUBMITTED' || live) {
     try {
       const { reconcileBooking } = await import('@/lib/demands/issue')
       await reconcileBooking(supabase, bookingId, { actorId: profile.id })
     } catch (error) {
       console.error('Demand reconciliation after submit failed:', error instanceof Error ? error.message : error)
     }
+  }
+  if (!live && bookingData.status === 'SUBMITTED') {
     // After reconciliation, so demand notes already due are in the same email.
     try {
       const { queueBookingFinalized } = await import('@/lib/email/service')

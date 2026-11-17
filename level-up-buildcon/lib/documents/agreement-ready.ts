@@ -1,4 +1,5 @@
-import { considerationOf } from '@/lib/booking/consideration'
+import { considerationOf, financeSplitFrom } from '@/lib/booking/consideration'
+import { normalizeAadhaar, normalizePan } from '@/lib/booking/identity'
 import { percentOfPaise, toHundredths } from '@/lib/booking/money'
 import { entryCountsAsReceived } from '@/lib/ledger/model'
 import { boundaryMatch } from '@/lib/data/flat-boundaries'
@@ -33,7 +34,7 @@ function areaFigure(value: unknown): string {
   return value != null && value !== '' && Number.isFinite(area) && area > 0 ? String(area) : ''
 }
 
-const SCENARIOS: FinanceScenario[] = ['purchaser', 'split_50_50', 'split_10_90']
+const SCENARIOS: FinanceScenario[] = ['purchaser', 'split_50_50', 'split_10_90', 'split']
 
 /** Which approved Article I wording applies, and whether the loan is sanctioned yet. */
 function financeOf(booking: Row): AgreementFinance {
@@ -44,10 +45,14 @@ function financeOf(booking: Row): AgreementFinance {
   const loanSanctioned = status
     ? status.startsWith('sanction') || status.includes('disbursed')
     : sanctionRecorded ? true : null
+  const split = financeSplitFrom(booking)
   return {
     scenario: SCENARIOS.includes(stored) ? stored : 'purchaser',
     bankName: text(booking.finance_bank_name),
     loanSanctioned,
+    purchaserPercent: split.purchaserPercent,
+    bankPercent: split.bankPercent,
+    scope: split.scope,
   }
 }
 
@@ -92,8 +97,8 @@ export function agreementReadiness(booking: Row, extras: {
       relationship: text(booking.applicant_relationship),
       relativeName: text(booking.applicant_father_or_spouse),
       occupation: text(booking.applicant_occupation),
-      aadhaar: text(booking.applicant_aadhaar),
-      pan: text(booking.applicant_pan),
+      aadhaar: normalizeAadhaar(booking.applicant_aadhaar),
+      pan: normalizePan(booking.applicant_pan),
       mobile: text(booking.applicant_mobile),
       addressLines: addressLines(booking, 'applicant_', text(booking.applicant_address)),
     },
@@ -103,8 +108,8 @@ export function agreementReadiness(booking: Row, extras: {
       relationship: text(person.relationship),
       relativeName: text(person.father_or_spouse),
       occupation: text(person.occupation),
-      aadhaar: text(person.aadhaar),
-      pan: text(person.pan),
+      aadhaar: normalizeAadhaar(person.aadhaar),
+      pan: normalizePan(person.pan),
       mobile: text(person.mobile),
       addressLines: addressLines(person, '', text(person.address)),
     })),
@@ -145,6 +150,9 @@ export function agreementReadiness(booking: Row, extras: {
         .map((payment) => ({
           payer: payerName(payment),
           amountPaise: toHundredths(payment.amount) ?? 0n,
+          gstPaise: payment.gst_amount == null || payment.gst_amount === ''
+            ? percentOfPaise(toHundredths(payment.amount) ?? 0n, 5) ?? 0n
+            : toHundredths(payment.gst_amount) ?? 0n,
           mode: text(payment.payment_mode),
           modeDetail: text(payment.payment_mode_detail),
           reference: text(payment.reference_no),
@@ -155,6 +163,9 @@ export function agreementReadiness(booking: Row, extras: {
       ? [{
           payer: primaryName,
           amountPaise: toHundredths(booking.booking_amount_paid) ?? 0n,
+          gstPaise: booking.gst_collected == null || booking.gst_collected === ''
+            ? percentOfPaise(toHundredths(booking.booking_amount_paid) ?? 0n, 5) ?? 0n
+            : toHundredths(booking.gst_collected) ?? 0n,
           mode: text(booking.payment_mode),
           modeDetail: text(booking.payment_mode) === 'Other' ? text(booking.payment_mode_detail) : '',
           reference: text(booking.txn_or_cheque_no),
@@ -205,7 +216,9 @@ export function agreementReadiness(booking: Row, extras: {
     warnings.push(`Schedule C adds up to Rs.${formatAmountFigures(scheduleTotal)}/-, and the Total Consideration is Rs.${formatAmountFigures(consideration)}/-.${cause}`)
   }
 
-  const parkingCount = Number(booking.additional_parking || 0) + Number(booking.premium_parking || 0)
+  const primaryParking = Number(booking.additional_parking || 0)
+  const secondaryParking = Number(booking.premium_parking || 0)
+  const parkingCount = primaryParking + secondaryParking
   if (parkingCount <= 0) warnings.push('No parking space is recorded on this booking. The parking count is left blank in the agreement.')
   const allotmentDate = text(booking.allotment_date).slice(0, 10)
   if (!allotmentDate) warnings.push('Allotment date is not entered. The allotment letter date is left blank.')
@@ -220,6 +233,8 @@ export function agreementReadiness(booking: Row, extras: {
     landShare: String(land),
     allotmentDate,
     parkingCount,
+    primaryParking,
+    secondaryParking,
     boundaries: boundaries.boundaries,
     considerationPaise: consideration,
     gstPaise: percentOfPaise(consideration, 5) ?? 0n,

@@ -104,6 +104,14 @@ export interface Booking {
   // Payment Plan
   payment_plan_type: PaymentPlanType
   payment_plan_custom_text?: string
+  finance_scenario?: string | null
+  finance_bank_name?: string | null
+  finance_bank_branch?: string | null
+  finance_bank_address?: string | null
+  finance_loan_status?: string | null
+  finance_purchaser_percent?: number | null
+  finance_bank_percent?: number | null
+  finance_split_scope?: string | null
   
   coapplicants?: Array<{
     id: string

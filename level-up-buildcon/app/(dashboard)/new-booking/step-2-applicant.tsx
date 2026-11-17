@@ -13,6 +13,7 @@ import { DocumentUploadSection, DocumentUploadField, UploadedDoc } from './docum
 import { deleteDocument } from './document-actions'
 import { AddressFields, AddressValue } from './address-fields'
 import { formatPostalAddress } from '@/lib/booking/address'
+import { normalizeAadhaar, normalizePan } from '@/lib/booking/identity'
 import type { CoApplicantInput } from '@/lib/booking/persist-details'
 
 const getErrorMessage = (error: any): string | null => {
@@ -86,6 +87,8 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<Step2FormValues, unknown, Step2Data>({
     resolver: zodResolver(step2Schema),
@@ -198,9 +201,10 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
             <Label htmlFor="applicant_pan">PAN Number</Label>
             <Input
               id="applicant_pan"
-              {...register('applicant_pan')}
+              value={watch('applicant_pan') || ''}
               placeholder="ABCDE1234F"
               maxLength={10}
+              onChange={(event) => setValue('applicant_pan', normalizePan(event.target.value))}
               style={{ textTransform: 'uppercase' }}
             />
             {errors.applicant_pan && (
@@ -212,9 +216,11 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
             <Label htmlFor="applicant_aadhaar">Aadhaar Number</Label>
             <Input
               id="applicant_aadhaar"
-              {...register('applicant_aadhaar')}
+              value={watch('applicant_aadhaar') || ''}
               placeholder="12-digit Aadhaar"
               maxLength={12}
+              inputMode="numeric"
+              onChange={(event) => setValue('applicant_aadhaar', normalizeAadhaar(event.target.value))}
             />
             {errors.applicant_aadhaar && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.applicant_aadhaar)}</p>
@@ -289,7 +295,13 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
                   <Label>{label}</Label>
                   <Input
                     value={person[key] || ''}
-                    onChange={(e) => setCoapplicants((current) => current.map((item) => item.id === person.id ? { ...item, [key]: e.target.value } : item))}
+                    inputMode={key === 'aadhaar' ? 'numeric' : undefined}
+                    maxLength={key === 'pan' ? 10 : key === 'aadhaar' ? 12 : undefined}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      const next = key === 'pan' ? normalizePan(raw) : key === 'aadhaar' ? normalizeAadhaar(raw) : raw
+                      setCoapplicants((current) => current.map((item) => item.id === person.id ? { ...item, [key]: next } : item))
+                    }}
                   />
                 </div>
               ))}

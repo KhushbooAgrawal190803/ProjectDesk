@@ -20,7 +20,7 @@ import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog
 import { ApplyReceivedMoney, ClearanceButtons, ReverseAllocationButton } from '@/components/payments/apply-received-money'
 import { expectedFor, payableFor, payersFor } from '@/lib/ledger/payers'
 import type { Booking, BookingAuditLog, BookingDocument, Profile } from '@/lib/types/database'
-import { considerationOf, financeContributions, type FinanceScenario } from '@/lib/booking/consideration'
+import { considerationOf, financeContributions, financeSplitFrom, type FinanceScenario } from '@/lib/booking/consideration'
 import { formatInr, percentOfPaise, toHundredths } from '@/lib/booking/money'
 import { loadBookingExtras } from '@/lib/booking/persist-details'
 import { formatPersonName } from '@/lib/booking/person'
@@ -52,6 +52,7 @@ const FINANCE_LABELS: Record<string, { title: string; detail: string }> = {
     detail: 'Purchaser pays 10% of Total Consideration and the bank funds the rest of the booking installment. Later installments are not split automatically.',
   },
   split_10_90: { title: 'Option 3: 10% purchaser, 90% bank', detail: 'The purchaser pays 10% and the bank pays 90% of every installment.' },
+  split: { title: 'Bank share', detail: 'The purchaser and the bank pay the percentages entered on this booking.' },
 }
 
 const AUDIT_LABELS: Record<string, string> = {
@@ -255,14 +256,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <div className="flex flex-wrap gap-2">
             {showApproveReject && <ApproveRejectButtons bookingId={booking.id} />}
             {recordPayment}
-            {canEditViaWizard && (
+            {canEdit && (
               <Link href={`/new-booking?draftId=${booking.id}`}>
-                <Button variant="outline" className="gap-2"><Edit className="h-4 w-4" />Edit Draft</Button>
-              </Link>
-            )}
-            {canEdit && !canEditViaWizard && (
-              <Link href={`/bookings/${booking.id}/edit`}>
-                <Button variant="outline" className="gap-2"><Edit className="h-4 w-4" />Edit</Button>
+                <Button variant="outline" className="gap-2"><Edit className="h-4 w-4" />{canEditViaWizard ? 'Edit Draft' : 'Edit'}</Button>
               </Link>
             )}
             <DownloadPDFsButton bookingId={booking.id} serialDisplay={booking.serial_display || 'Booking'} />
@@ -458,8 +454,8 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
               <p className="text-sm text-zinc-500">{FINANCE_LABELS[financeScenario]?.detail}</p>
               {priced && installments.length > 0 && (
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {installments.slice(0, financeScenario === 'split_10_90' ? 2 : 1).map((row, index) => {
-                    const split = financeContributions(row.principalPaise, priced.totalPaise, financeScenario as FinanceScenario, index === 0 ? 'booking' : 'later')
+                  {installments.slice(0, financeScenario === 'split_10_90' || (financeScenario === 'split' && booking.finance_split_scope !== 'booking') ? 2 : 1).map((row, index) => {
+                    const split = financeContributions(row.principalPaise, priced.totalPaise, financeScenario as FinanceScenario, index === 0 ? 'booking' : 'later', financeSplitFrom(booking))
                     return (
                       <div key={row.id} className="rounded-lg border border-zinc-200 px-4 py-3 text-sm">
                         <p className="text-xs text-zinc-500">{index === 0 ? 'Booking installment' : 'Each later installment, for example the next'} · {formatInr(row.principalPaise)}</p>

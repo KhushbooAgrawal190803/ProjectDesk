@@ -127,8 +127,10 @@ describe('Agreement for Sale PDF', () => {
     const last = text.lines.filter((line) => line.page === text.pages && !isFooter(line)).map((line) => line.text)
     expect(last[0]).toMatch(/^INWITNESSWHEREOF/)
     expect(last).toContain('WITNESSES:-')
-    expect(last).toContain('(LEVELUPBUILDCON)')
-    expect(last).toContain('(ALLOTEES)')
+    expect(last).toContain('1.Signature________________________')
+    expect(last).toContain('2.Signature________________________')
+    expect(last).toContain('ForLEVELUPBUILDCON')
+    expect(last).toContain('ALLOTTEE(S)')
   })
 
   it('refuses a Word file with content it cannot set, instead of leaving it out', async () => {

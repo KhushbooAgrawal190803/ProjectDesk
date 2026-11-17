@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { AddressFields, AddressValue } from './address-fields'
@@ -88,7 +89,7 @@ export function StepNoc({ data, onUpdate, onNext, onBack }: StepNocProps) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="agreement_for_sale_date">Agreement for Sale Date</Label>
-            <Input id="agreement_for_sale_date" type="date" value={agreementDate} onChange={(e) => setAgreementDate(e.target.value)} />
+            <DateField id="agreement_for_sale_date" value={agreementDate} onChange={setAgreementDate} />
             <p className="text-xs text-zinc-500">Taken from the agreement. It is not filled from the allotment date.</p>
           </div>
           <AddressFields idPrefix="noc-bank" value={address} onChange={setAddress} />

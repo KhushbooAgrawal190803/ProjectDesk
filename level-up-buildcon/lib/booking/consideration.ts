@@ -18,7 +18,27 @@ export interface Consideration {
   totalPaise: bigint
 }
 
-export type FinanceScenario = 'purchaser' | 'split_50_50' | 'split_10_90'
+export type FinanceScenario = 'purchaser' | 'split_50_50' | 'split_10_90' | 'split'
+
+export interface FinanceSplitInput {
+  purchaserPercent?: number | null
+  bankPercent?: number | null
+  scope?: 'booking' | 'every' | null
+}
+
+export function financeSplitFrom(row: {
+  finance_purchaser_percent?: unknown
+  finance_bank_percent?: unknown
+  finance_split_scope?: unknown
+}): FinanceSplitInput {
+  const purchaser = Number(row.finance_purchaser_percent)
+  const bank = Number(row.finance_bank_percent)
+  return {
+    purchaserPercent: Number.isFinite(purchaser) ? purchaser : null,
+    bankPercent: Number.isFinite(bank) ? bank : null,
+    scope: row.finance_split_scope === 'booking' ? 'booking' : row.finance_split_scope === 'every' ? 'every' : null,
+  }
+}
 
 export function parkingPaiseFromSpaces(spaces: Array<{ price?: unknown }> | null | undefined): bigint {
   if (!spaces?.length) return 0n
@@ -65,9 +85,24 @@ export function financeContributions(
   installmentPaise: bigint,
   considerationPaise: bigint,
   scenario: FinanceScenario,
-  kind: 'booking' | 'later'
+  kind: 'booking' | 'later',
+  split?: FinanceSplitInput | null
 ): { purchaserPaise: bigint; bankPaise: bigint } {
   if (installmentPaise < 0n) return { purchaserPaise: 0n, bankPaise: 0n }
+  if (scenario === 'split') {
+    const scope = split?.scope === 'booking' ? 'booking' : 'every'
+    if (scope === 'booking' && kind === 'later') return { purchaserPaise: installmentPaise, bankPaise: 0n }
+    const purchaserPercent = split?.purchaserPercent
+    const bankPercent = split?.bankPercent
+    const purchaserHundredths = purchaserPercent == null ? null : Math.round(purchaserPercent * 100)
+    const bankHundredths = bankPercent == null ? null : Math.round(bankPercent * 100)
+    if (purchaserHundredths == null || bankHundredths == null || purchaserHundredths + bankHundredths !== 10000) {
+      return { purchaserPaise: installmentPaise, bankPaise: 0n }
+    }
+    const purchaser = percentOfPaise(installmentPaise, purchaserPercent) ?? installmentPaise
+    const capped = purchaser > installmentPaise ? installmentPaise : purchaser
+    return { purchaserPaise: capped, bankPaise: installmentPaise - capped }
+  }
   if (scenario === 'purchaser' || (scenario === 'split_50_50' && kind === 'later')) {
     return { purchaserPaise: installmentPaise, bankPaise: 0n }
   }
