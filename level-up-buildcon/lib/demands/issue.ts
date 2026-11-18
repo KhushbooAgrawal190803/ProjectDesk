@@ -424,7 +424,7 @@ export async function reconcileBooking(
   const [schedule, milestones, demands, people] = await Promise.all([
     supabase.from('booking_schedule_rows').select('*').eq('booking_id', bookingId).order('sort_order'),
     supabase.from('construction_milestones').select('id, code, label, completed_at').eq('project_name', booking.project_name || 'Anandam'),
-    supabase.from('demand_notes').select('schedule_row_id').eq('booking_id', bookingId),
+    supabase.from('demand_notes').select('schedule_row_id, reference_number, issue_date, sequence_no').eq('booking_id', bookingId),
     supabase.from('booking_coapplicants').select('salutation, name').eq('booking_id', bookingId).order('sort_order'),
   ])
   for (const result of [schedule, milestones, demands, people]) {
@@ -445,6 +445,7 @@ export async function reconcileBooking(
   const completed = new Map((milestones.data || []).map((item) => [item.id as string, Boolean(item.completed_at)]))
   const labels = new Map((milestones.data || []).map((item) => [item.id as string, item.label as string]))
   const issuedRows = new Set((demands.data || []).map((item) => item.schedule_row_id as string))
+  const earlierNotes = [...(demands.data || [])]
   const allocated = new Map<string, MoneySplit>()
   for (const item of allocations || []) {
     const current = allocated.get(item.schedule_row_id) || { principal: 0n, gst: 0n }
@@ -506,6 +507,26 @@ export async function reconcileBooking(
       gstReceivedPaise: candidate.allocatedGstPaise,
       principalOutstandingPaise: item.outstanding.principal,
       gstOutstandingPaise: item.outstanding.gst,
+      priorBalances: earlierNotes
+        .map((note) => {
+          const earlier = rows.find((candidate) => candidate.id === note.schedule_row_id)
+          if (!earlier) return null
+          const due = paiseFrom(earlier.calculated_amount)
+          const received = allocated.get(earlier.id) || { principal: 0n, gst: 0n }
+          const outstanding = subtractSplit(
+            { principal: due, gst: installmentGstPaise(due, rules.gstPercent) },
+            received
+          )
+          if (outstanding.principal <= 0n && outstanding.gst <= 0n) return null
+          return {
+            referenceNumber: String(note.reference_number || ''),
+            issueDate: String(note.issue_date || '').slice(0, 10),
+            principalOutstandingPaise: outstanding.principal,
+            gstOutstandingPaise: outstanding.gst,
+          }
+        })
+        .filter((balance): balance is NonNullable<typeof balance> => balance != null)
+        .sort((left, right) => left.issueDate.localeCompare(right.issueDate) || left.referenceNumber.localeCompare(right.referenceNumber)),
     }
     const { error: insertError } = await supabase.from('demand_notes').insert({
       booking_id: booking.id,
@@ -532,6 +553,12 @@ export async function reconcileBooking(
       throw new Error(insertError.message)
     }
     issued.push(referenceNumber)
+    earlierNotes.push({
+      schedule_row_id: row.id,
+      reference_number: referenceNumber,
+      issue_date: snapshot.issueDate,
+      sequence_no: seq,
+    })
     if (options?.actorId) {
       await supabase.from('booking_audit_log').insert({
         booking_id: booking.id,

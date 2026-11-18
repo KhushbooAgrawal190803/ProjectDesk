@@ -15,6 +15,14 @@ export interface DemandFigures {
   gstOutstandingPaise: bigint
 }
 
+/** Unpaid balance of a demand note already issued for this booking. */
+export interface PriorDemandBalance {
+  referenceNumber: string
+  issueDate: string
+  principalOutstandingPaise: bigint
+  gstOutstandingPaise: bigint
+}
+
 export interface DemandSnapshot extends DemandFigures {
   referenceNumber: string
   issueDate: string
@@ -27,6 +35,8 @@ export interface DemandSnapshot extends DemandFigures {
   applicantLines: string[]
   milestoneLabel: string
   account: ReceivingAccount
+  /** Earlier demand notes that still had money unpaid when this note was issued. */
+  priorBalances?: PriorDemandBalance[]
 }
 
 function money(value: bigint): string {
@@ -43,6 +53,12 @@ export function snapshotForStorage(snapshot: DemandSnapshot): Record<string, unk
     gstReceivedPaise: money(snapshot.gstReceivedPaise),
     principalOutstandingPaise: money(snapshot.principalOutstandingPaise),
     gstOutstandingPaise: money(snapshot.gstOutstandingPaise),
+    priorBalances: (snapshot.priorBalances || []).map((item) => ({
+      referenceNumber: item.referenceNumber,
+      issueDate: item.issueDate,
+      principalOutstandingPaise: money(item.principalOutstandingPaise),
+      gstOutstandingPaise: money(item.gstOutstandingPaise),
+    })),
   }
 }
 
@@ -67,7 +83,30 @@ export function snapshotFromStorage(value: Record<string, unknown>): DemandSnaps
     gstReceivedPaise: paise('gstReceivedPaise'),
     principalOutstandingPaise: paise('principalOutstandingPaise'),
     gstOutstandingPaise: paise('gstOutstandingPaise'),
+    priorBalances: Array.isArray(value.priorBalances)
+      ? value.priorBalances.map((item) => {
+          const row = item as Record<string, unknown>
+          return {
+            referenceNumber: String(row.referenceNumber || ''),
+            issueDate: String(row.issueDate || ''),
+            principalOutstandingPaise: toHundredths(row.principalOutstandingPaise) ?? 0n,
+            gstOutstandingPaise: toHundredths(row.gstOutstandingPaise) ?? 0n,
+          }
+        })
+      : [],
   }
+}
+
+/** One paragraph per earlier demand note that still has money unpaid. */
+export function priorDemandLines(balances: PriorDemandBalance[] | undefined): string[] {
+  return (balances || [])
+    .map((item) => {
+      const remaining = item.principalOutstandingPaise + item.gstOutstandingPaise
+      if (remaining <= 0n || !item.referenceNumber) return ''
+      const dated = formatLetterDate(item.issueDate) || item.issueDate
+      return `We further wish to bring to your attention that an amount of ${formatRs(remaining)} remains outstanding against our earlier Demand Note No. ${item.referenceNumber}, dated ${dated}, after adjustment of payments received.`
+    })
+    .filter(Boolean)
 }
 
 function projectTitle(name: string): string {
@@ -92,6 +131,7 @@ export function demandBlocks(snapshot: DemandSnapshot, options?: { statement?: b
   const statement = Boolean(options?.statement)
   const project = projectTitle(snapshot.projectName)
   const outstanding = snapshot.principalOutstandingPaise + snapshot.gstOutstandingPaise
+  const earlier = statement ? [] : priorDemandLines(snapshot.priorBalances)
   const intro = statement
     ? [
         `This payment statement updates the balances for demand note ${snapshot.referenceNumber} issued on ${formatLetterDate(snapshot.issueDate)}. It does not replace that demand note.`,
@@ -125,6 +165,16 @@ export function demandBlocks(snapshot: DemandSnapshot, options?: { statement?: b
       ],
       rows,
     },
+    ...(earlier.length
+      ? [
+          { kind: 'line' as const, text: 'Outstanding Amount Against Previous Demand Note', bold: true, gapAfter: 6 },
+          ...earlier.map((text) => ({ kind: 'paragraph' as const, text })),
+          {
+            kind: 'paragraph' as const,
+            text: 'You are hereby requested to clear the aforesaid outstanding amount along with the amount payable under the present Demand Note.',
+          },
+        ]
+      : []),
     {
       kind: 'paragraph',
       text: `Kindly remit the above amount within ${paymentDayPhrase(snapshot.paymentDays)} days from the date of this Demand Letter as per the Agreement for Sale.`,

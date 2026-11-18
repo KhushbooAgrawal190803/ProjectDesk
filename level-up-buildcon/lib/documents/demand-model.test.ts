@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PDFDocument, PDFRawStream, PDFArray, decodePDFRawStream } from 'pdf-lib'
 import { RECEIVING_ACCOUNTS } from '@/lib/documents/receiving-accounts'
-import { demandBlocks, demandIntro, type DemandSnapshot } from '@/lib/documents/demand-model'
+import { demandBlocks, demandIntro, priorDemandLines, snapshotFromStorage, snapshotForStorage, type DemandSnapshot } from '@/lib/documents/demand-model'
 import { renderLetterPdf, STAMP_GAP_PT } from '@/lib/documents/letter-pdf'
 import type { LetterBlock } from '@/lib/documents/letter-model'
 
@@ -68,6 +68,42 @@ describe('demand note wording', () => {
     expect(text).toContain('Rs. 71,01,000.00')
     expect(text).toContain('Rs. 13,75,200.00')
     expect(text).not.toContain('parking')
+  })
+
+  it('asks for the unpaid balance of each earlier demand note, with its number and date', () => {
+    const note = snapshot('DEVELOPER')
+    note.priorBalances = [
+      {
+        referenceNumber: 'LUB/ANANDAM/DN/506/001/2026',
+        issueDate: '2026-08-05',
+        principalOutstandingPaise: 50000000n,
+        gstOutstandingPaise: 2500000n,
+      },
+      {
+        referenceNumber: 'LUB/ANANDAM/DN/506/002/2026',
+        issueDate: '2026-09-01',
+        principalOutstandingPaise: 0n,
+        gstOutstandingPaise: 0n,
+      },
+    ]
+    const text = letterText(demandBlocks(note))
+    expect(text).toContain('Outstanding Amount Against Previous Demand Note')
+    expect(text).toContain('We further wish to bring to your attention that an amount of Rs. 5,25,000.00 remains outstanding against our earlier Demand Note No. LUB/ANANDAM/DN/506/001/2026, dated 05.08.2026, after adjustment of payments received.')
+    expect(text).toContain('You are hereby requested to clear the aforesaid outstanding amount along with the amount payable under the present Demand Note.')
+    expect(text).not.toContain('DN/506/002/2026')
+    expect(priorDemandLines(snapshotFromStorage(snapshotForStorage(note)).priorBalances)).toEqual(priorDemandLines(note.priorBalances))
+  })
+
+  it('leaves a payment statement about the one note it updates', () => {
+    const note = snapshot('DEVELOPER')
+    note.priorBalances = [{
+      referenceNumber: 'LUB/ANANDAM/DN/506/001/2026',
+      issueDate: '2026-08-05',
+      principalOutstandingPaise: 100n,
+      gstOutstandingPaise: 0n,
+    }]
+    const text = letterText(demandBlocks(note, { statement: true, statementDate: '2026-09-10' }))
+    expect(text).not.toContain('You are also requested')
   })
 })
 
