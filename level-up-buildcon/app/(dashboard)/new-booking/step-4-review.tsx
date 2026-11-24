@@ -14,6 +14,7 @@ import { formatPersonName } from '@/lib/booking/person'
 import { getUndividedLandShare } from '@/lib/data/land-share'
 import { resolveSchedule, standardScheduleRows } from '@/lib/booking/schedule'
 import { relativeWithRelation } from '@/lib/booking/relationship'
+import { isIndividual, representativeLine } from '@/lib/booking/applicant-type'
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   applicant_pan: 'Applicant PAN',
@@ -107,7 +108,15 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting, submi
 
       <Section title="Applicant Information">
         <Field label="Name" value={formatPersonName(data.applicant_salutation, data.applicant_name)} />
-        <Field label="Parents' / Spouse's Name" value={relativeWithRelation(data.applicant_father_or_spouse, data.applicant_relationship)} />
+        {isIndividual(data.applicant_type) ? (
+          <Field label="Parents' / Spouse's Name" value={relativeWithRelation(data.applicant_father_or_spouse, data.applicant_relationship)} />
+        ) : (
+          <>
+            <Field label="Applicant type" value={data.applicant_type} />
+            <Field label="Represented by" value={representativeLine(data.applicant_representative_designation, data.applicant_representative)} />
+            <Field label="Nature of business" value={data.applicant_occupation} />
+          </>
+        )}
         <Field label="Mobile" value={data.applicant_mobile} />
         {data.applicant_email && <Field label="Email" value={data.applicant_email} />}
         {data.applicant_pan && <Field label="PAN" value={data.applicant_pan} />}

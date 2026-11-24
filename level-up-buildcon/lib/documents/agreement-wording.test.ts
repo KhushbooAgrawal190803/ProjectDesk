@@ -541,4 +541,23 @@ describe('agreement readiness', () => {
     expect(ready.issues.filter((issue) => /landowner/i.test(issue))).toEqual([])
     expect(ready.input?.unitNo).toBe('702')
   })
+
+  it('describes an HUF allottee by name, kind and the person who signs for it', async () => {
+    const docx = await buildAgreementDocx(sampleInput({
+      parties: [{
+        salutation: 'M/s',
+        name: 'Sharma Family HUF',
+        entity: { type: 'HUF', representative: 'Mr. Ramesh Sharma', designation: 'Karta' },
+        occupation: 'Trading',
+        aadhaar: '123412341234',
+        pan: 'AAAHS1234K',
+        mobile: '9999999999',
+        addressLines: ['14 Circular Road', 'Ranchi, Jharkhand-834001'],
+      }],
+    }))
+    const text = paragraphsOf(docx).join('\n')
+    expect(text).toContain('M/s Sharma Family HUF (UID Number  123412341234 PAN AAAHS1234K and Mobile Number 9999999999) a Hindu Undivided Family, acting through its Karta Mr. Ramesh Sharma , carrying on business of Trading , having its office at')
+    const allottee = paragraphsOf(docx).find((paragraph) => paragraph.includes('Sharma Family HUF (UID')) || ''
+    expect(allottee).not.toMatch(/X{2,}|wife of|presently residing|Housewife/)
+  })
 })

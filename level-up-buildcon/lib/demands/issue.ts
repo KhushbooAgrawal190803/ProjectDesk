@@ -6,6 +6,7 @@ import { hundredthsToString } from '@/lib/booking/money'
 import { formatPersonName } from '@/lib/booking/person'
 import { snapshotForStorage, type DemandSnapshot } from '@/lib/documents/demand-model'
 import { receivingAccountFor } from '@/lib/documents/receiving-accounts'
+import { careOfLine } from '@/lib/documents/letter-model'
 import {
   ACTIVE_BOOKING_STATUSES,
   DEFAULT_GST_PERCENT,
@@ -63,8 +64,8 @@ function applicantLines(booking: Row, people: Row[]): string[] {
     ...people.map((person) => formatPersonName(person.salutation as string, person.name as string)),
   ].filter(Boolean)
   const lines = [names.join(' & ')]
-  const careOf = String(booking.applicant_father_or_spouse || '').trim()
-  if (careOf) lines.push(`C/o ${careOf}`)
+  const careOf = careOfLine(booking as Parameters<typeof careOfLine>[0])
+  if (careOf) lines.push(careOf)
   String(booking.applicant_address || '')
     .split('\n')
     .map((line) => line.trim())

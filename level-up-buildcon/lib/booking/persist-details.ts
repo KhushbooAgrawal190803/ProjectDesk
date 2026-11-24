@@ -3,6 +3,7 @@ import { getUnitBoundaries } from '@/lib/data/flat-boundaries'
 import { getUndividedLandShare } from '@/lib/data/land-share'
 import { formatPostalAddress, type PostalAddressInput } from './address'
 import { normalizeAadhaar, normalizePan } from './identity'
+import { APPLICANT_TYPE_COLUMNS, defaultDesignation, isIndividual } from './applicant-type'
 import { flatBaseFromPricing } from './calculations'
 import { considerationOf } from './consideration'
 import {
@@ -48,6 +49,30 @@ export function withoutLedgerColumns<T extends Record<string, unknown>>(patch: T
   return copy
 }
 
+let applicantTypeSeen = false
+/** True once supabase/migrations/014_applicant_type.sql has been run. */
+async function applicantTypeColumnsReady(supabase: SupabaseClient): Promise<boolean> {
+  if (applicantTypeSeen) return true
+  const { error } = await supabase.from('bookings').select('applicant_type').limit(1)
+  if (!error) applicantTypeSeen = true
+  return !error
+}
+
+/**
+ * Before migration 014 the bookings table has no applicant-type columns. An
+ * individual's booking then saves exactly as before; an HUF or company is refused
+ * with a clear message instead of failing, or quietly losing who signs for it.
+ */
+export async function withApplicantTypeSupport<T extends Record<string, unknown>>(supabase: SupabaseClient, patch: T): Promise<T> {
+  if (await applicantTypeColumnsReady(supabase)) return patch
+  if (!isIndividual(patch.applicant_type as string | null)) {
+    throw new Error('Saving an HUF, company or other non-individual applicant needs a one-time database update. Run supabase/migrations/014_applicant_type.sql in the Supabase SQL editor, then save again.')
+  }
+  const copy = { ...patch }
+  for (const key of APPLICANT_TYPE_COLUMNS) delete copy[key]
+  return copy
+}
+
 export interface CoApplicantInput extends PostalAddressInput {
   id: string
   salutation?: string | null
@@ -78,6 +103,31 @@ function addressOf(input: Record<string, unknown>, prefix: string): PostalAddres
     state: key('state'),
     pin_code: key('pin_code'),
     country: key('country'),
+  }
+}
+
+/**
+ * An individual has a salutation and a parent or spouse; an HUF, company or other
+ * body is "M/s" and has a representative who signs for it instead.
+ */
+function applicantIdentity(input: Record<string, unknown>): Record<string, unknown> {
+  const type = text(input.applicant_type) || 'Individual'
+  if (isIndividual(type)) {
+    return {
+      applicant_type: 'Individual',
+      applicant_salutation: text(input.applicant_salutation),
+      applicant_relationship: text(input.applicant_relationship),
+      applicant_representative: null,
+      applicant_representative_designation: null,
+    }
+  }
+  return {
+    applicant_type: type,
+    applicant_salutation: 'M/s',
+    applicant_relationship: null,
+    applicant_father_or_spouse: null,
+    applicant_representative: text(input.applicant_representative),
+    applicant_representative_designation: text(input.applicant_representative_designation) || defaultDesignation(type),
   }
 }
 
@@ -155,8 +205,7 @@ export function buildBookingScalars(
     applicant_pin_code: text(applicantAddress.pin_code),
     applicant_country: text(applicantAddress.country) || 'India',
     applicant_address: formatted,
-    applicant_salutation: text(input.applicant_salutation),
-    applicant_relationship: text(input.applicant_relationship),
+    ...applicantIdentity(input),
     applicant_occupation: text(input.applicant_occupation),
     undivided_land_share: getUndividedLandShare(text(input.project_name) || 'Anandam', text(input.unit_no)),
     finance_scenario: text(input.finance_scenario) || 'purchaser',

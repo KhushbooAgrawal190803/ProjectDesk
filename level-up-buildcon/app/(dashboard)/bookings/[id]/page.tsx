@@ -25,6 +25,7 @@ import { formatInr, percentOfPaise, toHundredths } from '@/lib/booking/money'
 import { loadBookingExtras } from '@/lib/booking/persist-details'
 import { formatPersonName } from '@/lib/booking/person'
 import { relativeWithRelation } from '@/lib/booking/relationship'
+import { isIndividual, representativeLine } from '@/lib/booking/applicant-type'
 import { formatPaymentMode } from '@/lib/booking/payment-mode'
 import { getUndividedLandShare } from '@/lib/data/land-share'
 import { getOwnerTypeForFlat, OWNER_NAMES } from '@/lib/data/flat-ownership'
@@ -410,8 +411,18 @@ export default async function BookingDetailPage({
             <Panel title="Primary purchaser">
               <dl>
                 <Field label="Name" value={primaryName} />
-                <Field label="Parents' / Spouse's name" value={relativeWithRelation(booking.applicant_father_or_spouse, booking.applicant_relationship)} />
-                <Field label="Occupation" value={booking.applicant_occupation as string} />
+                {isIndividual(booking.applicant_type) ? (
+                  <>
+                    <Field label="Parents' / Spouse's name" value={relativeWithRelation(booking.applicant_father_or_spouse, booking.applicant_relationship)} />
+                    <Field label="Occupation" value={booking.applicant_occupation as string} />
+                  </>
+                ) : (
+                  <>
+                    <Field label="Applicant type" value={booking.applicant_type} />
+                    <Field label="Represented by" value={representativeLine(booking.applicant_representative_designation, booking.applicant_representative)} />
+                    <Field label="Nature of business" value={booking.applicant_occupation as string} />
+                  </>
+                )}
                 <Field label="Mobile" value={booking.applicant_mobile} />
                 <Field label="Email" value={booking.applicant_email} />
                 <Field label="PAN" value={booking.applicant_pan} />

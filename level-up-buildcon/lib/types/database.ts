@@ -55,6 +55,10 @@ export interface Booking {
   applicant_salutation?: string | null
   applicant_father_or_spouse: string
   applicant_relationship?: string | null
+  /** 'Individual', 'HUF', 'Company', 'Partnership Firm', 'Trust / Society', or a typed kind. Added by migration 014. */
+  applicant_type?: string | null
+  applicant_representative?: string | null
+  applicant_representative_designation?: string | null
   applicant_mobile: string
   applicant_email?: string
   applicant_pan?: string

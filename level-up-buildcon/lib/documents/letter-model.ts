@@ -1,3 +1,4 @@
+import { isIndividual, throughRepresentative } from '@/lib/booking/applicant-type'
 import { getOwnerTypeForFlat, type OwnerType } from '@/lib/data/flat-ownership'
 import { considerationOf } from '@/lib/booking/consideration'
 import { percentOfPaise, toHundredths } from '@/lib/booking/money'
@@ -21,6 +22,9 @@ export interface LetterSource {
   applicant_name?: string | null
   applicant_salutation?: string | null
   applicant_father_or_spouse?: string | null
+  applicant_type?: string | null
+  applicant_representative?: string | null
+  applicant_representative_designation?: string | null
   applicant_address?: string | null
   applicant_address_line1?: string | null
   applicant_address_line2?: string | null
@@ -170,9 +174,18 @@ function paidSentence(paid: bigint, collected: bigint): string {
   return `You have paid ${rsWithWords(paid)} as advance against the allotted flat.`
 }
 
-function addressLines(person: LetterPerson, parents?: string | null): string[] {
+/** "C/o Mr. Suresh Kapoor" for a person; "Through its Karta Mr. Ramesh Sharma" for an HUF, company or firm. */
+export function careOfLine(source: Pick<LetterSource, 'applicant_type' | 'applicant_father_or_spouse' | 'applicant_representative' | 'applicant_representative_designation'>): string {
+  if (!isIndividual(source.applicant_type)) {
+    const through = throughRepresentative(source.applicant_representative_designation, source.applicant_representative)
+    return through ? through[0].toUpperCase() + through.slice(1) : ''
+  }
+  return clean(source.applicant_father_or_spouse) ? `C/o ${clean(source.applicant_father_or_spouse)}` : ''
+}
+
+function addressLines(person: LetterPerson, careOf?: string | null): string[] {
   const lines: string[] = []
-  if (clean(parents)) lines.push(`C/o ${clean(parents)}`)
+  if (clean(careOf)) lines.push(clean(careOf))
   for (const line of clean(person.address).split('\n')) {
     if (line.trim()) lines.push(line.trim())
   }
@@ -242,8 +255,7 @@ export function buildLetter(source: LetterSource, kind: LetterKind): LetterDocum
     blocks.push({ kind: 'line', text: `Dated: ${allotmentDate}`, gapAfter: 16 })
     people.forEach((person, index) => {
       blocks.push({ kind: 'line', text: formatPersonName(person.salutation, person.name), bold: true, gapAfter: 2 })
-      const parents = index === 0 ? source.applicant_father_or_spouse : null
-      const lines = addressLines(person, parents)
+      const lines = addressLines(person, index === 0 ? careOfLine(source) : null)
       lines.forEach((line, lineIndex) => {
         blocks.push({ kind: 'line', text: line, gapAfter: lineIndex === lines.length - 1 ? 12 : 1 })
       })

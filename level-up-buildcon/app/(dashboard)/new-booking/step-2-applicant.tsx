@@ -16,7 +16,8 @@ import { AddressFields, AddressValue } from './address-fields'
 import { formatPostalAddress } from '@/lib/booking/address'
 import { normalizeAadhaar, normalizePan } from '@/lib/booking/identity'
 import type { CoApplicantInput } from '@/lib/booking/persist-details'
-import { RelationshipSelect } from '@/components/booking/relationship-select'
+import { ApplicantTypeSelect, RelationshipSelect } from '@/components/booking/relationship-select'
+import { defaultDesignation, entityNameLabel, isIndividual } from '@/lib/booking/applicant-type'
 
 const getErrorMessage = (error: any): string | null => {
   if (!error) return null
@@ -95,14 +96,17 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
     formState: { errors },
   } = useForm<Step2FormValues, unknown, Step2Data>({
     resolver: zodResolver(step2Schema),
-    defaultValues: { ...data, has_coapplicant: data.has_coapplicant || false },
+    defaultValues: { ...data, applicant_type: data.applicant_type || 'Individual', has_coapplicant: data.has_coapplicant || false },
   })
+  const applicantType = watch('applicant_type') || 'Individual'
+  const entity = !isIndividual(applicantType)
 
   const collect = (formData: Step2Data) => {
     const country = address.country || 'India'
     return {
       ...formData,
-      applicant_salutation: salutation,
+      applicant_type: entity ? applicantType : 'Individual',
+      applicant_salutation: entity ? 'M/s' : salutation,
       applicant_address_line1: address.address_line1 || '',
       applicant_address_line2: address.address_line2 || '',
       applicant_city: address.city || '',
@@ -130,55 +134,97 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
     })
   }
 
+  const changeApplicantType = (next: string) => {
+    const before = watch('applicant_type') || 'Individual'
+    setValue('applicant_type', next)
+    // Suggest the usual title of the signatory (Karta for an HUF, Partner for a firm…) unless one was typed.
+    const designation = (watch('applicant_representative_designation') || '').trim()
+    if (!isIndividual(next) && (!designation || designation === defaultDesignation(before))) {
+      setValue('applicant_representative_designation', defaultDesignation(next))
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit(onSubmit, handleError)} className="space-y-6">
       {/* Applicant Information */}
       <div>
         <h3 className="text-lg font-semibold mb-4">Primary Applicant</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="applicant_salutation">Salutation</Label>
-            <SalutationSelect id="applicant_salutation" value={salutation} onChange={setSalutation} />
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="applicant_type">Applicant type</Label>
+            <div className="md:max-w-sm">
+              <ApplicantTypeSelect id="applicant_type" value={applicantType} onChange={changeApplicantType} />
+            </div>
+            {entity && (
+              <p className="text-xs text-zinc-500">
+                Booked in the name of the {applicantType.trim() || 'entity'} (printed as M/s) and signed by its representative below. PAN is the {applicantType.trim() || 'entity'}&apos;s; Aadhaar and mobile are the representative&apos;s.
+              </p>
+            )}
           </div>
+          {!entity && (
+            <div className="space-y-2">
+              <Label htmlFor="applicant_salutation">Salutation</Label>
+              <SalutationSelect id="applicant_salutation" value={salutation} onChange={setSalutation} />
+            </div>
+          )}
           <div className="space-y-2">
-            <Label htmlFor="applicant_name">Full Name</Label>
+            <Label htmlFor="applicant_name">{entity ? entityNameLabel(applicantType) : 'Full Name'}</Label>
             <Input
               id="applicant_name"
               {...register('applicant_name')}
-              placeholder="Enter full name"
+              placeholder={entity ? 'e.g. Sharma Family HUF' : 'Enter full name'}
             />
             {errors.applicant_name && (
               <p className="text-sm text-red-600">{getErrorMessage(errors.applicant_name)}</p>
             )}
           </div>
 
+          {entity ? (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="applicant_representative">Represented by</Label>
+                <Input id="applicant_representative" {...register('applicant_representative')} placeholder="e.g. Mr. Ramesh Sharma" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="applicant_representative_designation">Representative&apos;s designation</Label>
+                <Input
+                  id="applicant_representative_designation"
+                  {...register('applicant_representative_designation')}
+                  placeholder={defaultDesignation(applicantType)}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="applicant_father_or_spouse">{PARENTS_LABEL}</Label>
+                <Input
+                  id="applicant_father_or_spouse"
+                  {...register('applicant_father_or_spouse')}
+                  placeholder="Enter name"
+                />
+                {errors.applicant_father_or_spouse && (
+                  <p className="text-sm text-red-600">{getErrorMessage(errors.applicant_father_or_spouse)}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="applicant_relationship">Relationship of the person named above</Label>
+                <RelationshipSelect
+                  id="applicant_relationship"
+                  value={watch('applicant_relationship')}
+                  onChange={(value) => setValue('applicant_relationship', value)}
+                />
+              </div>
+            </>
+          )}
           <div className="space-y-2">
-            <Label htmlFor="applicant_father_or_spouse">{PARENTS_LABEL}</Label>
-            <Input
-              id="applicant_father_or_spouse"
-              {...register('applicant_father_or_spouse')}
-              placeholder="Enter name"
-            />
-            {errors.applicant_father_or_spouse && (
-              <p className="text-sm text-red-600">{getErrorMessage(errors.applicant_father_or_spouse)}</p>
-            )}
+            <Label htmlFor="applicant_occupation">{entity ? 'Nature of business' : 'Occupation'}</Label>
+            <Input id="applicant_occupation" {...register('applicant_occupation')} placeholder={entity ? 'e.g. Trading, Investment' : 'Occupation'} />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="applicant_relationship">Relationship of the person named above</Label>
-            <RelationshipSelect
-              id="applicant_relationship"
-              value={watch('applicant_relationship')}
-              onChange={(value) => setValue('applicant_relationship', value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="applicant_occupation">Occupation</Label>
-            <Input id="applicant_occupation" {...register('applicant_occupation')} placeholder="Occupation" />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="applicant_mobile">Mobile Number</Label>
+            <Label htmlFor="applicant_mobile">{entity ? "Representative's Mobile Number" : 'Mobile Number'}</Label>
             <Input
               id="applicant_mobile"
               {...register('applicant_mobile')}
@@ -204,7 +250,7 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="applicant_pan">PAN Number</Label>
+            <Label htmlFor="applicant_pan">{entity ? `PAN of the ${applicantType.trim() || 'entity'}` : 'PAN Number'}</Label>
             <Input
               id="applicant_pan"
               value={watch('applicant_pan') || ''}
@@ -219,7 +265,7 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="applicant_aadhaar">Aadhaar Number</Label>
+            <Label htmlFor="applicant_aadhaar">{entity ? "Representative's Aadhaar Number" : 'Aadhaar Number'}</Label>
             <Input
               id="applicant_aadhaar"
               value={watch('applicant_aadhaar') || ''}

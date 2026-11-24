@@ -1,6 +1,7 @@
 import { readFile } from 'fs/promises'
 import path from 'path'
 import { formatAmountFigures, formatLetterDate } from '@/lib/documents/inr-words'
+import { entityDescription } from '@/lib/booking/applicant-type'
 import {
   BLANK,
   MASTER_SCHEDULE_CODES,
@@ -40,6 +41,8 @@ import {
 export interface AgreementParty {
   salutation?: string | null
   name: string
+  /** Set when the allottee is an HUF, company, firm or other body rather than a person. */
+  entity?: { type: string; representative: string | null; designation: string | null } | null
   relationship?: string | null
   relativeName?: string | null
   occupation?: string | null
@@ -99,9 +102,19 @@ function allotteeParagraph(paragraph: string, parties: AgreementParty[]): string
     block = replaceText(block, /(?<=UID Number\s+)X+/, filled(party.aadhaar), { what: 'UID number' })
     block = replaceText(block, /(?<=PAN )X+/, filled(party.pan), { what: 'PAN' })
     block = replaceText(block, /(?<=Mobile Number )X+/, filled(party.mobile), { what: 'mobile number' })
-    block = replaceText(block, /wife of Mr\. X+/, relationPhrase(party.salutation, party.relationship, party.relativeName), { what: 'relationship' })
-    block = replaceText(block, /(?<=by occupation )Housewife/, filled(party.occupation), { what: 'occupation' })
-    block = replaceText(block, /(?<=presently residing at\s+)X+ , X+ ,Main Road, Ranchi ,Jharkhand-834001/, party.addressLines.join(', ') || BLANK, { what: 'address' })
+    if (party.entity) {
+      // "M/s Sharma Family HUF (…) a Hindu Undivided Family, acting through its Karta Mr. Ramesh Sharma ,
+      //  carrying on business of Trading , having its office at …"
+      const { type, representative, designation } = party.entity
+      const through = `${entityDescription(type)}, acting through its ${designation?.trim() || 'Authorised Signatory'} ${representative?.trim() || BLANK}`
+      block = replaceText(block, /wife of Mr\. X+/, through, { what: 'relationship' })
+      block = replaceText(block, /by occupation Housewife/, `carrying on business of ${filled(party.occupation)}`, { what: 'occupation' })
+      block = replaceText(block, /presently residing at\s+X+ , X+ ,Main Road, Ranchi ,Jharkhand-834001/, `having its office at ${party.addressLines.join(', ') || BLANK}`, { what: 'address' })
+    } else {
+      block = replaceText(block, /wife of Mr\. X+/, relationPhrase(party.salutation, party.relationship, party.relativeName), { what: 'relationship' })
+      block = replaceText(block, /(?<=by occupation )Housewife/, filled(party.occupation), { what: 'occupation' })
+      block = replaceText(block, /(?<=presently residing at\s+)X+ , X+ ,Main Road, Ranchi ,Jharkhand-834001/, party.addressLines.join(', ') || BLANK, { what: 'address' })
+    }
     return block
   })
   const joined = blocks.join(runLike(plainBold, 'and '))

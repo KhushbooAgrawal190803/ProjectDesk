@@ -3,6 +3,7 @@ import { jsPDF } from 'jspdf'
 import { formatPersonName } from '@/lib/booking/person'
 import { formatPaymentMode } from '@/lib/booking/payment-mode'
 import { relativeWithRelation } from '@/lib/booking/relationship'
+import { isIndividual, representativeLine } from '@/lib/booking/applicant-type'
 
 const formatCurrency = (amount: number | string | null | undefined) => {
   const n = Number(amount ?? 0)
@@ -141,7 +142,12 @@ export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Pr
       // APPLICANT INFORMATION
       addSection('APPLICANT INFORMATION')
       addRow('Name', formatPersonName(booking.applicant_salutation, booking.applicant_name) || 'N/A')
-      addRow('Parents/Spouse', relativeWithRelation(booking.applicant_father_or_spouse, booking.applicant_relationship) || 'N/A')
+      if (isIndividual(booking.applicant_type)) {
+        addRow('Parents/Spouse', relativeWithRelation(booking.applicant_father_or_spouse, booking.applicant_relationship) || 'N/A')
+      } else {
+        addRow('Applicant Type', booking.applicant_type || 'N/A')
+        addRow('Represented By', representativeLine(booking.applicant_representative_designation, booking.applicant_representative) || 'N/A')
+      }
       addRow('Mobile', booking.applicant_mobile || 'N/A')
       addRow('Email', booking.applicant_email || 'N/A')
       addRow('PAN', booking.applicant_pan || 'N/A')
@@ -419,6 +425,9 @@ export function generateCustomerPDF(booking: Booking & { creator?: Profile }): P
       // CONTACT INFORMATION
       addSection('APPLICANT INFORMATION')
       addRow('Name', formatPersonName(booking.applicant_salutation, booking.applicant_name) || 'N/A')
+      if (!isIndividual(booking.applicant_type)) {
+        addRow('Represented By', representativeLine(booking.applicant_representative_designation, booking.applicant_representative) || 'N/A')
+      }
       addRow('Mobile', booking.applicant_mobile || 'N/A')
       addRow('Email', booking.applicant_email || 'N/A')
       if (booking.applicant_pan) addRow('PAN', booking.applicant_pan)

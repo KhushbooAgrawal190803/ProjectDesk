@@ -10,7 +10,7 @@ import {
   UNIT_CONFLICT_MESSAGE,
 } from '@/lib/booking/availability'
 import { derivePricingFields, toNum } from '@/lib/booking/calculations'
-import { buildBookingScalars, loadBookingExtras, replaceBookingChildren, withoutLedgerColumns } from '@/lib/booking/persist-details'
+import { buildBookingScalars, loadBookingExtras, replaceBookingChildren, withApplicantTypeSupport, withoutLedgerColumns } from '@/lib/booking/persist-details'
 import { ledgerMigrationApplied } from '@/lib/ledger/load'
 import { assertCanEditBooking, submitStatusForRole } from '@/lib/auth/permissions'
 import { normalizeAadhaar, normalizePan } from '@/lib/booking/identity'
@@ -76,6 +76,7 @@ export async function saveDraft(data: Partial<BookingFormData>, draftId?: string
     ...buildBookingScalars(raw, 'draft'),
   }
   if (!(await ledgerMigrationApplied(supabase))) bookingData = withoutLedgerColumns(bookingData)
+  bookingData = await withApplicantTypeSupport(supabase, bookingData)
 
   if (draftId) {
     const { data: existing } = await supabase
@@ -224,6 +225,7 @@ export async function submitBooking(data: BookingFormData, draftId?: string) {
   const raw = asRaw(data)
   let scalars = buildBookingScalars(raw, 'submit')
   if (!(await ledgerMigrationApplied(supabase))) scalars = withoutLedgerColumns(scalars)
+  scalars = await withApplicantTypeSupport(supabase, scalars)
 
   if (baseData.project_name && baseData.unit_no) {
     const unitCheck = await checkUnitAvailability(

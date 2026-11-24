@@ -1,3 +1,4 @@
+import { isIndividual } from '@/lib/booking/applicant-type'
 import { considerationOf, financeSplitFrom } from '@/lib/booking/consideration'
 import { normalizeAadhaar, normalizePan } from '@/lib/booking/identity'
 import { percentOfPaise, toHundredths } from '@/lib/booking/money'
@@ -90,8 +91,15 @@ export function agreementReadiness(booking: Row, extras: {
 
   const parties: AgreementParty[] = [
     {
-      salutation: text(booking.applicant_salutation),
+      salutation: isIndividual(text(booking.applicant_type)) ? text(booking.applicant_salutation) : 'M/s',
       name: applicant,
+      entity: isIndividual(text(booking.applicant_type))
+        ? null
+        : {
+            type: text(booking.applicant_type),
+            representative: text(booking.applicant_representative) || null,
+            designation: text(booking.applicant_representative_designation) || null,
+          },
       relationship: text(booking.applicant_relationship),
       relativeName: text(booking.applicant_father_or_spouse),
       occupation: text(booking.applicant_occupation),
@@ -114,9 +122,13 @@ export function agreementReadiness(booking: Row, extras: {
   ]
   for (const party of parties) {
     const missing = [
-      party.relationship ? '' : 'relationship',
-      party.relativeName ? '' : "parent's or spouse's name",
-      party.occupation ? '' : 'occupation',
+      ...(party.entity
+        ? [party.entity.representative ? '' : 'representative', party.occupation ? '' : 'nature of business']
+        : [
+            party.relationship ? '' : 'relationship',
+            party.relativeName ? '' : "parent's or spouse's name",
+            party.occupation ? '' : 'occupation',
+          ]),
       party.aadhaar ? '' : 'UID number',
       party.pan ? '' : 'PAN',
       party.mobile ? '' : 'mobile number',
