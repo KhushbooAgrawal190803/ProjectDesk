@@ -82,7 +82,8 @@ export function canEditBooking(profile: Pick<Profile, 'role' | 'id'>, booking: B
   if (isAdmin(profile)) return true
   if (!isExecutive(profile)) return false
 
-  if (booking.status === 'PENDING' && booking.created_by !== profile.id) {
+  // A draft is private to whoever started it; a pending booking awaits admin approval.
+  if ((booking.status === 'DRAFT' || booking.status === 'PENDING') && booking.created_by !== profile.id) {
     return false
   }
 

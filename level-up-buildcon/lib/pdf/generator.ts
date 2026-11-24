@@ -2,6 +2,7 @@ import { Booking, Profile } from '@/lib/types/database'
 import { jsPDF } from 'jspdf'
 import { formatPersonName } from '@/lib/booking/person'
 import { formatPaymentMode } from '@/lib/booking/payment-mode'
+import { relativeWithRelation } from '@/lib/booking/relationship'
 
 const formatCurrency = (amount: number | string | null | undefined) => {
   const n = Number(amount ?? 0)
@@ -140,7 +141,7 @@ export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Pr
       // APPLICANT INFORMATION
       addSection('APPLICANT INFORMATION')
       addRow('Name', formatPersonName(booking.applicant_salutation, booking.applicant_name) || 'N/A')
-      addRow('Parents/Spouse', booking.applicant_father_or_spouse || 'N/A')
+      addRow('Parents/Spouse', relativeWithRelation(booking.applicant_father_or_spouse, booking.applicant_relationship) || 'N/A')
       addRow('Mobile', booking.applicant_mobile || 'N/A')
       addRow('Email', booking.applicant_email || 'N/A')
       addRow('PAN', booking.applicant_pan || 'N/A')
@@ -164,7 +165,7 @@ export function generateCompanyPDF(booking: Booking & { creator?: Profile }): Pr
       coapplicants.forEach((person, index) => {
         addSection(coapplicants.length > 1 ? `CO-APPLICANT ${index + 1}` : 'CO-APPLICANT INFORMATION')
         addRow('Name', formatPersonName(person.salutation, person.name) || 'N/A')
-        addRow("Parents/Spouse", person.father_or_spouse || 'N/A')
+        addRow('Parents/Spouse', relativeWithRelation(person.father_or_spouse, 'relationship' in person ? person.relationship : null) || 'N/A')
         addRow('Mobile', person.mobile || 'N/A')
         if (person.email) addRow('Email', person.email)
         addRow('PAN', person.pan || 'N/A')
@@ -433,7 +434,7 @@ export function generateCustomerPDF(booking: Booking & { creator?: Profile }): P
       customerCoapplicants.forEach((person, index) => {
         addSection(customerCoapplicants.length > 1 ? `CO-APPLICANT ${index + 1}` : 'CO-APPLICANT INFORMATION')
         addRow('Name', formatPersonName(person.salutation, person.name) || 'N/A')
-        if (person.father_or_spouse) addRow('Parents/Spouse', person.father_or_spouse)
+        if (person.father_or_spouse) addRow('Parents/Spouse', relativeWithRelation(person.father_or_spouse, 'relationship' in person ? person.relationship : null))
         if (person.mobile) addRow('Mobile', person.mobile)
         if (person.address) addRow('Address', person.address)
         yPos += 4

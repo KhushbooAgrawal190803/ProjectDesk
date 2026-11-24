@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useDraftSnapshot, type SnapshotRegistrar } from './draft-snapshot'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DateField } from '@/components/ui/date-field'
@@ -24,6 +25,7 @@ interface StepPaymentScheduleProps {
   onUpdate: (data: { schedule_mode: 'standard' | 'custom'; schedule_rows: ScheduleRowInput[]; payment_plan_type: 'ConstructionLinked' | 'Custom' }) => void
   onNext: () => void
   onBack: () => void
+  onSnapshot?: SnapshotRegistrar
 }
 
 function emptyRow(): ScheduleRowInput {
@@ -37,7 +39,7 @@ function emptyRow(): ScheduleRowInput {
   }
 }
 
-export function StepPaymentSchedule({ data, onUpdate, onNext, onBack }: StepPaymentScheduleProps) {
+export function StepPaymentSchedule({ data, onUpdate, onNext, onBack, onSnapshot }: StepPaymentScheduleProps) {
   const priced = considerationOf(data)
   const [mode, setMode] = useState<'standard' | 'custom'>(data.schedule_mode === 'custom' ? 'custom' : 'standard')
   const [rows, setRows] = useState<ScheduleRowInput[]>(data.schedule_mode === 'custom' ? (data.schedule_rows || []) : [])
@@ -56,12 +58,16 @@ export function StepPaymentSchedule({ data, onUpdate, onNext, onBack }: StepPaym
     setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
+  const collect = () => ({
+    schedule_mode: mode,
+    schedule_rows: activeRows,
+    payment_plan_type: mode === 'custom' ? ('Custom' as const) : ('ConstructionLinked' as const),
+  })
+
+  useDraftSnapshot(onSnapshot, collect)
+
   const continueNext = () => {
-    onUpdate({
-      schedule_mode: mode,
-      schedule_rows: activeRows,
-      payment_plan_type: mode === 'custom' ? 'Custom' : 'ConstructionLinked',
-    })
+    onUpdate(collect())
     onNext()
   }
 

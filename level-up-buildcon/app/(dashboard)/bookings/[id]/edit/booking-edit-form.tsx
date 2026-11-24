@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import { Booking } from '@/lib/types/database'
 import { updateBooking } from './actions'
+import { RelationshipSelect } from '@/components/booking/relationship-select'
 
 interface BookingEditFormProps {
   booking: Booking
@@ -356,13 +357,13 @@ export function BookingEditForm({ booking }: BookingEditFormProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <Label>Parent or spouse named above is the applicant&apos;s</Label>
-            <select name="applicant_relationship" value={formData.applicant_relationship} onChange={handleInputChange} className="mt-1 w-full px-3 py-2 border border-zinc-300 rounded-md">
-              <option value="">Select</option>
-              <option value="Father">Father</option>
-              <option value="Mother">Mother</option>
-              <option value="Husband">Husband</option>
-              <option value="Wife">Wife</option>
-            </select>
+            <div className="mt-1">
+              <RelationshipSelect
+                id="applicant_relationship"
+                value={formData.applicant_relationship}
+                onChange={(value) => setFormData((prev) => ({ ...prev, applicant_relationship: value }))}
+              />
+            </div>
           </div>
           <div>
             <Label>Applicant occupation</Label>

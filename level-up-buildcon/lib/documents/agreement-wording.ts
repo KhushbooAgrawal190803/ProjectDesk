@@ -135,6 +135,8 @@ export function relationPhrase(
   if (rel === 'Wife') return `husband of ${who ? withTitle(who, 'Mrs.') : BLANK}`
   if (rel === 'Father') return `${child} of ${who ? withTitle(who, 'Mr.') : BLANK}`
   if (rel === 'Mother') return `${child} of ${who ? withTitle(who, 'Mrs.') : BLANK}`
+  // Any other relation names the relative's role, e.g. "Guardian": "whose guardian is Mr. Rakesh Jha".
+  if (rel) return `whose ${rel.replace(/\s+/g, ' ').toLowerCase()} is ${who || BLANK}`
   return `${BLANK} of ${who || BLANK}`
 }
 

@@ -42,7 +42,6 @@ const STANDARD: ScheduleSource[] = [
 
 function sampleInput(overrides: Partial<AgreementDocumentInput> = {}): AgreementDocumentInput {
   return {
-    executionDate: '2026-11-11',
     unitNo: '506',
     floorNo: '5',
     builtUp: '1175.7',
@@ -95,6 +94,8 @@ describe('agreement wording', () => {
   it('names the relationship from the salutation and leaves a blank when it is unknown', () => {
     expect(relationPhrase('Mrs.', 'Husband', 'Arjun Mishra')).toBe('wife of Mr. Arjun Mishra')
     expect(relationPhrase('Mr.', 'Father', 'Sri Suresh Kapoor')).toBe('son of Sri Suresh Kapoor')
+    expect(relationPhrase('Mr.', 'Guardian', 'Mr. Rakesh Jha')).toBe('whose guardian is Mr. Rakesh Jha')
+    expect(relationPhrase('Ms.', 'Elder  Brother', '')).toBe('whose elder brother is ____________')
     expect(relationPhrase('Miss', 'Mother', 'Usha Mishra')).toBe('daughter of Mrs. Usha Mishra')
     expect(relationPhrase('Mrs.', '', 'Rajesh Kapoor')).toBe(`${BLANK} of Rajesh Kapoor`)
   })
@@ -262,7 +263,7 @@ describe('agreement document', () => {
     expect(xml.match(/<w:tbl>/g)).toHaveLength(3)
     expect(docx.subarray(0, 2).toString()).toBe('PK')
 
-    expect(text).toContain('executed on this 11th day of November, 2026, at Ranchi.')
+    expect(text).toContain('executed on this ________ day of ________________, 20____, at Ranchi.')
     expect(text).toContain('Mrs. Meera Kapoor (UID Number  123412341234 PAN ABCDE1234F and Mobile Number 9999999999) wife of Mr. Arjun Kapoor , by occupation Doctor , presently residing at  14 Circular Road, Hindpiri, Ranchi, Jharkhand-834001 are  Indian Citizen')
     expect(text).toContain('allotment of Flat No.506 on the 5th Floor having an area 1175.7 Square Feet of Built-Up Area, corresponding to Super built up Area 1528 Square Feet, in the Project.')
     expect(text).toContain('Allotment Letter dated  06.11.2026 ,')

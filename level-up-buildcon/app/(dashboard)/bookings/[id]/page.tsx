@@ -24,6 +24,7 @@ import { considerationOf, financeContributions, financeSplitFrom, type FinanceSc
 import { formatInr, percentOfPaise, toHundredths } from '@/lib/booking/money'
 import { loadBookingExtras } from '@/lib/booking/persist-details'
 import { formatPersonName } from '@/lib/booking/person'
+import { relativeWithRelation } from '@/lib/booking/relationship'
 import { formatPaymentMode } from '@/lib/booking/payment-mode'
 import { getUndividedLandShare } from '@/lib/data/land-share'
 import { getOwnerTypeForFlat, OWNER_NAMES } from '@/lib/data/flat-ownership'
@@ -106,15 +107,24 @@ function Panel({ title, children, action }: { title: string; children: React.Rea
   )
 }
 
-function SummaryCard({ label, value, hint, tone }: { label: string; value: string; hint?: React.ReactNode; tone?: 'warn' }) {
-  return (
-    <div className={`rounded-xl border bg-white px-4 py-3 shadow-sm ${tone === 'warn' ? 'border-red-200' : 'border-zinc-200'}`}>
+function SummaryCard({ label, value, hint, tone, href }: { label: string; value: string; hint?: React.ReactNode; tone?: 'warn'; href?: string }) {
+  const body = (
+    <>
       <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
       <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900">{value}</p>
       {hint && <div className="mt-0.5 text-xs text-zinc-500">{hint}</div>}
-    </div>
+    </>
+  )
+  const frame = `block rounded-xl border bg-white px-4 py-3 shadow-sm ${tone === 'warn' ? 'border-red-200' : 'border-zinc-200'}`
+  if (!href) return <div className={frame}>{body}</div>
+  return (
+    <Link href={href} scroll={false} className={`${frame} transition-colors hover:border-zinc-400 hover:bg-zinc-50`}>
+      {body}
+    </Link>
   )
 }
+
+const TAB_NAMES = ['overview', 'financials', 'installments', 'documents', 'history'] as const
 
 function DocumentRow({ title, status, tone, detail, children }: { title: string; status: string; tone: 'ok' | 'warn' | 'muted' | 'final'; detail?: string; children?: React.ReactNode }) {
   const tones = {
@@ -137,12 +147,22 @@ function DocumentRow({ title, status, tone, detail, children }: { title: string;
   )
 }
 
-export default async function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function BookingDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ tab?: string }>
+}) {
   const { id } = await params
+  const { tab } = await searchParams
+  const openTab = (TAB_NAMES as readonly string[]).includes(tab || '') ? (tab as string) : 'overview'
   const profile = await requireStaffPage()
   const supabase = await createClient()
 
-  const [booking, auditResult, documentResult, agreementResult, demandResult] = await Promise.all([
+  // The ledger is loaded alongside the other queries rather than after them: each
+  // database round trip is a visible wait, so nothing here should queue behind another.
+  const [booking, auditResult, documentResult, agreementResult, demandResult, ledgerResult] = await Promise.all([
     getBooking(id),
     supabase.from('booking_audit_log').select('*, user:profiles!changed_by(*)').eq('booking_id', id).order('changed_at', { ascending: false }),
     supabase.from('booking_documents').select('*').eq('booking_id', id).order('created_at'),
@@ -156,6 +176,10 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       .limit(1)
       .maybeSingle(),
     supabase.from('demand_notes').select('id, reference_number, issue_date, payment_deadline, trigger_label, schedule_row_id, created_at').eq('booking_id', id).order('issue_date'),
+    loadBookingLedger(supabase, id).then(
+      (value) => ({ ledger: value as BookingLedger, error: null }),
+      (error: unknown) => ({ ledger: null, error: error instanceof Error ? error.message : 'Payment records are not available.' })
+    ),
   ])
   if (!booking) redirect('/bookings')
 
@@ -164,13 +188,8 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const agreementFile = agreementResult.data
   const demandNotes = demandResult.error ? [] : demandResult.data || []
 
-  let ledger: BookingLedger | null = null
-  let ledgerError: string | null = null
-  try {
-    ledger = await loadBookingLedger(supabase, id)
-  } catch (error) {
-    ledgerError = error instanceof Error ? error.message : 'Payment records are not available.'
-  }
+  const ledger: BookingLedger | null = ledgerResult.ledger
+  const ledgerError: string | null = ledgerResult.error
 
   const canEdit = canEditBooking(profile, booking)
   const canEditViaWizard = canEditOwnDraft(profile, booking)
@@ -191,6 +210,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
 
   const summary = ledger?.summary
   const standing = summary ? paymentStanding(summary) : null
+  const principalProgress = summary && summary.considerationPaise > 0n
+    ? Math.min(100, Number((summary.receivedPrincipalPaise * 10000n) / summary.considerationPaise) / 100)
+    : 0
   const installments = ledger?.state.installments || []
 
   const ledgerReady = Boolean(ledger?.migrationApplied)
@@ -269,33 +291,47 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
         {/* Financial summary */}
         {summary && (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-            <SummaryCard label="Total Consideration" value={formatInr(summary.considerationPaise)} hint={`+ GST ${formatInr(summary.gstPayablePaise)} · excl. GST`} />
-            <SummaryCard
-              label="Total Received"
-              value={formatInr(summary.receivedTotalPaise)}
-              hint={`${formatInr(summary.receivedPrincipalPaise)} + GST ${formatInr(summary.receivedGstPaise)}`}
-            />
+            <SummaryCard label="Total Consideration" value={formatInr(summary.considerationPaise)} hint={`+ GST ${formatInr(summary.gstPayablePaise)}`} />
+            <SummaryCard label="Total Received" value={formatInr(summary.receivedPrincipalPaise)} hint={`+ GST ${formatInr(summary.receivedGstPaise)}`} />
             <SummaryCard
               label="Total Outstanding"
-              value={formatInr(summary.outstandingPaise)}
-              hint={summary.overduePaise > 0n ? <span className="text-red-600">{formatInr(summary.overduePaise)} overdue</span> : 'incl. GST'}
+              value={formatInr(summary.outstandingPrincipalPaise)}
+              hint={
+                <>
+                  <div>+ GST {formatInr(summary.outstandingGstPaise)}</div>
+                  {summary.overduePaise > 0n && <div className="text-red-600">{formatInr(summary.overduePaise)} overdue (incl. GST)</div>}
+                </>
+              }
               tone={summary.overduePaise > 0n ? 'warn' : undefined}
             />
             <SummaryCard
-              label="Next Payment Due"
-              value={summary.nextDue ? formatInr(summary.nextDue.outstandingPaise) : 'Nothing due'}
-              hint={summary.nextDue ? `${summary.nextDue.label}${summary.nextDue.due ? ' · due now' : ' · not due yet'}${summary.nextDue.deadline ? ` · pay by ${formatLetterDate(summary.nextDue.deadline)}` : ''}` : undefined}
+              label="Total Payment Due"
+              href={`/bookings/${id}?tab=installments`}
+              value={summary.dueNowPaise > 0n ? formatInr(summary.dueNowPrincipalPaise) : 'Nothing due'}
+              hint={
+                summary.dueNowPaise > 0n ? (
+                  <>
+                    <div>+ GST {formatInr(summary.dueNowGstPaise)}</div>
+                    <div>
+                      {summary.dueNowCount} installment{summary.dueNowCount === 1 ? '' : 's'} due till today
+                      {summary.dueNowDeadline ? ` · pay by ${formatLetterDate(summary.dueNowDeadline)}` : ''}
+                    </div>
+                  </>
+                ) : summary.nextDue ? (
+                  `Next: ${summary.nextDue.label}`
+                ) : undefined
+              }
             />
             <div className="col-span-2 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm lg:col-span-1">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Payment Progress</p>
                 {standing && <PaymentStandingBadge standing={standing} />}
               </div>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900">{summary.progressPercent.toFixed(1)}%</p>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-100" role="progressbar" aria-valuenow={summary.progressPercent} aria-valuemin={0} aria-valuemax={100}>
-                <div className="h-full rounded-full bg-zinc-900" style={{ width: `${summary.progressPercent}%` }} />
+              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900">{principalProgress.toFixed(1)}%</p>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-100" role="progressbar" aria-valuenow={principalProgress} aria-valuemin={0} aria-valuemax={100}>
+                <div className="h-full rounded-full bg-zinc-900" style={{ width: `${principalProgress}%` }} />
               </div>
-              <p className="mt-1 text-xs text-zinc-500">of {formatInr(summary.payablePaise)} incl. GST</p>
+              <p className="mt-1 text-xs text-zinc-500">of {formatInr(summary.considerationPaise)} received</p>
             </div>
           </div>
         )}
@@ -308,7 +344,8 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           </p>
         )}
 
-        <Tabs defaultValue="overview" className="gap-4">
+        {/* Keyed by the tab in the URL so a link such as the Total Payment Due card switches tabs. */}
+        <Tabs key={openTab} defaultValue={openTab} className="gap-4">
           <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b border-zinc-200 pb-1">
             <TabsTrigger value="overview" className="flex-none px-3">Overview</TabsTrigger>
             <TabsTrigger value="financials" className="flex-none px-3">Financials</TabsTrigger>
@@ -373,7 +410,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             <Panel title="Primary purchaser">
               <dl>
                 <Field label="Name" value={primaryName} />
-                <Field label="Parents' / Spouse's name" value={booking.applicant_father_or_spouse} />
+                <Field label="Parents' / Spouse's name" value={relativeWithRelation(booking.applicant_father_or_spouse, booking.applicant_relationship)} />
                 <Field label="Occupation" value={booking.applicant_occupation as string} />
                 <Field label="Mobile" value={booking.applicant_mobile} />
                 <Field label="Email" value={booking.applicant_email} />
@@ -398,7 +435,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
                   {coapplicants.map((person) => (
                     <dl key={person.id} className="py-2 first:pt-0 last:pb-0">
                       <Field label="Name" value={formatPersonName(person.salutation, person.name)} />
-                      <Field label="Parents' / Spouse's name" value={person.father_or_spouse} />
+                      <Field label="Parents' / Spouse's name" value={relativeWithRelation(person.father_or_spouse, person.relationship)} />
                       <Field label="Mobile" value={person.mobile} />
                       <Field label="PAN" value={person.pan} />
                       <Field label="Aadhaar" value={person.aadhaar} />

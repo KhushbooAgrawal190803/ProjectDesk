@@ -106,7 +106,6 @@ export function agreementSamples(): AgreementSample[] {
       id: 'single-cheque',
       description: 'Single purchaser, standard schedule, cheque booking payment, one parking space',
       input: {
-        executionDate: '2026-11-11',
         unitNo: '506',
         floorNo: '5',
         builtUp: '1175.7',
@@ -128,7 +127,6 @@ export function agreementSamples(): AgreementSample[] {
       id: 'joint-bank-50-50',
       description: 'Two purchasers, 50:50 bank funding, NEFT payment, short custom schedule, two parking spaces',
       input: {
-        executionDate: '2026-12-02',
         unitNo: '401',
         floorNo: '4',
         builtUp: '1387.1',
@@ -154,7 +152,6 @@ export function agreementSamples(): AgreementSample[] {
       id: 'three-long-custom',
       description: 'Three purchasers with long names and addresses, 10:90 loan not yet sanctioned, two payments, 24-row schedule',
       input: {
-        executionDate: '2027-01-23',
         unitNo: '1002',
         floorNo: '10',
         builtUp: '1387.1',
@@ -179,7 +176,6 @@ export function agreementSamples(): AgreementSample[] {
       id: 'unpaid-minimal',
       description: 'Single purchaser with details missing, nothing received yet, no parking recorded, two-line schedule',
       input: {
-        executionDate: '2027-03-01',
         unitNo: '208',
         floorNo: '2',
         builtUp: '1175.7',

@@ -102,9 +102,19 @@ export interface LedgerSummary {
   unallocatedPrincipalPaise: bigint
   unallocatedGstPaise: bigint
   outstandingPaise: bigint
+  /** Outstanding split into principal and GST, so pages can show principal with GST beneath. */
+  outstandingPrincipalPaise: bigint
+  outstandingGstPaise: bigint
   overpaymentPaise: bigint
   overduePaise: bigint
+  /** Everything due up to today (all installments whose trigger has passed), not just the next one. */
   dueNowPaise: bigint
+  dueNowPrincipalPaise: bigint
+  dueNowGstPaise: bigint
+  /** Number of installments with an unpaid balance that are due now. */
+  dueNowCount: number
+  /** Earliest payment deadline among the installments due now. */
+  dueNowDeadline: string | null
   progressPercent: number
   nextDue: { id: string; label: string; outstandingPaise: bigint; deadline: string | null; due: boolean } | null
   warnings: string[]
@@ -151,14 +161,26 @@ export function summarizeLedger(input: {
 
   let overdue = zero
   let dueNow = zero
+  let dueNowPrincipal = zero
+  let dueNowGst = zero
+  let dueNowCount = 0
+  let dueNowDeadline: string | null = null
   let firstDue: LedgerSummary['nextDue'] = null
   let firstUpcoming: LedgerSummary['nextDue'] = null
   const ordered = [...input.installments].sort((a, b) => a.sort - b.sort)
   for (const row of ordered) {
-    const outstanding = positive(row.principalPaise - row.receivedPaise) + positive(row.gstPaise - row.gstReceivedPaise)
+    const principalLeft = positive(row.principalPaise - row.receivedPaise)
+    const gstLeft = positive(row.gstPaise - row.gstReceivedPaise)
+    const outstanding = principalLeft + gstLeft
     if (outstanding <= zero) continue
     if (row.overdue) overdue += outstanding
-    if (row.due) dueNow += outstanding
+    if (row.due) {
+      dueNow += outstanding
+      dueNowPrincipal += principalLeft
+      dueNowGst += gstLeft
+      dueNowCount += 1
+      if (row.deadline && (!dueNowDeadline || row.deadline < dueNowDeadline)) dueNowDeadline = row.deadline
+    }
     const item = { id: row.id, label: row.label, outstandingPaise: outstanding, deadline: row.deadline, due: row.due }
     if (row.due && !firstDue) firstDue = item
     if (!row.due && !firstUpcoming) firstUpcoming = item
@@ -196,9 +218,15 @@ export function summarizeLedger(input: {
     unallocatedPrincipalPaise: unallocatedPrincipal,
     unallocatedGstPaise: unallocatedGst,
     outstandingPaise: positive(payable - receivedTotal),
+    outstandingPrincipalPaise: positive(input.considerationPaise - receivedPrincipal),
+    outstandingGstPaise: positive(gstPayable - receivedGst),
     overpaymentPaise: positive(receivedTotal - payable),
     overduePaise: overdue,
     dueNowPaise: dueNow,
+    dueNowPrincipalPaise: dueNowPrincipal,
+    dueNowGstPaise: dueNowGst,
+    dueNowCount,
+    dueNowDeadline,
     progressPercent: Math.min(100, progress),
     nextDue,
     warnings,

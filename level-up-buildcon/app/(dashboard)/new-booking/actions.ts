@@ -368,5 +368,6 @@ export async function deleteDraft(draftId: string) {
   if (error) throw new Error('Failed to delete draft')
 
   revalidatePath('/new-booking')
+  revalidatePath('/drafts')
   return { success: true }
 }

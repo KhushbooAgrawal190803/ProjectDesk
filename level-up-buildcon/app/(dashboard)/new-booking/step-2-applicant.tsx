@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { useDraftSnapshot, type SnapshotRegistrar } from './draft-snapshot'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { step2Schema, Step2Data, Step2FormValues } from '@/lib/validations/booking'
 import { Button } from '@/components/ui/button'
@@ -15,6 +16,7 @@ import { AddressFields, AddressValue } from './address-fields'
 import { formatPostalAddress } from '@/lib/booking/address'
 import { normalizeAadhaar, normalizePan } from '@/lib/booking/identity'
 import type { CoApplicantInput } from '@/lib/booking/persist-details'
+import { RelationshipSelect } from '@/components/booking/relationship-select'
 
 const getErrorMessage = (error: any): string | null => {
   if (!error) return null
@@ -22,7 +24,6 @@ const getErrorMessage = (error: any): string | null => {
 }
 
 const SALUTATIONS = ['Mr.', 'Mrs.', 'Ms.', 'Miss', 'Dr.']
-const RELATIONSHIPS = ['Father', 'Mother', 'Husband', 'Wife']
 const PARENTS_LABEL = "Parents' / Spouse's Name"
 
 function SalutationSelect({ id, value, onChange }: { id: string; value: string; onChange: (value: string) => void }) {
@@ -70,9 +71,10 @@ interface Step2ApplicantProps {
   draftId?: string
   documents: Record<string, UploadedDoc>
   onDocumentsChange: (docs: Record<string, UploadedDoc>) => void
+  onSnapshot?: SnapshotRegistrar
 }
 
-export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, documents, onDocumentsChange }: Step2ApplicantProps) {
+export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, documents, onDocumentsChange, onSnapshot }: Step2ApplicantProps) {
   const [salutation, setSalutation] = useState(data.applicant_salutation || '')
   const [address, setAddress] = useState<AddressValue>({
     address_line1: data.applicant_address_line1 || '',
@@ -89,15 +91,16 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
     handleSubmit,
     setValue,
     watch,
+    getValues,
     formState: { errors },
   } = useForm<Step2FormValues, unknown, Step2Data>({
     resolver: zodResolver(step2Schema),
     defaultValues: { ...data, has_coapplicant: data.has_coapplicant || false },
   })
 
-  const onSubmit = (formData: Step2Data) => {
+  const collect = (formData: Step2Data) => {
     const country = address.country || 'India'
-    onUpdate({
+    return {
       ...formData,
       applicant_salutation: salutation,
       applicant_address_line1: address.address_line1 || '',
@@ -109,7 +112,13 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
       applicant_address: formatPostalAddress({ ...address, country }),
       has_coapplicant: coapplicants.length > 0,
       coapplicants,
-    })
+    }
+  }
+
+  useDraftSnapshot(onSnapshot, () => collect(getValues() as Step2Data))
+
+  const onSubmit = (formData: Step2Data) => {
+    onUpdate(collect(formData))
     onNext()
   }
 
@@ -156,15 +165,12 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="applicant_relationship">Relationship</Label>
-            <select
+            <Label htmlFor="applicant_relationship">Relationship of the person named above</Label>
+            <RelationshipSelect
               id="applicant_relationship"
-              {...register('applicant_relationship')}
-              className="flex h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
-            >
-              <option value="">Select</option>
-              {RELATIONSHIPS.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+              value={watch('applicant_relationship')}
+              onChange={(value) => setValue('applicant_relationship', value)}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="applicant_occupation">Occupation</Label>
@@ -273,14 +279,11 @@ export function Step2Applicant({ data, onUpdate, onNext, onBack, draftId, docume
               </div>
               <div className="space-y-2">
                 <Label>Relationship</Label>
-                <select
-                  value={person.relationship || ''}
-                  onChange={(e) => setCoapplicants((current) => current.map((item) => item.id === person.id ? { ...item, relationship: e.target.value } : item))}
-                  className="flex h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                >
-                  <option value="">Select</option>
-                  {RELATIONSHIPS.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
+                <RelationshipSelect
+                  id={`${person.id}-relationship`}
+                  value={person.relationship}
+                  onChange={(value) => setCoapplicants((current) => current.map((item) => item.id === person.id ? { ...item, relationship: value } : item))}
+                />
               </div>
               {([
                 ['name', 'Full Name'],

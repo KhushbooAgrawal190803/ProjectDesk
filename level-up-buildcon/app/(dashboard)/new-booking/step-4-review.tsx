@@ -13,6 +13,7 @@ import { formatPostalAddress } from '@/lib/booking/address'
 import { formatPersonName } from '@/lib/booking/person'
 import { getUndividedLandShare } from '@/lib/data/land-share'
 import { resolveSchedule, standardScheduleRows } from '@/lib/booking/schedule'
+import { relativeWithRelation } from '@/lib/booking/relationship'
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   applicant_pan: 'Applicant PAN',
@@ -106,7 +107,7 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting, submi
 
       <Section title="Applicant Information">
         <Field label="Name" value={formatPersonName(data.applicant_salutation, data.applicant_name)} />
-        <Field label="Parents' / Spouse's Name" value={data.applicant_father_or_spouse} />
+        <Field label="Parents' / Spouse's Name" value={relativeWithRelation(data.applicant_father_or_spouse, data.applicant_relationship)} />
         <Field label="Mobile" value={data.applicant_mobile} />
         {data.applicant_email && <Field label="Email" value={data.applicant_email} />}
         {data.applicant_pan && <Field label="PAN" value={data.applicant_pan} />}
@@ -129,7 +130,7 @@ export function Step4Review({ data: rawData, onBack, onSubmit, submitting, submi
               <Badge variant="secondary" className="mb-2">Co-Applicant {index + 1}</Badge>
             </div>
             <Field label="Name" value={formatPersonName(person.salutation, person.name)} />
-            <Field label="Parents' / Spouse's Name" value={person.father_or_spouse} />
+            <Field label="Parents' / Spouse's Name" value={relativeWithRelation(person.father_or_spouse, person.relationship)} />
             <Field label="Mobile" value={person.mobile} />
             <Field label="Email" value={person.email} />
             <Field label="PAN" value={person.pan} />

@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,10 @@ import { Step3PricingPayment } from './step-3-pricing-payment'
 import { Step4Review } from './step-4-review'
 import { StepNoc } from './step-noc'
 import { StepPaymentSchedule } from './step-payment-schedule'
+import type { DraftSnapshot } from './draft-snapshot'
+
+/** How often an open draft is saved to the database while it is being filled in. */
+const AUTOSAVE_INTERVAL_MS = 30_000
 
 type WizardForm = Partial<BookingFormData> & {
   schedule_mode?: 'standard' | 'custom'
@@ -90,6 +95,20 @@ export function BookingWizard({
   const [formKey, setFormKey] = useState(0)
   const [draftLoaded, setDraftLoaded] = useState(false)
   const [editingSubmitted, setEditingSubmitted] = useState(false)
+  const [loadedStatus, setLoadedStatus] = useState<string | null>(null)
+  const [autosave, setAutosave] = useState<{ state: 'idle' | 'saving' | 'saved' | 'failed'; at?: Date }>({ state: 'idle' })
+
+  // Autosave bookkeeping. Refs, so the timer always sees the latest values.
+  const snapshotRef = useRef<(() => DraftSnapshot) | null>(null)
+  const draftIdRef = useRef<string | undefined>(undefined)
+  const lastSavedRef = useRef<string | null>(null)
+  const inFlightRef = useRef<Promise<unknown> | null>(null)
+  const registerSnapshot = useCallback((collect: (() => DraftSnapshot) | null) => {
+    snapshotRef.current = collect
+  }, [])
+  useEffect(() => {
+    draftIdRef.current = draftId
+  }, [draftId])
 
   // Auto-load a pending/draft booking when navigated via /new-booking?draftId=...
   // (Used for Accounts editing their own PENDING bookings)
@@ -116,21 +135,87 @@ export function BookingWizard({
     await linkDocumentsToBooking(docIds, bookingId, coapplicantByDocument)
   }
 
+  /** The saved form plus whatever is typed on the current step but not yet confirmed with Next. */
+  const currentValues = (): WizardForm => ({ ...formData, ...(snapshotRef.current?.() as WizardForm | undefined) })
+
+  /** Saves to the database, one save at a time, so a new booking never becomes two drafts. */
+  const persist = async (values: WizardForm) => {
+    while (inFlightRef.current) await inFlightRef.current.catch(() => undefined)
+    const signature = JSON.stringify(values)
+    const run = (async () => {
+      const result = await saveDraft(values, draftIdRef.current)
+      draftIdRef.current = result.draftId
+      setDraftId(result.draftId)
+      await linkUploadedDocuments(result.draftId)
+      lastSavedRef.current = signature
+      setAutosave({ state: 'saved', at: new Date() })
+      return result
+    })()
+    inFlightRef.current = run
+    try {
+      return await run
+    } finally {
+      inFlightRef.current = null
+    }
+  }
+
   const handleSaveDraft = async () => {
     setSaving(true)
     try {
-      const result = await saveDraft(formData, draftId)
-      setDraftId(result.draftId)
-      await linkUploadedDocuments(result.draftId)
+      await persist(currentValues())
       toast.success(editingSubmitted ? 'Changes saved' : 'Draft saved', {
         description: editingSubmitted ? 'The booking has been updated.' : 'Your progress has been saved.',
       })
     } catch (error) {
-      toast.error('Failed to save draft')
+      toast.error('Failed to save draft', { description: error instanceof Error ? error.message : undefined })
     } finally {
       setSaving(false)
     }
   }
+
+  // Autosave applies to new bookings and drafts only. A booking already submitted
+  // (or awaiting approval) is changed only when someone presses Save, never in the background.
+  const autosaveEnabled = !editingSubmitted && loadedStatus !== 'PENDING' && !showSuccess && !submitting
+  const autosaveTick = useRef<() => void>(() => undefined)
+  useEffect(() => {
+    autosaveTick.current = () => {
+      if (!autosaveEnabled || inFlightRef.current) return
+      const values = currentValues()
+      // Nothing worth keeping yet: do not create empty drafts.
+      if (!values.unit_no && !values.applicant_name && !values.applicant_mobile) return
+      if (JSON.stringify(values) === lastSavedRef.current) return
+      setAutosave((current) => ({ ...current, state: 'saving' }))
+      persist(values).catch(() => setAutosave((current) => ({ ...current, state: 'failed' })))
+    }
+  })
+  useEffect(() => {
+    const timer = window.setInterval(() => autosaveTick.current(), AUTOSAVE_INTERVAL_MS)
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') autosaveTick.current()
+    }
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onHide)
+    }
+  }, [])
+  // Moving to another step is a natural point to save.
+  useEffect(() => {
+    if (currentStep > 1) autosaveTick.current()
+  }, [currentStep])
+  // Warn before closing the tab with changes that have not reached the database.
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!autosaveEnabled && !editingSubmitted) return
+      const values = currentValues()
+      if (!values.unit_no && !values.applicant_name && !values.applicant_mobile) return
+      if (JSON.stringify(values) === lastSavedRef.current) return
+      autosaveTick.current()
+      event.preventDefault()
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  })
 
   const handleLoadDraft = async (id: string) => {
     try {
@@ -194,9 +279,13 @@ export function BookingWizard({
       const status = String((draft as { status?: string }).status || '')
       const alreadySubmitted = status === 'SUBMITTED' || status === 'EDITED'
       setEditingSubmitted(alreadySubmitted)
+      setLoadedStatus(status)
+      lastSavedRef.current = null
+      setAutosave({ state: 'idle' })
       setFormData(sanitized)
       setDocuments(restoredDocs)
       setDraftId(id)
+      draftIdRef.current = id
       setDraftsDialogOpen(false)
       setCurrentStep(1)
       setFormKey((k) => k + 1)
@@ -220,7 +309,9 @@ export function BookingWizard({
   const handleSubmit = async () => {
     setSubmitting(true)
     try {
-      const result = await submitBooking(formData as BookingFormData, draftId)
+      // Let a background save finish first, so it cannot create a second copy of this booking.
+      while (inFlightRef.current) await inFlightRef.current.catch(() => undefined)
+      const result = await submitBooking(formData as BookingFormData, draftIdRef.current)
       await linkUploadedDocuments(result.bookingId)
       
       setSubmittedBookingId(result.bookingId)
@@ -253,14 +344,17 @@ export function BookingWizard({
                     You have {drafts.length} saved draft{drafts.length > 1 ? 's' : ''}
                   </p>
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => setDraftsDialogOpen(true)}
-                  className="border-blue-300 text-blue-700 hover:bg-blue-100"
-                >
-                  Load Draft
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Link href="/drafts" className="text-sm font-medium text-blue-700 hover:underline">See all drafts</Link>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDraftsDialogOpen(true)}
+                    className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                  >
+                    Load Draft
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -330,6 +424,7 @@ export function BookingWizard({
                 onUpdate={updateFormData}
                 onNext={() => goToStep(2)}
                 draftId={draftId}
+                onSnapshot={registerSnapshot}
               />
             )}
             {currentStep === 2 && (
@@ -342,6 +437,7 @@ export function BookingWizard({
                 draftId={draftId}
                 documents={documents}
                 onDocumentsChange={setDocuments}
+                onSnapshot={registerSnapshot}
               />
             )}
             {currentStep === 3 && (
@@ -354,6 +450,7 @@ export function BookingWizard({
                 availableParking={availableParking}
                 availablePremiumParking={availablePremiumParking}
                 ledgerReady={ledgerReady}
+                onSnapshot={registerSnapshot}
               />
             )}
             {currentStep === 4 && (
@@ -363,6 +460,7 @@ export function BookingWizard({
                 onUpdate={updateFormData}
                 onNext={() => goToStep(5)}
                 onBack={() => goToStep(3)}
+                onSnapshot={registerSnapshot}
               />
             )}
             {currentStep === 5 && (
@@ -372,6 +470,7 @@ export function BookingWizard({
                 onUpdate={updateFormData}
                 onNext={() => goToStep(6)}
                 onBack={() => goToStep(4)}
+                onSnapshot={registerSnapshot}
               />
             )}
             {currentStep === 6 && (
@@ -397,6 +496,14 @@ export function BookingWizard({
                   <Save className="w-4 h-4" />
                   {saving ? 'Saving...' : editingSubmitted ? 'Save changes' : 'Save Draft'}
                 </Button>
+                {autosaveEnabled && (
+                  <p className={`text-xs ${autosave.state === 'failed' ? 'text-red-600' : 'text-zinc-500'}`} aria-live="polite">
+                    {autosave.state === 'saving' && 'Saving…'}
+                    {autosave.state === 'saved' && autosave.at && `Saved automatically at ${autosave.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
+                    {autosave.state === 'failed' && 'Autosave failed. Press Save Draft to try again.'}
+                    {autosave.state === 'idle' && 'Your draft is saved automatically every 30 seconds.'}
+                  </p>
+                )}
               </div>
             )}
           </CardContent>

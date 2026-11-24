@@ -15,7 +15,7 @@ export function proxy(request: NextRequest) {
     !!request.cookies.get(`sb-${projectRef}-auth-token.0`) ||
     !!request.cookies.get('sb-access-token')
 
-  const protectedPaths = ['/dashboard', '/bookings', '/admin', '/new-booking', '/accounts', '/lookup']
+  const protectedPaths = ['/dashboard', '/bookings', '/admin', '/new-booking', '/accounts', '/lookup', '/drafts']
   const isProtected = protectedPaths.some(p => pathname.startsWith(p))
 
   if (isProtected && !hasSession) {

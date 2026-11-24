@@ -92,9 +92,14 @@ async function getBookings(searchParams: {
 }
 
 export interface BookingMoney {
+  /** Total Consideration, excluding GST, with the GST on it alongside. */
   consideration: string
+  considerationGst: string
   payable: string
+  /** Received money split the same way, so both columns compare like with like. */
   received: string
+  receivedPrincipal: string
+  receivedGst: string
   coapplicants: number
   standing: PaymentStanding
 }
@@ -139,8 +144,11 @@ async function getMoneyByBooking(bookings: BookingWithCreator[]): Promise<Record
     const received = money ? money.receivedPrincipalPaise + money.receivedGstPaise : 0n
     result[booking.id] = {
       consideration: hundredthsToString(consideration),
+      considerationGst: hundredthsToString(payable - consideration),
       payable: hundredthsToString(payable),
       received: hundredthsToString(received),
+      receivedPrincipal: hundredthsToString(money?.receivedPrincipalPaise ?? 0n),
+      receivedGst: hundredthsToString(money?.receivedGstPaise ?? 0n),
       coapplicants: (people.data || []).filter((row) => row.booking_id === booking.id).length,
       standing: paymentStanding({ outstandingPaise: payable > received ? payable - received : 0n, overduePaise: overdue, dueNowPaise: dueNow, receivedTotalPaise: received }),
     }

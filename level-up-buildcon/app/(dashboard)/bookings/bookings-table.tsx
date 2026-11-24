@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Booking, Profile, UserRole } from '@/lib/types/database'
-import { formatInr, toHundredths } from '@/lib/booking/money'
+import { formatInr } from '@/lib/booking/money'
 import { formatPersonName } from '@/lib/booking/person'
 import {
   Table,
@@ -183,9 +183,6 @@ export function BookingsTable({ bookings, filterOptions, money }: BookingsTableP
               <TableBody>
                 {bookings.map((booking) => {
                   const row = money[booking.id]
-                  const payable = toHundredths(row?.payable) ?? 0n
-                  const received = toHundredths(row?.received) ?? 0n
-                  const percent = payable > 0n ? Number((received * 1000n) / payable) / 10 : 0
                   return (
                     <TableRow key={booking.id} className="cursor-pointer hover:bg-zinc-50" onClick={() => router.push(`/bookings/${booking.id}`)}>
                       <TableCell>
@@ -204,10 +201,13 @@ export function BookingsTable({ bookings, filterOptions, money }: BookingsTableP
                         {booking.unit_no}
                         <div className="text-xs text-zinc-500">{booking.project_name}</div>
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{row ? formatInr(row.consideration) : '—'}</TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {row ? formatInr(row.received) : '—'}
-                        {row && <div className="text-xs text-zinc-500">{percent.toFixed(1)}% of payable</div>}
+                        {row ? formatInr(row.consideration) : '—'}
+                        {row && <div className="text-xs text-zinc-500">+ GST {formatInr(row.considerationGst)}</div>}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {row ? formatInr(row.receivedPrincipal) : '—'}
+                        {row && <div className="text-xs text-zinc-500">+ GST {formatInr(row.receivedGst)}</div>}
                       </TableCell>
                       <TableCell>{row && <PaymentStandingBadge standing={row.standing} />}</TableCell>
                       <TableCell><BookingStatusBadge status={booking.status} /></TableCell>

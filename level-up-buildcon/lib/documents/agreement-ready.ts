@@ -68,8 +68,6 @@ export function agreementReadiness(booking: Row, extras: {
   if (!owner) {
     issues.push('The flat number is not a known Anandam unit.')
   }
-  const executionDate = text(booking.agreement_for_sale_date).slice(0, 10)
-  if (!executionDate) issues.push('Agreement for Sale date is not entered.')
   const applicant = text(booking.applicant_name)
   if (!applicant) issues.push('Applicant name is not entered.')
   const boundaries = boundaryMatch(unit)
@@ -225,7 +223,6 @@ export function agreementReadiness(booking: Row, extras: {
 
   const floor = text(booking.floor_no) || (unit.length >= 3 ? unit.slice(0, -2) : '')
   const input: AgreementDocumentInput = {
-    executionDate,
     unitNo: unit,
     floorNo: floor,
     builtUp,

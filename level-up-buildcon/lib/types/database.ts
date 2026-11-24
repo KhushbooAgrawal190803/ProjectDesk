@@ -54,6 +54,7 @@ export interface Booking {
   applicant_name: string
   applicant_salutation?: string | null
   applicant_father_or_spouse: string
+  applicant_relationship?: string | null
   applicant_mobile: string
   applicant_email?: string
   applicant_pan?: string
@@ -118,6 +119,7 @@ export interface Booking {
     name?: string | null
     salutation?: string | null
     father_or_spouse?: string | null
+    relationship?: string | null
     mobile?: string | null
     email?: string | null
     pan?: string | null

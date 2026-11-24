@@ -4,7 +4,6 @@ import { formatAmountFigures, formatLetterDate } from '@/lib/documents/inr-words
 import {
   BLANK,
   MASTER_SCHEDULE_CODES,
-  agreementDateParts,
   amountWords,
   boundaryLabel,
   countWithWord,
@@ -52,8 +51,6 @@ export interface AgreementParty {
 }
 
 export interface AgreementDocumentInput {
-  /** ISO date the agreement is executed. */
-  executionDate: string
   unitNo: string
   floorNo: string
   builtUp: string
@@ -199,8 +196,6 @@ export async function buildAgreementDocx(input: AgreementDocumentInput): Promise
   } catch {
     throw new Error('The developer agreement template is missing.')
   }
-  const dated = agreementDateParts(input.executionDate)
-  if (!dated) throw new Error('Agreement for Sale date is not a valid date.')
   if (!input.parties.length) throw new Error('The agreement needs at least one allottee.')
 
   const { zip, xml: original } = readDocumentXml(template)
@@ -230,11 +225,11 @@ export async function buildAgreementDocx(input: AgreementDocumentInput): Promise
   const primary = input.parties[0]
 
   // Opening line: "executed on this XXth day of XXXXXXX, 20XX, at Ranchi."
+  // The execution date is always left blank: it is written in by hand when the printed agreement is signed.
   const dateIndex = find('This Agreement for Sale', 'execution date')
-  edit(dateIndex, /XXth(?= day of)/, `${dated.day}${dated.suffix}`, 'day of execution')
-  edit(dateIndex, /(?<=day of\s+)X+/, dated.month, 'month of execution')
-  if (dated.year.startsWith('20')) edit(dateIndex, /(?<=, 20)XX/, dated.year.slice(2), 'year of execution')
-  else edit(dateIndex, /20XX/, dated.year, 'year of execution')
+  edit(dateIndex, /XXth(?= day of)/, '________', 'day of execution')
+  edit(dateIndex, /(?<=day of\s+)X+/, '________________', 'month of execution')
+  edit(dateIndex, /(?<=, 20)XX/, '____', 'year of execution')
 
   // The allottee, repeated for joint allottees.
   const partyIndex = find('UID Number', 'allottee description')

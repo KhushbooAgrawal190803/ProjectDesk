@@ -52,6 +52,7 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
   const allNavItems = [
     { href: '/dashboard', label: 'Dashboard', roles: ['EXECUTIVE', 'ADMIN'] },
     { href: '/new-booking', label: 'New Booking', roles: ['EXECUTIVE', 'ADMIN'] },
+    { href: '/drafts', label: 'Drafts', roles: ['EXECUTIVE', 'ADMIN'] },
     { href: '/bookings', label: 'All Bookings', roles: ['EXECUTIVE', 'ADMIN'] },
     { href: '/lookup', label: 'Tower', roles: ['EXECUTIVE', 'ADMIN'] },
     { href: '/accounts', label: 'Payments', roles: ['EXECUTIVE', 'ADMIN'] },

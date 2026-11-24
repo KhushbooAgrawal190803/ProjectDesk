@@ -1,6 +1,7 @@
 'use client'
 
 import { useForm } from 'react-hook-form'
+import { useDraftSnapshot, type SnapshotRegistrar } from './draft-snapshot'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { step3Schema, Step3Data, Step3FormValues } from '@/lib/validations/booking'
 import { Button } from '@/components/ui/button'
@@ -107,7 +108,8 @@ export function Step3PricingPayment({
   availableParking = 79,
   availablePremiumParking = 27,
   ledgerReady = false,
-}: Step3PricingPaymentProps) {
+  onSnapshot,
+}: Step3PricingPaymentProps & { onSnapshot?: SnapshotRegistrar }) {
   const superBuiltupArea = data.super_builtup_area
   const saved = summarizeParking(data.parking_spaces || [])
   const [mainCount, setMainCount] = useState(saved.main.count)
@@ -131,6 +133,7 @@ export function Step3PricingPayment({
     handleSubmit,
     watch,
     setValue,
+    getValues,
     formState: { errors },
   } = useForm<Step3FormValues, unknown, Step3Data>({
     resolver: zodResolver(step3Schema),
@@ -268,6 +271,12 @@ export function Step3PricingPayment({
         return
       }
     }
+    onUpdate(collect(formData))
+    onNext()
+  }
+
+  /** Everything this step saves, built from the given values without the checks above. */
+  function collect(formData: Step3Data) {
     const spaces = parkingSelection(main, mainPrice, secondary, secondaryPrice)
     const chosenBase = pricingMode === 'lump_sum'
       ? flatBaseFromPricing({ pricing_mode: 'lump_sum', total_cost: formData.total_cost })
@@ -285,7 +294,7 @@ export function Step3PricingPayment({
         }]
       : []
     const first = payments.find((entry) => entryCountsAsReceived(entry.status)) || payments[0]
-    onUpdate({
+    return {
       ...formData,
       finance_scenario: scenarioToSave,
       finance_purchaser_percent: scenarioToSave === 'split' ? Number(purchaserPercent) : undefined,
@@ -314,9 +323,10 @@ export function Step3PricingPayment({
       txn_date: first?.payment_date || '',
       total_parking_charges: Number(hundredthsToString(parkingTotal)),
       total_property_value: chosenBase == null ? undefined : Number(hundredthsToString(chosenBase + parkingTotal)),
-    } as Step3Data & { parking_spaces: ParkingSpaceInput[]; payment_entries: PaymentEntryInput[]; pricing_mode: 'rate' | 'lump_sum' })
-    onNext()
+    } as Step3Data & { parking_spaces: ParkingSpaceInput[]; payment_entries: PaymentEntryInput[]; pricing_mode: 'rate' | 'lump_sum' }
   }
+
+  useDraftSnapshot(onSnapshot, () => collect(getValues() as Step3Data))
 
   const handleError = (formErrors: any) => {
     const messages = Object.values(formErrors).map((e: any) => e?.message).filter(Boolean)

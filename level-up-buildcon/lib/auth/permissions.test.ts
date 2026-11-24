@@ -69,6 +69,10 @@ describe('canEditBooking', () => {
       canEditBooking(executive(), { status: 'PENDING', created_by: 'other', deleted_at: null })
     ).toBe(false)
   })
+  it('executive cannot open another users draft', () => {
+    expect(canEditBooking(executive(), { status: 'DRAFT', created_by: 'other', deleted_at: null })).toBe(false)
+    expect(canEditBooking(executive(), { status: 'DRAFT', created_by: 'e1', deleted_at: null })).toBe(true)
+  })
   it('admin can edit submitted', () => {
     expect(
       canEditBooking(admin(), { status: 'SUBMITTED', created_by: 'e1', deleted_at: null })

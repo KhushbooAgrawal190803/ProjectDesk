@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
+import { useDraftSnapshot, type SnapshotRegistrar } from './draft-snapshot'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { step1Schema, Step1Data, Step1FormValues } from '@/lib/validations/booking'
 import { getFlatAreas, isFlatAreaLookupProject, isCommercialFlat, isAmenityFlat, COMMERCIAL_FLAT_AREA } from '@/lib/data/flat-areas'
@@ -26,9 +27,10 @@ interface Step1ProjectUnitProps {
   onUpdate: (data: Partial<Step1Data>) => void
   onNext: () => void
   draftId?: string
+  onSnapshot?: SnapshotRegistrar
 }
 
-export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1ProjectUnitProps) {
+export function Step1ProjectUnit({ data, onUpdate, onNext, draftId, onSnapshot }: Step1ProjectUnitProps) {
   const [unitWarning, setUnitWarning] = useState<string | null>(null)
   const [flatError, setFlatError] = useState<string | null>(null)
   const [unitSizeLabel, setUnitSizeLabel] = useState<string | null>(null)
@@ -39,6 +41,7 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
     handleSubmit,
     watch,
     setValue,
+    getValues,
     formState: { errors },
   } = useForm<Step1FormValues, unknown, Step1Data>({
     resolver: zodResolver(step1Schema),
@@ -144,6 +147,8 @@ export function Step1ProjectUnit({ data, onUpdate, onNext, draftId }: Step1Proje
       setCheckingUnit(false)
     }
   }, [projectName, unitNo, draftId])
+
+  useDraftSnapshot(onSnapshot, () => getValues())
 
   const onSubmit = (formData: Step1Data) => {
     if (flatError) {

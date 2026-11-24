@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useDraftSnapshot, type SnapshotRegistrar } from './draft-snapshot'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DateField } from '@/components/ui/date-field'
@@ -26,9 +27,10 @@ interface StepNocProps {
   onUpdate: (data: StepNocProps['data']) => void
   onNext: () => void
   onBack: () => void
+  onSnapshot?: SnapshotRegistrar
 }
 
-export function StepNoc({ data, onUpdate, onNext, onBack }: StepNocProps) {
+export function StepNoc({ data, onUpdate, onNext, onBack, onSnapshot }: StepNocProps) {
   const [required, setRequired] = useState(Boolean(data.noc_required))
   const [bankName, setBankName] = useState(data.noc_bank_name || '')
   const [addressee, setAddressee] = useState(data.noc_addressee || '')
@@ -42,9 +44,9 @@ export function StepNoc({ data, onUpdate, onNext, onBack }: StepNocProps) {
     country: data.noc_bank_country || 'India',
   })
 
-  const continueNext = () => {
+  const collect = () => {
     const country = address.country || 'India'
-    onUpdate({
+    return {
       agreement_for_sale_date: agreementDate,
       noc_required: required,
       noc_bank_name: required ? bankName.trim() : '',
@@ -56,7 +58,13 @@ export function StepNoc({ data, onUpdate, onNext, onBack }: StepNocProps) {
       noc_bank_pin_code: required ? address.pin_code || '' : '',
       noc_bank_country: required ? country : '',
       noc_bank_address: required ? formatPostalAddress({ ...address, country }) : '',
-    })
+    }
+  }
+
+  useDraftSnapshot(onSnapshot, collect)
+
+  const continueNext = () => {
+    onUpdate(collect())
     onNext()
   }
 

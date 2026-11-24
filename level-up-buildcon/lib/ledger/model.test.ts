@@ -186,3 +186,27 @@ describe('allocating received money', () => {
     expect(result.leftover).toEqual({ principal: L(200), gst: 0n })
   })
 })
+
+describe('principal and GST split', () => {
+  it('adds up every installment due so far, not just the next one, with principal and GST apart', () => {
+    const summary = summarizeLedger({
+      considerationPaise: L(1000000),
+      gstPercent: 5,
+      installments: [
+        installment('booking', 1, 100000, 100000, 5000),
+        installment('plinth', 2, 200000, 50000, 0, { due: true, deadline: '2026-11-30' }),
+        installment('slab', 3, 300000, 0, 0, { due: true, deadline: '2026-11-20' }),
+        installment('roof', 4, 400000),
+      ],
+      receipts: [receipt('r1', 150000, 5000)],
+      expected: [],
+    })
+    expect(summary.dueNowPrincipalPaise).toBe(L(450000))
+    expect(summary.dueNowGstPaise).toBe(L(25000))
+    expect(summary.dueNowPaise).toBe(L(475000))
+    expect(summary.dueNowCount).toBe(2)
+    expect(summary.dueNowDeadline).toBe('2026-11-20')
+    expect(summary.outstandingPrincipalPaise).toBe(L(850000))
+    expect(summary.outstandingGstPaise).toBe(L(45000))
+  })
+})
