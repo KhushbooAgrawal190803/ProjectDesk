@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useDraftSnapshot, type SnapshotRegistrar } from './draft-snapshot'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AmountInput } from '@/components/ui/amount-input'
 import { DateField } from '@/components/ui/date-field'
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { considerationOf } from '@/lib/booking/consideration'
@@ -159,14 +160,16 @@ export function StepPaymentSchedule({ data, onUpdate, onNext, onBack, onSnapshot
                     )}
                   </td>
                   <td className="py-2 pr-3">
-                    {mode === 'custom' ? (
+                    {mode === 'custom' && row.calc_type !== 'percentage' ? (
+                      <AmountInput value={row.value as string | number | undefined} onValueChange={(value) => updateRow(index, { value })} placeholder="₹" />
+                    ) : mode === 'custom' ? (
                       <Input
                         type="number"
                         step="0.01"
                         min="0"
                         value={row.value ?? ''}
                         onChange={(e) => updateRow(index, { value: e.target.value })}
-                        placeholder={row.calc_type === 'percentage' ? '%' : '₹'}
+                        placeholder="%"
                       />
                     ) : (
                       <span>{row.value}%</span>

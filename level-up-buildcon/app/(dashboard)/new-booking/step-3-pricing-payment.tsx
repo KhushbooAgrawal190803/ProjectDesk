@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { step3Schema, Step3Data, Step3FormValues } from '@/lib/validations/booking'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AmountInput } from '@/components/ui/amount-input'
 import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react'
@@ -359,18 +360,16 @@ export function Step3PricingPayment({
               {pricingMode === 'rate' && (
                 <div className="space-y-2">
                   <Label htmlFor="rate_per_sqft">Rate per sq.ft. (₹)</Label>
-                  <Input id="rate_per_sqft" type="number" step="any" inputMode="decimal" {...register('rate_per_sqft')} placeholder="e.g., 5000" />
+                  <AmountInput id="rate_per_sqft" value={watch('rate_per_sqft') as string | number | undefined} onValueChange={(value) => setValue('rate_per_sqft', value, { shouldDirty: true })} placeholder="e.g., 5,000" />
                   {errors.rate_per_sqft && <p className="text-sm text-red-600">{getErrorMessage(errors.rate_per_sqft)}</p>}
                 </div>
               )}
               <div className="space-y-2">
                 <Label htmlFor="total_cost">{pricingMode === 'lump_sum' ? 'Lump-sum flat price (₹)' : 'Flat base price (₹)'}</Label>
-                <Input
+                <AmountInput
                   id="total_cost"
-                  type="number"
-                  step="0.01"
-                  inputMode="decimal"
-                  {...register('total_cost')}
+                  value={watch('total_cost') as string | number | undefined}
+                  onValueChange={(value) => setValue('total_cost', value, { shouldDirty: true })}
                   placeholder="0.00"
                   readOnly={pricingMode === 'rate' && rateBase != null}
                   className={pricingMode === 'rate' && rateBase != null ? 'bg-zinc-50' : ''}
@@ -401,7 +400,7 @@ export function Step3PricingPayment({
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="main_parking_price">Main parking price (₹)</Label>
-                  <Input id="main_parking_price" type="number" min="0" step="0.01" value={mainPrice} onChange={(e) => setMainPrice(e.target.value)} placeholder="0.00" disabled={main === 0} />
+                  <AmountInput id="main_parking_price" value={mainPrice} onValueChange={setMainPrice} placeholder="0.00" disabled={main === 0} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="secondary_parking_count">Secondary parking</Label>
@@ -410,7 +409,7 @@ export function Step3PricingPayment({
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="secondary_parking_price">Secondary parking price (₹)</Label>
-                  <Input id="secondary_parking_price" type="number" min="0" step="0.01" value={secondaryPrice} onChange={(e) => setSecondaryPrice(e.target.value)} placeholder="0.00" disabled={secondary === 0} />
+                  <AmountInput id="secondary_parking_price" value={secondaryPrice} onValueChange={setSecondaryPrice} placeholder="0.00" disabled={secondary === 0} />
                 </div>
               </div>
             </div>
@@ -533,18 +532,14 @@ export function Step3PricingPayment({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="finance_sanction_amount">Sanction amount (optional, ₹)</Label>
-                <Input id="finance_sanction_amount" type="number" min="0" step="0.01" inputMode="decimal" {...register('finance_sanction_amount')} />
+                <AmountInput id="finance_sanction_amount" value={watch('finance_sanction_amount') as string | number | undefined} onValueChange={(value) => setValue('finance_sanction_amount', value, { shouldDirty: true })} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="expected_disbursement">Expected disbursement for the booking installment (₹)</Label>
-                <Input
+                <AmountInput
                   id="expected_disbursement"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  inputMode="decimal"
                   value={expected.amount}
-                  onChange={(event) => setExpected((current) => ({ ...current, amount: event.target.value }))}
+                  onValueChange={(amount) => setExpected((current) => ({ ...current, amount }))}
                 />
               </div>
               <div className="space-y-2">

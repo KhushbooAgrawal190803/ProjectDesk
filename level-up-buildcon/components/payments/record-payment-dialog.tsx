@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { IndianRupee } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { AmountInput } from '@/components/ui/amount-input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { PaymentFormFields, paymentProblem, selectClass, type PayerOption, type PaymentFormValue } from '@/components/payments/payment-form-fields'
@@ -233,21 +233,19 @@ export function RecordPaymentDialog({
                           <div className="text-xs text-zinc-500">+ GST {formatInr(row.outstandingGst)}</div>
                         </td>
                         <td className="py-2 pr-2">
-                          <Input
+                          <AmountInput
                             aria-label={`Principal for ${row.label}`}
-                            inputMode="decimal"
                             className="h-9"
                             value={split[row.id]?.principal ?? ''}
-                            onChange={(event) => setSplit((current) => ({ ...current, [row.id]: { principal: event.target.value, gst: current[row.id]?.gst ?? '' } }))}
+                            onValueChange={(principal) => setSplit((current) => ({ ...current, [row.id]: { principal, gst: current[row.id]?.gst ?? '' } }))}
                           />
                         </td>
                         <td className="py-2">
-                          <Input
+                          <AmountInput
                             aria-label={`GST for ${row.label}`}
-                            inputMode="decimal"
                             className="h-9"
                             value={split[row.id]?.gst ?? ''}
-                            onChange={(event) => setSplit((current) => ({ ...current, [row.id]: { gst: event.target.value, principal: current[row.id]?.principal ?? '' } }))}
+                            onValueChange={(gst) => setSplit((current) => ({ ...current, [row.id]: { gst, principal: current[row.id]?.principal ?? '' } }))}
                           />
                         </td>
                       </tr>

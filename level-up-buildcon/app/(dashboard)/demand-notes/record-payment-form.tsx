@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AmountInput } from '@/components/ui/amount-input'
 import { DateField } from '@/components/ui/date-field'
 import { recordDemandPayment } from './actions'
 
@@ -43,8 +44,8 @@ export function RecordPaymentForm({ demandNoteId }: { demandNoteId: string }) {
         }
       }}
     >
-      <Input value={principal} onChange={(event) => setPrincipal(event.target.value)} placeholder="Principal received" inputMode="decimal" />
-      <Input value={gst} onChange={(event) => setGst(event.target.value)} placeholder="GST received" inputMode="decimal" />
+      <AmountInput value={principal} onValueChange={setPrincipal} placeholder="Principal received" />
+      <AmountInput value={gst} onValueChange={setGst} placeholder="GST received" />
       <DateField value={paymentDate} onChange={setPaymentDate} />
       <select
         value={paymentMode}

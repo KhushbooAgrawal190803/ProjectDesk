@@ -1,6 +1,7 @@
 'use client'
 
 import { Input } from '@/components/ui/input'
+import { AmountInput } from '@/components/ui/amount-input'
 import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -85,28 +86,11 @@ export function PaymentFormFields({
       )}
       <div className="space-y-2">
         <Label htmlFor="payment-amount">Amount, excluding GST (₹)</Label>
-        <Input
-          id="payment-amount"
-          type="number"
-          min="0"
-          step="0.01"
-          inputMode="decimal"
-          value={value.amount ?? ''}
-          onChange={(event) => onChange({ amount: event.target.value })}
-        />
+        <AmountInput id="payment-amount" value={value.amount} onValueChange={(amount) => onChange({ amount })} />
       </div>
       <div className="space-y-2">
         <Label htmlFor="payment-gst">GST in this payment (₹)</Label>
-        <Input
-          id="payment-gst"
-          type="number"
-          min="0"
-          step="0.01"
-          inputMode="decimal"
-          value={value.gst_amount ?? ''}
-          onChange={(event) => onChange({ gst_amount: event.target.value })}
-          placeholder="0.00"
-        />
+        <AmountInput id="payment-gst" value={value.gst_amount} onValueChange={(gst_amount) => onChange({ gst_amount })} placeholder="0.00" />
       </div>
       <div className="space-y-2">
         <Label htmlFor="payment-mode">Mode</Label>
