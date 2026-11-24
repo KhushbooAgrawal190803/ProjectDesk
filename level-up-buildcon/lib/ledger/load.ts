@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { considerationOf } from '@/lib/booking/consideration'
-import { paiseFrom } from '@/lib/demands/engine'
-import { getBookingDemandState, loadDemandRules, type BookingDemandState } from '@/lib/demands/issue'
+import { ACTIVE_BOOKING_STATUSES, paiseFrom, todayInTimeZone } from '@/lib/demands/engine'
+import { buildDemandState, ensureBookingAdvance, loadDemandRules, type BookingDemandState } from '@/lib/demands/issue'
 import {
   summarizeLedger,
   type ClearanceStatus,
@@ -75,9 +75,12 @@ function expectedFromEntries(entries: Row[], receipts: LedgerReceipt[]): LedgerE
     }))
 }
 
-/** True once supabase/migrations/010_payment_ledger.sql has been run. */
+/** True once supabase/migrations/010_payment_ledger.sql has been run. Remembered once seen, since a migration is never undone. */
+let migrationSeen = false
 export async function ledgerMigrationApplied(supabase: SupabaseClient): Promise<boolean> {
+  if (migrationSeen) return true
   const { error } = await supabase.from('payment_receipts').select('clearance_status').limit(1)
+  if (!error) migrationSeen = true
   return !error
 }
 
@@ -94,49 +97,160 @@ export interface BookingLedger {
 }
 
 export async function loadBookingLedger(supabase: SupabaseClient, bookingId: string): Promise<BookingLedger> {
-  const [state, rules] = await Promise.all([getBookingDemandState(supabase, bookingId), loadDemandRules(supabase)])
-  const [bookingResult, receiptResult, entryResult, migrationApplied] = await Promise.all([
-    supabase.from('bookings').select('*').eq('id', bookingId).single(),
-    supabase.from('payment_receipts').select('*').eq('booking_id', bookingId).order('payment_date').order('created_at'),
-    supabase.from('booking_payment_entries').select('*').eq('booking_id', bookingId).order('sort_order'),
-    ledgerMigrationApplied(supabase),
-  ])
-  if (bookingResult.error || !bookingResult.data) throw new Error('Booking not found')
-  if (receiptResult.error) throw new Error(receiptResult.error.message)
-  const receiptRows = receiptResult.data || []
-  const { data: allocationRows, error: allocationError } = receiptRows.length
-    ? await supabase.from('installment_allocations').select('*').in('receipt_id', receiptRows.map((row) => row.id)).order('created_at')
-    : { data: [], error: null }
-  if (allocationError) throw new Error(allocationError.message)
+  const ledgers = await loadBookingLedgers(supabase, [bookingId])
+  const ledger = ledgers.get(bookingId)
+  if (!ledger) throw new Error('Booking not found')
+  return ledger
+}
 
-  const allocations = (allocationRows || []).map(allocationFromRow)
-  const receipts = receiptRows.map((row) => receiptFromRow(row, allocations))
-  const entries = entryResult.error ? [] : entryResult.data || []
-  const expected = expectedFromEntries(entries, receipts)
-  const booking = bookingResult.data as Row
-  const consideration = considerationOf(booking)?.totalPaise ?? 0n
-  const summary = summarizeLedger({
-    considerationPaise: consideration,
-    gstPercent: rules.gstPercent,
-    installments: state.installments.map((row) => ({
-      id: row.id,
-      sort: row.sort,
-      label: row.label,
-      due: row.due,
-      overdue: row.overdue,
-      status: row.status,
-      deadline: row.deadline,
-      principalPaise: row.principalPaise,
-      gstPaise: row.gstPaise,
-      receivedPaise: row.receivedPaise,
-      gstReceivedPaise: row.gstReceivedPaise,
-    })),
-    receipts,
-    expected,
-    bookingFormPrincipalPaise: paiseFrom(booking.booking_amount_paid),
-    bookingFormGstPaise: paiseFrom(booking.gst_collected),
-  })
-  return { booking, state, receipts, allocations, expected, entries, summary, gstPercent: rules.gstPercent, migrationApplied }
+/** Rows of `table` whose `column` is in `values`, fetched in chunks that run at the same time. */
+async function rowsIn(
+  supabase: SupabaseClient,
+  table: string,
+  column: string,
+  values: string[],
+  select = '*',
+  order: string[] = []
+): Promise<{ rows: Row[]; error: string | null }> {
+  if (!values.length) return { rows: [], error: null }
+  const results = await Promise.all(
+    chunks(values).map((part) => {
+      let query = supabase.from(table).select(select).in(column, part)
+      for (const key of order) query = query.order(key)
+      return query
+    })
+  )
+  const failed = results.find((result) => result.error)
+  if (failed?.error) return { rows: [], error: failed.error.message }
+  return { rows: results.flatMap((result) => (result.data || []) as unknown as Row[]), error: null }
+}
+
+function groupBy(rows: Row[], key: string): Map<string, Row[]> {
+  const grouped = new Map<string, Row[]>()
+  for (const row of rows) {
+    const value = String(row[key])
+    const list = grouped.get(value)
+    if (list) list.push(row)
+    else grouped.set(value, [row])
+  }
+  return grouped
+}
+
+/** A booking whose booking-form payments have not been turned into receipts yet. Rare: only older bookings. */
+function needsReceiptBackfill(booking: Row, receipts: Row[], entries: Row[]): boolean {
+  if (!(ACTIVE_BOOKING_STATUSES as readonly string[]).includes(String(booking.status)) || booking.deleted_at) return false
+  const advanceOwed = paiseFrom(booking.booking_amount_paid) > 0n || paiseFrom(booking.gst_collected) > 0n
+  if (advanceOwed && !receipts.some((receipt) => receipt.source === 'booking_advance')) return true
+  return entries.some(
+    (entry) =>
+      entry.status === 'pending_clearance' &&
+      (paiseFrom(entry.amount) > 0n || paiseFrom(entry.gst_amount) > 0n) &&
+      !receipts.some((receipt) => receipt.payment_entry_id === entry.id)
+  )
+}
+
+/**
+ * The ledger of many bookings in two rounds of batched queries, however many
+ * bookings there are. Each database round trip is a visible wait, so this
+ * replaces running the whole chain of queries once per booking.
+ */
+export async function loadBookingLedgers(supabase: SupabaseClient, bookingIds: string[]): Promise<Map<string, BookingLedger>> {
+  const ledgers = new Map<string, BookingLedger>()
+  const ids = [...new Set(bookingIds)]
+  if (!ids.length) return ledgers
+
+  const receiptOrder = ['payment_date', 'created_at']
+  const [rules, migrationApplied, bookingResult, receiptResult, entryResult, scheduleResult, demandResult, milestoneResult] = await Promise.all([
+    loadDemandRules(supabase),
+    ledgerMigrationApplied(supabase),
+    rowsIn(supabase, 'bookings', 'id', ids),
+    rowsIn(supabase, 'payment_receipts', 'booking_id', ids, '*', receiptOrder),
+    rowsIn(supabase, 'booking_payment_entries', 'booking_id', ids, '*', ['sort_order']),
+    rowsIn(supabase, 'booking_schedule_rows', 'booking_id', ids, '*', ['sort_order']),
+    rowsIn(supabase, 'demand_notes', 'booking_id', ids, 'id, booking_id, schedule_row_id, reference_number, payment_deadline, issue_date'),
+    supabase.from('construction_milestones').select('id, label, completed_at, project_name'),
+  ])
+  for (const result of [bookingResult, receiptResult, scheduleResult, demandResult]) {
+    if (result.error) throw new Error(result.error)
+  }
+  if (milestoneResult.error) throw new Error(milestoneResult.error.message)
+
+  const bookings = bookingResult.rows
+  const entriesByBooking = groupBy(entryResult.error ? [] : entryResult.rows, 'booking_id')
+  let receiptRows = receiptResult.rows
+  let receiptsByBooking = groupBy(receiptRows, 'booking_id')
+
+  // Older bookings may still need their booking-form payments recorded as receipts.
+  const backfill = bookings.filter((booking) =>
+    needsReceiptBackfill(booking, receiptsByBooking.get(String(booking.id)) || [], entriesByBooking.get(String(booking.id)) || [])
+  )
+  if (backfill.length) {
+    await Promise.all(backfill.map((booking) => ensureBookingAdvance(supabase, booking, null).catch(() => undefined)))
+    const again = await rowsIn(supabase, 'payment_receipts', 'booking_id', ids, '*', receiptOrder)
+    if (again.error) throw new Error(again.error)
+    receiptRows = again.rows
+    receiptsByBooking = groupBy(receiptRows, 'booking_id')
+  }
+
+  const scheduleRows = scheduleResult.rows
+  const [byRow, byReceipt] = await Promise.all([
+    rowsIn(supabase, 'installment_allocations', 'schedule_row_id', scheduleRows.map((row) => String(row.id)), '*', ['created_at']),
+    rowsIn(supabase, 'installment_allocations', 'receipt_id', receiptRows.map((row) => String(row.id)), '*', ['created_at']),
+  ])
+  if (byRow.error || byReceipt.error) throw new Error(byRow.error || byReceipt.error || 'Allocations are not available.')
+  const allocationRows = [...new Map([...byRow.rows, ...byReceipt.rows].map((row) => [String(row.id), row])).values()]
+  const allocations = allocationRows.map(allocationFromRow)
+
+  const today = todayInTimeZone(new Date(), rules.timezone)
+  const scheduleByBooking = groupBy(scheduleRows, 'booking_id')
+  const demandsByBooking = groupBy(demandResult.rows, 'booking_id')
+  const milestonesByProject = groupBy((milestoneResult.data || []) as Row[], 'project_name')
+
+  for (const booking of bookings) {
+    const bookingId = String(booking.id)
+    const ownSchedule = scheduleByBooking.get(bookingId) || []
+    const rowIds = new Set(ownSchedule.map((row) => String(row.id)))
+    const ownReceiptRows = receiptsByBooking.get(bookingId) || []
+    const state = buildDemandState({
+      booking,
+      rules,
+      today,
+      schedule: ownSchedule,
+      milestones: milestonesByProject.get(String(booking.project_name || 'Anandam')) || [],
+      demands: demandsByBooking.get(bookingId) || [],
+      receipts: ownReceiptRows,
+      allocations: allocationRows.filter((row) => rowIds.has(String(row.schedule_row_id))),
+    })
+    const receipts = ownReceiptRows.map((row) => receiptFromRow(row, allocations))
+    const receiptIds = new Set(receipts.map((receipt) => receipt.id))
+    const ownAllocations = allocations.filter((item) => receiptIds.has(item.receiptId) || rowIds.has(item.scheduleRowId))
+    const entries = entriesByBooking.get(bookingId) || []
+    const expected = expectedFromEntries(entries, receipts)
+    const consideration = considerationOf(booking)?.totalPaise ?? 0n
+    const summary = summarizeLedger({
+      considerationPaise: consideration,
+      gstPercent: rules.gstPercent,
+      installments: state.installments.map((row) => ({
+        id: row.id,
+        sort: row.sort,
+        label: row.label,
+        due: row.due,
+        overdue: row.overdue,
+        status: row.status,
+        deadline: row.deadline,
+        principalPaise: row.principalPaise,
+        gstPaise: row.gstPaise,
+        receivedPaise: row.receivedPaise,
+        gstReceivedPaise: row.gstReceivedPaise,
+      })),
+      receipts,
+      expected,
+      bookingFormPrincipalPaise: paiseFrom(booking.booking_amount_paid),
+      bookingFormGstPaise: paiseFrom(booking.gst_collected),
+    })
+    ledgers.set(bookingId, { booking, state, receipts, allocations: ownAllocations, expected, entries, summary, gstPercent: rules.gstPercent, migrationApplied })
+  }
+  return ledgers
 }
 
 export interface LedgerTotals {

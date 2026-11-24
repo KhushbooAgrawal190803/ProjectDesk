@@ -14,27 +14,45 @@ import { hundredthsToString } from '@/lib/booking/money'
 async function getDashboardStats() {
   const supabase = await createClient()
 
-  const { count: totalBookings } = await supabase
-    .from('bookings')
-    .select('*', { count: 'exact', head: true })
-    .neq('status', 'DRAFT')
-    .is('deleted_at', null)
-
   const oneWeekAgo = new Date()
   oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
 
-  const { count: weekBookings } = await supabase
-    .from('bookings')
-    .select('*', { count: 'exact', head: true })
-    .gte('submitted_at', oneWeekAgo.toISOString())
-    .neq('status', 'DRAFT')
-    .is('deleted_at', null)
-
-  const { data: bookingsData } = await supabase
-    .from('bookings')
-    .select('id, unit_no')
-    .neq('status', 'DRAFT')
-    .is('deleted_at', null)
+  // All independent, so they run at the same time instead of one after another.
+  const [
+    { count: weekBookings },
+    { data: bookingsData },
+    { count: activeUsers },
+    { data: recentBookings },
+  ] = await Promise.all([
+    supabase
+      .from('bookings')
+      .select('*', { count: 'exact', head: true })
+      .gte('submitted_at', oneWeekAgo.toISOString())
+      .neq('status', 'DRAFT')
+      .is('deleted_at', null),
+    // One read covers the booking count, owner split and parking totals.
+    supabase
+      .from('bookings')
+      .select('id, unit_no, additional_parking, premium_parking')
+      .neq('status', 'DRAFT')
+      .is('deleted_at', null),
+    supabase
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'ACTIVE'),
+    supabase
+      .from('bookings')
+      .select(`
+        *,
+        creator:profiles!created_by(full_name, email)
+      `)
+      .neq('status', 'DRAFT')
+      .is('deleted_at', null)
+      .order('submitted_at', { ascending: false })
+      .limit(10),
+  ])
+  const totalBookings = bookingsData?.length ?? 0
+  const parkingData = bookingsData
 
   // Received money comes from the payment ledger, the same source as the Payments page.
   const ledger = await loadLedgerTotals(supabase, (bookingsData || []).map((b) => b.id as string)).catch(() => new Map())
@@ -51,27 +69,6 @@ async function getDashboardStats() {
     ownerTotals[owner].amount += receivedOf(b.id as string)
   }
 
-  const { count: activeUsers } = await supabase
-    .from('profiles')
-    .select('*', { count: 'exact', head: true })
-    .eq('status', 'ACTIVE')
-
-  const { data: recentBookings } = await supabase
-    .from('bookings')
-    .select(`
-      *,
-      creator:profiles!created_by(full_name, email)
-    `)
-    .neq('status', 'DRAFT')
-    .is('deleted_at', null)
-    .order('submitted_at', { ascending: false })
-    .limit(10)
-
-  const { data: parkingData } = await supabase
-    .from('bookings')
-    .select('additional_parking, premium_parking')
-    .neq('status', 'DRAFT')
-    .is('deleted_at', null)
   const bookedParking = (parkingData || []).reduce((s, b) => s + (Number(b.additional_parking) || 0), 0)
   const availableParking = Math.max(0, 79 - bookedParking)
   const bookedPremiumParking = (parkingData || []).reduce((s, b) => s + (Number((b as any).premium_parking) || 0), 0)

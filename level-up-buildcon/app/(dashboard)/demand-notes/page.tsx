@@ -67,9 +67,11 @@ export default async function DemandNotesPage({
   const rowDates = new Map<string, string | null>()
 
   try {
-    const rules = await loadDemandRules(supabase)
+    const [rules, { data, error }] = await Promise.all([
+      loadDemandRules(supabase),
+      supabase.from('demand_notes').select('*').order('issue_date', { ascending: false }),
+    ])
     today = todayInTimeZone(new Date(), rules.timezone)
-    const { data, error } = await supabase.from('demand_notes').select('*').order('issue_date', { ascending: false })
     if (error) throw new Error(error.message)
     notes = (data || []) as NoteRow[]
     const rowIds = notes.map((note) => note.schedule_row_id)

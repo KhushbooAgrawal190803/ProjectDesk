@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { loadBookingLedger, type BookingLedger } from './load'
+import { loadBookingLedgers, type BookingLedger } from './load'
 
 type Row = Record<string, unknown>
 
@@ -34,7 +34,12 @@ export async function loadPortfolio(supabase: SupabaseClient): Promise<{ entries
   if (error) throw new Error(error.message)
   const ids = (bookings || []).map((row) => row.id as string)
 
-  const [scheduleResult, milestoneResult, coapplicantResult] = await Promise.all([
+  // Every booking's ledger in one batch, alongside the rest, rather than a chain of queries per booking.
+  const [ledgers, scheduleResult, milestoneResult, coapplicantResult] = await Promise.all([
+    loadBookingLedgers(supabase, ids).then(
+      (value) => ({ value, error: null as string | null }),
+      (loadError: unknown) => ({ value: new Map<string, BookingLedger>(), error: loadError instanceof Error ? loadError.message : 'Not available' })
+    ),
     ids.length
       ? supabase.from('booking_schedule_rows').select('id, booking_id, trigger_type, milestone_id, milestone_date').in('booking_id', ids)
       : Promise.resolve({ data: [] as Row[], error: null }),
@@ -46,8 +51,7 @@ export async function loadPortfolio(supabase: SupabaseClient): Promise<{ entries
   const milestones = milestoneResult.data || []
   const codeById = new Map(milestones.map((item) => [String(item.id), String(item.code)]))
 
-  const entries: PortfolioEntry[] = await Promise.all(
-    (bookings || []).map(async (booking) => {
+  const entries: PortfolioEntry[] = (bookings || []).map((booking) => {
       const rowTrigger = new Map<string, { code: string | null; date: string | null }>()
       for (const row of scheduleResult.data || []) {
         if (row.booking_id !== booking.id) continue
@@ -57,14 +61,9 @@ export async function loadPortfolio(supabase: SupabaseClient): Promise<{ entries
         })
       }
       const coapplicants = (coapplicantResult.data || []).filter((row) => row.booking_id === booking.id)
-      try {
-        const ledger = await loadBookingLedger(supabase, String(booking.id))
-        return { booking: { ...booking, coapplicants }, ledger, error: null, rowTrigger }
-      } catch (loadError) {
-        return { booking: { ...booking, coapplicants }, ledger: null, error: loadError instanceof Error ? loadError.message : 'Not available', rowTrigger }
-      }
+      const ledger = ledgers.value.get(String(booking.id)) || null
+      return { booking: { ...booking, coapplicants }, ledger, error: ledger ? null : ledgers.error || 'Not available', rowTrigger }
     })
-  )
 
   const totals: PortfolioTotals = {
     considerationPaise: 0n,

@@ -25,13 +25,13 @@ export default async function MilestonesPage() {
   const bookingsByMilestone = new Map<string, Set<string>>()
   const notesByMilestone = new Map<string, number>()
   try {
-    const rules = await loadDemandRules(supabase)
-    today = todayInTimeZone(new Date(), rules.timezone)
-    const [milestoneResult, bookingResult, noteResult] = await Promise.all([
+    const [rules, milestoneResult, bookingResult, noteResult] = await Promise.all([
+      loadDemandRules(supabase),
       supabase.from('construction_milestones').select('id, label, code, sort_order, completed_at, project_name').order('sort_order'),
       supabase.from('bookings').select('id').in('status', [...ACTIVE_BOOKING_STATUSES]).is('deleted_at', null),
       supabase.from('demand_notes').select('milestone_id'),
     ])
+    today = todayInTimeZone(new Date(), rules.timezone)
     if (milestoneResult.error) throw new Error(milestoneResult.error.message)
     milestones = milestoneResult.data || []
     const activeIds = (bookingResult.data || []).map((row) => row.id as string)

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { cache } from 'react'
 import type { Profile } from '@/lib/types/database'
 import { ForbiddenError, UnauthorizedError } from './errors'
 import { assertAdmin, assertStaff, type StaffRole } from './permissions'
@@ -14,21 +15,37 @@ export async function getCurrentUser() {
   return user
 }
 
-/** Profile via authenticated client — RLS allows users to read their own row. */
-export async function getCurrentProfile(): Promise<Profile | null> {
-  const user = await getCurrentUser()
-  if (!user) return null
+/**
+ * The signed-in user's id. getClaims() checks the session token's signature and
+ * expiry on the server using the project's published signing key, so most pages
+ * skip a round trip to Supabase Auth. It falls back to asking Auth when needed.
+ */
+async function getCurrentUserId(): Promise<string | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.auth.getClaims()
+  if (error || !data?.claims?.sub) return null
+  return data.claims.sub
+}
+
+/**
+ * Profile via authenticated client — RLS allows users to read their own row.
+ * Read from the database on every request, so a deactivated account is refused at once.
+ * Cached per request, so several checks in one page cost one lookup.
+ */
+export const getCurrentProfile = cache(async (): Promise<Profile | null> => {
+  const userId = await getCurrentUserId()
+  if (!userId) return null
 
   const supabase = await createClient()
   const { data: profile, error } = await supabase
     .from('profiles')
     .select('*')
-    .eq('id', user.id)
+    .eq('id', userId)
     .single()
 
   if (error || !profile) return null
   return profile as Profile
-}
+})
 
 async function requireActiveProfile(): Promise<Profile> {
   const profile = await getCurrentProfile()

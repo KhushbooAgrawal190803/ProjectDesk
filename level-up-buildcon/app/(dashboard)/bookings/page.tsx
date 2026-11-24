@@ -159,22 +159,21 @@ async function getMoneyByBooking(bookings: BookingWithCreator[]): Promise<Record
 async function getFilterOptions() {
   const supabase = await createClient()
 
-  // Get unique projects
-  const { data: projects } = await supabase
-    .from('bookings')
-    .select('project_name')
-    .neq('status', 'DRAFT')
-    .is('deleted_at', null)
-    .order('project_name')
+  const [{ data: projects }, { data: users }] = await Promise.all([
+    supabase
+      .from('bookings')
+      .select('project_name')
+      .neq('status', 'DRAFT')
+      .is('deleted_at', null)
+      .order('project_name'),
+    supabase
+      .from('profiles')
+      .select('id, full_name')
+      .eq('status', 'ACTIVE')
+      .order('full_name'),
+  ])
 
   const uniqueProjects = [...new Set(projects?.map(p => p.project_name) || [])]
-
-  // Get users
-  const { data: users } = await supabase
-    .from('profiles')
-    .select('id, full_name')
-    .eq('status', 'ACTIVE')
-    .order('full_name')
 
   return {
     projects: uniqueProjects,

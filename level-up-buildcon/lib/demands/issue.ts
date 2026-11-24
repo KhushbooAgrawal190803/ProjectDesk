@@ -126,7 +126,7 @@ async function ensurePendingEntryReceipts(supabase: SupabaseClient, booking: Row
  * applied straight away to the booking installment, then the next installments in order.
  * Receipts that already existed are left for staff to review and apply.
  */
-async function ensureBookingAdvance(supabase: SupabaseClient, booking: Row, actorId?: string | null) {
+export async function ensureBookingAdvance(supabase: SupabaseClient, booking: Row, actorId?: string | null) {
   await ensurePendingEntryReceipts(supabase, booking, actorId)
   const principal = paiseFrom(booking.booking_amount_paid)
   const gst = paiseFrom(booking.gst_collected)
@@ -277,9 +277,42 @@ export async function getBookingDemandState(supabase: SupabaseClient, bookingId:
     : { data: [], error: null }
   if (allocationError) throw new Error(allocationError.message)
 
-  const completed = new Map((milestones.data || []).map((item) => [item.id as string, Boolean(item.completed_at)]))
-  const labels = new Map((milestones.data || []).map((item) => [item.id as string, item.label as string]))
-  const demandByRow = new Map((demands.data || []).map((item) => [item.schedule_row_id as string, item]))
+  return buildDemandState({
+    booking,
+    rules,
+    today: localToday,
+    schedule: schedule.data || [],
+    milestones: milestones.data || [],
+    demands: demands.data || [],
+    receipts: receipts.data || [],
+    allocations: allocations || [],
+  })
+}
+
+/**
+ * The installment state of one booking from records already loaded, so many
+ * bookings can be read in a few batched queries instead of a chain per booking.
+ * `schedule` must be this booking's rows in sort order; `milestones` this project's.
+ */
+export function buildDemandState(input: {
+  booking: Row
+  rules: DemandRules
+  today: string
+  schedule: Row[]
+  milestones: Row[]
+  demands: Row[]
+  receipts: Row[]
+  allocations: Row[]
+}): BookingDemandState {
+  const { booking, rules } = input
+  const localToday = input.today
+  const schedule = { data: input.schedule as Array<Record<string, any>> } // eslint-disable-line @typescript-eslint/no-explicit-any
+  const allocations = input.allocations as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
+  const receipts = { data: input.receipts as Array<Record<string, any>> } // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  const completed = new Map(input.milestones.map((item) => [item.id as string, Boolean(item.completed_at)]))
+  const labels = new Map(input.milestones.map((item) => [item.id as string, item.label as string]))
+  const demandByRow = new Map(input.demands.map((item) => [item.schedule_row_id as string, item as Record<string, any>])) // eslint-disable-line @typescript-eslint/no-explicit-any
   const allocated = new Map<string, MoneySplit>()
   for (const item of allocations || []) {
     const current = allocated.get(item.schedule_row_id) || { principal: 0n, gst: 0n }
@@ -301,9 +334,9 @@ export async function getBookingDemandState(supabase: SupabaseClient, bookingId:
   }
   const advancePrincipal = advance ? paiseFrom(advance.principal_amount) : 0n
   const advanceGst = advance ? paiseFrom(advance.gst_amount) : 0n
-  const owner = getOwnerTypeForFlat(booking.unit_no)
+  const owner = getOwnerTypeForFlat(booking.unit_no as string | null | undefined)
   const property = propertyValuePaise(booking)
-  const finalized = (ACTIVE_BOOKING_STATUSES as readonly string[]).includes(booking.status) && !booking.deleted_at
+  const finalized = (ACTIVE_BOOKING_STATUSES as readonly string[]).includes(String(booking.status)) && !booking.deleted_at
   const blockers = finalized ? blockersFor(booking, owner, property) : ['This booking is not finalized.']
 
   const installments: InstallmentState[] = (schedule.data || []).map((row) => {
