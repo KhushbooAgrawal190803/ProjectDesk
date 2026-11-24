@@ -17,11 +17,12 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BookingStatusBadge, InstallmentStatusBadge, PaymentStandingBadge, paymentStanding } from '@/components/booking/status-badge'
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog'
+import { EditPaymentButton } from '@/components/payments/edit-payment-dialog'
 import { ApplyReceivedMoney, ClearanceButtons, ReverseAllocationButton } from '@/components/payments/apply-received-money'
 import { expectedFor, payableFor, payersFor } from '@/lib/ledger/payers'
 import type { Booking, BookingAuditLog, BookingDocument, Profile } from '@/lib/types/database'
 import { considerationOf, financeContributions, financeSplitFrom, type FinanceScenario } from '@/lib/booking/consideration'
-import { formatInr, percentOfPaise, toHundredths } from '@/lib/booking/money'
+import { formatInr, hundredthsToString, percentOfPaise, toHundredths } from '@/lib/booking/money'
 import { loadBookingExtras } from '@/lib/booking/persist-details'
 import { formatPersonName } from '@/lib/booking/person'
 import { relativeWithRelation } from '@/lib/booking/relationship'
@@ -68,6 +69,7 @@ const AUDIT_LABELS: Record<string, string> = {
   DEMAND_ISSUED: 'Demand note issued',
   RECEIPT_ALLOCATED: 'Payment applied to installments',
   PAYMENT_RECORDED: 'Payment recorded',
+  PAYMENT_EDITED: 'Payment edited',
   CHEQUE_CLEARED: 'Cheque cleared',
   CHEQUE_RETURNED: 'Payment returned',
   ALLOCATION_REVERSED: 'Allocation corrected',
@@ -599,7 +601,27 @@ export default async function BookingDetailPage({
                             )}
                           </td>
                           <td className="py-2 text-right">
-                            {receipt.clearance === 'pending_clearance' && <ClearanceButtons bookingId={booking.id} receiptId={receipt.id} />}
+                            <div className="flex flex-wrap items-center justify-end gap-1">
+                              {receipt.clearance === 'pending_clearance' && <ClearanceButtons bookingId={booking.id} receiptId={receipt.id} />}
+                              {isAdmin && (
+                                <EditPaymentButton
+                                  bookingId={booking.id}
+                                  payment={{
+                                    id: receipt.id,
+                                    principal: hundredthsToString(receipt.principalPaise),
+                                    gst: hundredthsToString(receipt.gstPaise),
+                                    date: receipt.date,
+                                    mode: receipt.mode,
+                                    reference: receipt.reference,
+                                    bankName: receipt.bankName,
+                                    payerName: receipt.payerName,
+                                    notes: receipt.notes,
+                                    source: receipt.source,
+                                    applied: hundredthsToString(receipt.allocatedPrincipalPaise + receipt.allocatedGstPaise),
+                                  }}
+                                />
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}

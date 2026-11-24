@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireAdmin, requireStaff } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { formatInr, hundredthsToString, toHundredths } from '@/lib/booking/money'
 import { formatLetterDate } from '@/lib/documents/inr-words'
 import { reconcileBooking } from '@/lib/demands/issue'
@@ -340,4 +340,122 @@ export async function reverseAllocation(input: { bookingId: string; allocationId
   })
   refresh(input.bookingId)
   return { success: true }
+}
+
+export interface EditReceiptInput {
+  bookingId: string
+  receiptId: string
+  principal: string
+  gst: string
+  paymentDate: string
+  paymentMode: string
+  reference?: string | null
+  bankName?: string | null
+  payerName?: string | null
+  notes?: string | null
+  reason: string
+}
+
+/**
+ * Admin correction of a payment already recorded: amount, GST, date, mode,
+ * cheque / UTR number, bank, payer and notes. Receipts are otherwise locked
+ * against changes, so this runs with the server's own access after the admin
+ * check, and every edit is written to the booking's history with before and after.
+ *
+ * If the new amount is less than what this payment has already paid off, its
+ * installment allocations are removed and the money is re-applied in schedule
+ * order. If it is more, the extra is applied to the next unpaid installments.
+ */
+export async function editPaymentReceipt(input: EditReceiptInput) {
+  const profile = await requireAdmin()
+  const supabase = await createClient()
+  const reason = input.reason.trim()
+  if (!reason) throw new Error('Give a reason for the change')
+  if (!MODES.includes(input.paymentMode)) throw new Error('Choose a payment mode')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paymentDate)) throw new Error('Enter the payment date')
+  const principal = toHundredths(input.principal || 0)
+  const gst = toHundredths(input.gst || 0)
+  if (principal == null || gst == null || principal < 0n || gst < 0n) throw new Error('Amounts cannot be negative')
+  if (principal === 0n && gst === 0n) throw new Error('The amount cannot be zero. Mark the payment returned instead.')
+
+  const { data: before, error: readError } = await supabase.from('payment_receipts').select('*').eq('id', input.receiptId).maybeSingle()
+  if (readError || !before) throw new Error('Payment not found')
+  if (before.booking_id !== input.bookingId) throw new Error('This payment belongs to a different booking')
+
+  const text = (value: string | null | undefined) => String(value || '').trim() || null
+  const changes: Record<string, unknown> = {
+    principal_amount: hundredthsToString(principal),
+    gst_amount: hundredthsToString(gst),
+    payment_date: input.paymentDate,
+    payment_mode: input.paymentMode,
+    reference_no: text(input.reference),
+  }
+  // Payer, bank and notes columns arrive with the payment ledger update (migration 010).
+  if ('payer_name' in before) changes.payer_name = text(input.payerName)
+  if ('bank_name' in before) changes.bank_name = text(input.bankName)
+  if ('notes' in before) changes.notes = text(input.notes)
+
+  const changed = Object.entries(changes).filter(([key, value]) => {
+    const old = before[key as keyof typeof before]
+    if (key === 'principal_amount' || key === 'gst_amount') return toHundredths(old) !== toHundredths(value)
+    if (key === 'payment_date') return String(old || '').slice(0, 10) !== value
+    return (old ?? null) !== value
+  })
+  if (!changed.length) return { success: true, changed: 0 }
+
+  const service = await createServiceClient()
+  const { data: allocations, error: allocationError } = await service
+    .from('installment_allocations')
+    .select('id, schedule_row_id, principal_amount, gst_amount')
+    .eq('receipt_id', input.receiptId)
+  if (allocationError) throw new Error(allocationError.message)
+  const appliedPrincipal = (allocations || []).reduce((sum, row) => sum + (toHundredths(row.principal_amount) ?? 0n), 0n)
+  const appliedGst = (allocations || []).reduce((sum, row) => sum + (toHundredths(row.gst_amount) ?? 0n), 0n)
+  const shrinksBelowApplied = principal < appliedPrincipal || gst < appliedGst
+
+  if (shrinksBelowApplied && allocations?.length) {
+    const { error } = await service.from('installment_allocations').delete().eq('receipt_id', input.receiptId)
+    if (error) throw new Error(`The payment was not changed: ${error.message}`)
+  }
+  const { error: updateError } = await service.from('payment_receipts').update(changes).eq('id', input.receiptId)
+  if (updateError) {
+    if (shrinksBelowApplied && allocations?.length) await applyReceiptAllocation(input.bookingId).catch(() => undefined)
+    throw new Error(`The payment was not changed: ${updateError.message}`)
+  }
+
+  const amountChanged = changed.some(([key]) => key === 'principal_amount' || key === 'gst_amount')
+  const describe = (key: string, value: unknown) =>
+    key === 'principal_amount' || key === 'gst_amount' ? formatInr(toHundredths(value) ?? 0n) : key === 'payment_date' ? formatLetterDate(String(value || '')) || '—' : String(value ?? '—')
+  const LABELS: Record<string, string> = {
+    principal_amount: 'Amount',
+    gst_amount: 'GST',
+    payment_date: 'Date',
+    payment_mode: 'Mode',
+    reference_no: 'Reference',
+    payer_name: 'Payer',
+    bank_name: 'Bank',
+    notes: 'Notes',
+  }
+  const summary = changed
+    .map(([key, value]) => `${LABELS[key] || key}: ${describe(key, before[key as keyof typeof before])} → ${describe(key, value)}`)
+    .join('; ')
+  await supabase.from('booking_audit_log').insert({
+    booking_id: input.bookingId,
+    changed_by: profile.id,
+    action: 'PAYMENT_EDITED',
+    reason: `${summary}. Reason: ${reason}`,
+    diff_json: {
+      receipt_id: input.receiptId,
+      before: Object.fromEntries(changed.map(([key]) => [key, before[key as keyof typeof before] ?? null])),
+      after: Object.fromEntries(changed),
+      allocations_removed: shrinksBelowApplied ? allocations || [] : [],
+    },
+  })
+
+  if (amountChanged && before.clearance_status !== 'pending_clearance' && before.clearance_status !== 'returned') {
+    await applyReceiptAllocation(input.bookingId).catch(() => undefined)
+  }
+  await reconcileBooking(supabase, input.bookingId, { actorId: profile.id }).catch(() => undefined)
+  refresh(input.bookingId)
+  return { success: true, changed: changed.length, reapplied: shrinksBelowApplied && Boolean(allocations?.length) }
 }
