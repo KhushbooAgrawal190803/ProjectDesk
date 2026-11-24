@@ -19,7 +19,7 @@ export default async function DraftsPage() {
 
   let query = supabase
     .from('bookings')
-    .select('id, status, created_by, created_at, updated_at, unit_no, unit_type, project_name, applicant_salutation, applicant_name, applicant_mobile, pricing_mode, super_builtup_area, rate_per_sqft, total_cost, basic_sale_price, total_property_value, total_parking_charges, creator:profiles!created_by(full_name)')
+    .select('id, status, created_by, created_at, updated_at, unit_no, unit_type, project_name, applicant_salutation, applicant_name, applicant_mobile, super_builtup_area, rate_per_sqft, total_cost, basic_sale_price, total_property_value, total_parking_charges, creator:profiles!created_by(full_name)')
     .in('status', ['DRAFT', 'PENDING'])
     .is('deleted_at', null)
     .order('updated_at', { ascending: false })
