@@ -124,6 +124,7 @@ export function StatementView({
           <table className="w-full min-w-[900px] text-sm print:min-w-0 print:text-xs">
             <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
               <tr>
+                <th className="px-3 py-2 text-right font-medium">S.No.</th>
                 <th className="px-3 py-2 font-medium">Date</th>
                 <th className="px-3 py-2 font-medium">Party</th>
                 <th className="px-3 py-2 font-medium">Mode</th>
@@ -135,13 +136,14 @@ export function StatementView({
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {statement.rows.map((row) => (
+              {statement.rows.map((row, index) => (
                 <tr
                   key={row.key}
                   onClick={() => router.push(`/bookings/${row.bookingId}?tab=financials`)}
                   title={`Open Flat ${row.flat}'s financials`}
                   className={`cursor-pointer ${row.gstOnly ? 'bg-red-50 text-red-700 hover:bg-red-100 print:bg-red-50' : 'hover:bg-zinc-50'}`}
                 >
+                  <td className={`px-3 py-2 text-right tabular-nums ${row.gstOnly ? '' : 'text-zinc-500'}`}>{index + 1}</td>
                   <td className="whitespace-nowrap px-3 py-2 tabular-nums">{formatLetterDate(row.date)}</td>
                   <td className="px-3 py-2">{row.party}</td>
                   <td className="px-3 py-2">{row.mode}</td>
@@ -168,7 +170,7 @@ export function StatementView({
             </tbody>
             <tfoot className="border-t-2 border-zinc-200 text-sm font-semibold text-zinc-900">
               <tr>
-                <td colSpan={5} className="px-3 py-2 text-right">Total received</td>
+                <td colSpan={6} className="px-3 py-2 text-right">Total received</td>
                 <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatInr(statement.principal)}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-red-700">{formatInr(statement.gst)}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatInr(statement.total)}</td>

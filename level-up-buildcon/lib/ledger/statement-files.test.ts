@@ -26,10 +26,12 @@ describe('cash statement files', () => {
     const styles = (r: number) => (rowXml(r).match(/s="(\d+)"/g) || []).map((style) => Number(style.slice(3, -1)))
     expect(styles(5).some((style) => [6, 7, 10, 11].includes(style))).toBe(false)
     expect(styles(6).every((style) => [6, 7, 10].includes(style))).toBe(true)
-    expect(rowXml(7)).toContain('<c r="I7" s="11" t="inlineStr"><is><t xml:space="preserve">66,120.00</t></is></c>')
+    expect(rowXml(7)).toContain('<c r="J7" s="11" t="inlineStr"><is><t xml:space="preserve">66,120.00</t></is></c>')
     // Amounts read in Indian grouping in every spreadsheet app, including Apple Numbers.
     expect(rowXml(7)).toContain('<t xml:space="preserve">13,22,400.00</t>')
     expect(sheet).toContain('<t xml:space="preserve">19,13,520.00</t>')
+    // Serial numbers 1, 2, 3 in column A.
+    expect(['A5', 'A6', 'A7'].map((ref) => sheet.match(new RegExp(`<c r="${ref}" s="\\d+"><v>(\\d+)</v>`))?.[1])).toEqual(['1', '2', '3'])
     expect(sheet).toContain('Mrs. A &amp; Co &lt;test&gt;')
     expect(zip.file('xl/styles.xml')!.asText()).toContain('FFFEE2E2')
   })

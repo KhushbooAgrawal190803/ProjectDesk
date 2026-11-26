@@ -17,8 +17,9 @@ const MUTED: [number, number, number] = [113, 113, 122]
 const amount = (paise: bigint) => formatInr(paise).replace('₹', '')
 
 const COLUMNS = [
+  { title: 'S.No.', width: 10, right: true },
   { title: 'Date', width: 20 },
-  { title: 'Party', width: 44 },
+  { title: 'Party', width: 42 },
   { title: 'Mode', width: 22 },
   { title: 'Cheque / UTR No.', width: 50 },
   { title: 'Bank', width: 30 },
@@ -81,6 +82,7 @@ export function buildStatementPdf(statement: Statement, meta: { company: string;
   statement.rows.forEach((row, rowIndex) => {
     const gstOnly = row.principalPaise === 0n && row.gstPaise > 0n
     const cells = [
+      String(rowIndex + 1),
       formatLetterDate(row.date) || row.date,
       row.party,
       row.mode,
@@ -107,9 +109,9 @@ export function buildStatementPdf(statement: Statement, meta: { company: string;
     }
     wrapped.forEach((lines, index) => {
       const column = COLUMNS[index]
-      const isGstCell = index === 7 && row.gstPaise > 0n
+      const isGstCell = index === 8 && row.gstPaise > 0n
       doc.setTextColor(...(gstOnly || isGstCell ? RED : INK))
-      doc.setFont('helvetica', index === 8 || isGstCell ? 'bold' : 'normal')
+      doc.setFont('helvetica', index === 9 || isGstCell ? 'bold' : 'normal')
       const right = 'right' in column && column.right
       const x = right ? cellX(index) + column.width - 1.5 : cellX(index) + 1.5
       doc.text(lines, x, y + 4.3, { align: right ? 'right' : 'left' })
@@ -132,12 +134,12 @@ export function buildStatementPdf(statement: Statement, meta: { company: string;
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(9)
     doc.setTextColor(...INK)
-    doc.text('Total received', cellX(6) - 3, y, { align: 'right' })
-    doc.text(amount(statement.principalPaise), cellX(6) + COLUMNS[6].width - 1.5, y, { align: 'right' })
+    doc.text('Total received', cellX(7) - 3, y, { align: 'right' })
+    doc.text(amount(statement.principalPaise), cellX(7) + COLUMNS[7].width - 1.5, y, { align: 'right' })
     doc.setTextColor(...RED)
-    doc.text(amount(statement.gstPaise), cellX(7) + COLUMNS[7].width - 1.5, y, { align: 'right' })
+    doc.text(amount(statement.gstPaise), cellX(8) + COLUMNS[8].width - 1.5, y, { align: 'right' })
     doc.setTextColor(...INK)
-    doc.text(amount(statement.totalPaise), cellX(8) + COLUMNS[8].width - 1.5, y, { align: 'right' })
+    doc.text(amount(statement.totalPaise), cellX(9) + COLUMNS[9].width - 1.5, y, { align: 'right' })
   }
 
   const pages = doc.getNumberOfPages()

@@ -104,15 +104,16 @@ function cellXml(ref: string, cell: Cell): string {
   return `<c r="${ref}" s="${cell.style}" t="inlineStr"><is><t xml:space="preserve">${escape(cell.value)}</t></is></c>`
 }
 
-const HEADERS = ['Date', 'Party', 'Mode', 'Cheque / UTR No.', 'Bank', 'Flat', 'Serial', 'Amount (Rs.)', 'GST (Rs.)', 'Total (Rs.)']
-const WIDTHS = [12, 30, 13, 30, 22, 7, 11, 16, 14, 16]
+const HEADERS = ['S.No.', 'Date', 'Party', 'Mode', 'Cheque / UTR No.', 'Bank', 'Flat', 'Serial', 'Amount (Rs.)', 'GST (Rs.)', 'Total (Rs.)']
+const WIDTHS = [7, 12, 30, 13, 30, 22, 7, 11, 16, 14, 16]
 
-function dataRow(row: StatementRow): Cell[] {
+function dataRow(row: StatementRow, index: number): Cell[] {
   const gstOnly = row.principalPaise === 0n && row.gstPaise > 0n
   const text = gstOnly ? S.redText : S.text
   const moneyKind: MoneyKind = gstOnly ? 'redMoney' : 'money'
   const amount = (paise: bigint, kind: MoneyKind): Cell => ({ value: paise > 0n ? indian(paise) : null, style: moneyStyle(kind) })
   return [
+    { value: index + 1, style: gstOnly ? S.redText : S.text },
     { value: excelDate(row.date), style: gstOnly ? S.redDate : S.date },
     { value: row.party, style: text },
     { value: row.mode, style: text },
@@ -131,8 +132,8 @@ export function buildStatementXlsx(statement: Statement, meta: { company: string
     [{ value: `${meta.company} — Cash Statement`, style: S.title }],
     [{ value: `${meta.period} · ${statement.payments} payment${statement.payments === 1 ? '' : 's'} received · GST in red`, style: S.subtitle }],
     [],
-    HEADERS.map((header, index) => ({ value: header, style: index >= 7 ? S.headerRight : S.header })),
-    ...statement.rows.map(dataRow),
+    HEADERS.map((header, index) => ({ value: header, style: index >= 8 ? S.headerRight : S.header })),
+    ...statement.rows.map((row, index) => dataRow(row, index)),
     [],
   ]
   const totalRow = rows.length + 1
@@ -141,7 +142,7 @@ export function buildStatementXlsx(statement: Statement, meta: { company: string
     return `<row r="${r}">${cells.map((cell, column) => cellXml(`${columnName(column)}${r}`, cell)).join('')}</row>`
   })
   const totals: Cell[] = [
-    ...Array.from({ length: 6 }, () => ({ value: null, style: S.totalLabel })),
+    ...Array.from({ length: 7 }, () => ({ value: null, style: S.totalLabel })),
     { value: 'Total', style: S.totalLabel },
     { value: indian(statement.principalPaise), style: moneyStyle('totalMoney') },
     { value: indian(statement.gstPaise), style: moneyStyle('totalRedMoney') },
