@@ -13,7 +13,7 @@ function receipt(id: string, date: string, principal: number, gst: number, extra
   }
 }
 
-function ledger(unit: string, receipts: LedgerReceipt[], allocations: LedgerAllocation[]): BookingLedger {
+function ledger(unit: string, receipts: LedgerReceipt[], allocations: LedgerAllocation[], entries: Array<Record<string, unknown>> = []): BookingLedger {
   return {
     booking: { id: unit, unit_no: unit, applicant_salutation: 'Mr.', applicant_name: `Buyer ${unit}`, serial_display: `LUBC ${unit}` },
     state: {
@@ -24,7 +24,7 @@ function ledger(unit: string, receipts: LedgerReceipt[], allocations: LedgerAllo
         { id: `${unit}-2`, sort: 2, label: 'Before casting of Basement slab' },
       ] as BookingLedger['state']['installments'],
     },
-    receipts, allocations, expected: [], entries: [], summary: {} as BookingLedger['summary'], gstPercent: 5, migrationApplied: true,
+    receipts, allocations, expected: [], entries, summary: {} as BookingLedger['summary'], gstPercent: 5, migrationApplied: true,
   }
 }
 
@@ -74,5 +74,48 @@ describe('cash statement', () => {
   it('puts landowner flats on the Balaji statement', () => {
     expect(statements.LANDOWNER.rows.map((row) => [row.flat, row.kind, row.amountPaise])).toEqual([['806', 'principal', L(1000000)], ['806', 'gst', L(50000)]])
     expect(statements.DEVELOPER.rows.some((row) => row.flat === '806')).toBe(false)
+  })
+  it('carries the booking so a row can open its financials', () => {
+    expect(rows.every((row) => row.bookingId === '501')).toBe(true)
+  })
+})
+
+describe('booking-form payments on the statement', () => {
+  // Like flat 506: several cheques and a transfer on the booking form, stored as one combined receipt
+  // with the first cheque's date and number.
+  const entries = [
+    { id: 'e1', payment_date: '2026-07-30', amount: '500000', gst_amount: '0', payment_mode: 'Cheque', reference_no: '691313', originating_bank: 'Canara', status: 'received' },
+    { id: 'e2', payment_date: '2026-07-30', amount: '0', gst_amount: '25000', payment_mode: 'Cheque', reference_no: '691315', status: 'received' },
+    { id: 'e3', payment_date: '2026-08-05', amount: '1322400', gst_amount: '66120', payment_mode: 'NEFT_RTGS', reference_no: 'CNRBRS2026', status: 'received' },
+    { id: 'e4', payment_date: null, amount: '977920', gst_amount: '0', payment_mode: 'NEFT_RTGS', status: 'expected' },
+  ]
+  const combined = receipt('adv', '2026-07-30', 1822400, 91120, { source: 'booking_advance', reference: '691313' })
+  const book = ledger('501', [combined], [
+    alloc('x1', 'adv', '501-1', 1000000, 50000),
+    alloc('x2', 'adv', '501-2', 822400, 41120),
+  ], entries)
+
+  it('lists each cheque and transfer with its own date and number, leaving out expected bank money', () => {
+    const rows = buildStatements([book], { from: '2026-04-01', to: '2026-12-31' }).DEVELOPER.rows
+    expect(rows.map((row) => [row.date, row.mode, row.reference, row.slab, row.kind, row.amountPaise])).toEqual([
+      ['2026-07-30', 'Cheque', '691313', 'At the time of booking', 'principal', L(500000)],
+      ['2026-07-30', 'Cheque', '691315', 'At the time of booking', 'gst', L(25000)],
+      ['2026-08-05', 'NEFT / RTGS', 'CNRBRS2026', 'At the time of booking', 'principal', L(500000)],
+      ['2026-08-05', 'NEFT / RTGS', 'CNRBRS2026', 'At the time of booking', 'gst', L(25000)],
+      ['2026-08-05', 'NEFT / RTGS', 'CNRBRS2026', 'Before casting of Basement slab', 'principal', L(822400)],
+      ['2026-08-05', 'NEFT / RTGS', 'CNRBRS2026', 'Before casting of Basement slab', 'gst', L(41120)],
+    ])
+    expect(rows[0].bank).toBe('Canara')
+  })
+  it('applies the date range to each payment, not to the combined receipt', () => {
+    const august = buildStatements([book], { from: '2026-08-01', to: '2026-08-31' }).DEVELOPER
+    expect(august.rows.every((row) => row.date === '2026-08-05')).toBe(true)
+    expect(august.totalPaise).toBe(L(1322400 + 66120))
+    expect(august.payments).toBe(1)
+  })
+  it('falls back to the receipt as recorded when the form no longer adds up to it', () => {
+    const edited = ledger('501', [{ ...combined, principalPaise: L(1800000) }], [], entries)
+    const rows = buildStatements([edited], { from: '2026-04-01', to: '2026-12-31' }).DEVELOPER.rows
+    expect(new Set(rows.map((row) => row.reference))).toEqual(new Set(['691313']))
   })
 })

@@ -1,7 +1,8 @@
 import { getOwnerTypeForFlat, type OwnerType } from '@/lib/data/flat-ownership'
 import { formatPersonName } from '@/lib/booking/person'
 import type { BookingLedger } from './load'
-import { PAYMENT_MODE_LABELS } from './model'
+import { entryCountsAsReceived, PAYMENT_MODE_LABELS, type LedgerAllocation, type LedgerReceipt } from './model'
+import { paiseFrom } from '@/lib/demands/engine'
 
 /**
  * Cash statement: money actually received (cleared payments only), one row per
@@ -10,6 +11,7 @@ import { PAYMENT_MODE_LABELS } from './model'
  */
 export interface StatementRow {
   key: string
+  bookingId: string
   date: string
   receiptId: string
   party: string
@@ -34,6 +36,79 @@ export interface Statement {
 
 export const UNAPPLIED_SLAB = 'Not yet applied to a slab'
 
+/** One actual payment: a recorded receipt, or one cheque / transfer from the booking form. */
+interface PaymentPart {
+  id: string
+  date: string
+  mode: string | null
+  reference: string | null
+  bank: string | null
+  payer: string | null
+  principalPaise: bigint
+  gstPaise: bigint
+}
+
+/**
+ * The booking form's payments are stored as one combined receipt that carries
+ * the first cheque's date and number. For the statement it is split back into
+ * the cheques and transfers actually entered, each with its own date and number,
+ * when they add up to the receipt. Otherwise the receipt is shown as recorded.
+ */
+function partsOf(receipt: LedgerReceipt, entries: Array<Record<string, unknown>>): PaymentPart[] {
+  const whole: PaymentPart = {
+    id: receipt.id,
+    date: receipt.date.slice(0, 10),
+    mode: receipt.mode,
+    reference: receipt.reference,
+    bank: receipt.bankName,
+    payer: receipt.payerName,
+    principalPaise: receipt.principalPaise,
+    gstPaise: receipt.gstPaise,
+  }
+  if (receipt.source !== 'booking_advance') return [whole]
+  const received = entries.filter((entry) => entry.status !== 'expected' && entryCountsAsReceived(entry.status as string))
+  if (!received.length) return [whole]
+  const parts = received.map((entry, index) => ({
+    id: `${receipt.id}:${String(entry.id || index)}`,
+    date: String(entry.payment_date || receipt.date).slice(0, 10),
+    mode: (entry.payment_mode as string) || receipt.mode,
+    reference: (entry.reference_no as string) || null,
+    bank: (entry.originating_bank as string) || null,
+    payer: (entry.payer_name as string) || null,
+    principalPaise: paiseFrom(entry.amount),
+    gstPaise: paiseFrom(entry.gst_amount),
+  }))
+  const principal = parts.reduce((sum, part) => sum + part.principalPaise, 0n)
+  const gst = parts.reduce((sum, part) => sum + part.gstPaise, 0n)
+  if (principal !== receipt.principalPaise || gst !== receipt.gstPaise) return [whole]
+  return parts.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+}
+
+/**
+ * Hands a receipt's slab allocations out to its parts in date order: the
+ * earliest payment pays off the earliest slab. Principal and GST separately.
+ */
+function splitAllocations(parts: PaymentPart[], allocations: LedgerAllocation[], sortOf: (rowId: string) => number) {
+  const queue = (kind: 'principalPaise' | 'gstPaise') =>
+    [...allocations].sort((a, b) => sortOf(a.scheduleRowId) - sortOf(b.scheduleRowId)).map((item) => ({ item, left: item[kind] }))
+  const principalQueue = queue('principalPaise')
+  const gstQueue = queue('gstPaise')
+  const take = (pool: ReturnType<typeof queue>, amount: bigint) => {
+    const pieces: Array<{ item: LedgerAllocation; amount: bigint }> = []
+    let need = amount
+    for (const slot of pool) {
+      if (need <= 0n) break
+      if (slot.left <= 0n) continue
+      const used = slot.left < need ? slot.left : need
+      slot.left -= used
+      need -= used
+      pieces.push({ item: slot.item, amount: used })
+    }
+    return { pieces, unapplied: need }
+  }
+  return parts.map((part) => ({ part, principal: take(principalQueue, part.principalPaise), gst: take(gstQueue, part.gstPaise) }))
+}
+
 export function buildStatements(ledgers: Iterable<BookingLedger>, range: { from: string; to: string }): Record<OwnerType, Statement> {
   const statements: Record<OwnerType, Statement> = {
     DEVELOPER: { owner: 'DEVELOPER', rows: [], principalPaise: 0n, gstPaise: 0n, totalPaise: 0n, payments: 0 },
@@ -52,35 +127,49 @@ export function buildStatements(ledgers: Iterable<BookingLedger>, range: { from:
 
     for (const receipt of ledger.receipts) {
       if (receipt.clearance !== 'cleared') continue
-      const date = receipt.date.slice(0, 10)
-      if (!date || date < range.from || date > range.to) continue
-      statements[owner].payments += 1
-      const base = {
-        date,
-        receiptId: receipt.id,
-        party: receipt.payerName || applicant || '—',
-        mode: PAYMENT_MODE_LABELS[receipt.mode || ''] || receipt.mode || '—',
-        reference: receipt.reference,
-        bank: receipt.bankName,
-        flat,
-        serial: (booking.serial_display as string) || null,
-      }
-      const push = (slab: string, sort: number, kind: StatementRow['kind'], amountPaise: bigint, suffix: string) => {
-        if (amountPaise <= 0n) return
-        const row: StatementRow = { ...base, key: `${receipt.id}:${suffix}:${kind}`, slab, kind, amountPaise }
-        order.push({ row, created: receipt.createdAt || '', sort })
-        statements[owner].rows.push(row)
-      }
       const own = ledger.allocations.filter((item) => item.receiptId === receipt.id)
-      for (const item of own) {
-        const slab = slabs.get(item.scheduleRowId)
-        push(slab?.label || 'Installment', slab?.sort ?? 0, 'principal', item.principalPaise, item.id)
-        push(slab?.label || 'Installment', slab?.sort ?? 0, 'gst', item.gstPaise, item.id)
+      const parts = partsOf(receipt, ledger.entries)
+      for (const { part, principal, gst } of splitAllocations(parts, own, (rowId) => slabs.get(rowId)?.sort ?? 0)) {
+        const date = part.date
+        if (!date || date < range.from || date > range.to) continue
+        statements[owner].payments += 1
+        const base = {
+          bookingId: String(booking.id),
+          date,
+          receiptId: part.id,
+          party: part.payer || applicant || '—',
+          mode: PAYMENT_MODE_LABELS[part.mode || ''] || part.mode || '—',
+          reference: part.reference,
+          bank: part.bank,
+          flat,
+          serial: (booking.serial_display as string) || null,
+        }
+        const push = (slab: string, sort: number, kind: StatementRow['kind'], amountPaise: bigint, suffix: string) => {
+          if (amountPaise <= 0n) return
+          const row: StatementRow = { ...base, key: `${part.id}:${suffix}:${kind}`, slab, kind, amountPaise }
+          order.push({ row, created: receipt.createdAt || '', sort })
+          statements[owner].rows.push(row)
+        }
+        // Each slab once per payment, principal then GST.
+        const bySlab = new Map<string, { principal: bigint; gst: bigint }>()
+        for (const piece of principal.pieces) {
+          const current = bySlab.get(piece.item.scheduleRowId) || { principal: 0n, gst: 0n }
+          current.principal += piece.amount
+          bySlab.set(piece.item.scheduleRowId, current)
+        }
+        for (const piece of gst.pieces) {
+          const current = bySlab.get(piece.item.scheduleRowId) || { principal: 0n, gst: 0n }
+          current.gst += piece.amount
+          bySlab.set(piece.item.scheduleRowId, current)
+        }
+        for (const [rowId, amounts] of bySlab) {
+          const slab = slabs.get(rowId)
+          push(slab?.label || 'Installment', slab?.sort ?? 0, 'principal', amounts.principal, rowId)
+          push(slab?.label || 'Installment', slab?.sort ?? 0, 'gst', amounts.gst, rowId)
+        }
+        push(UNAPPLIED_SLAB, Number.MAX_SAFE_INTEGER, 'principal', principal.unapplied, 'unapplied')
+        push(UNAPPLIED_SLAB, Number.MAX_SAFE_INTEGER, 'gst', gst.unapplied, 'unapplied')
       }
-      const leftPrincipal = receipt.principalPaise - own.reduce((sum, item) => sum + item.principalPaise, 0n)
-      const leftGst = receipt.gstPaise - own.reduce((sum, item) => sum + item.gstPaise, 0n)
-      push(UNAPPLIED_SLAB, Number.MAX_SAFE_INTEGER, 'principal', leftPrincipal, 'unapplied')
-      push(UNAPPLIED_SLAB, Number.MAX_SAFE_INTEGER, 'gst', leftGst, 'unapplied')
     }
   }
 

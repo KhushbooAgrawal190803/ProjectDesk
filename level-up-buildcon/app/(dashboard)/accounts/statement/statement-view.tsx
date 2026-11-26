@@ -130,6 +130,7 @@ export function StatementView({
         <p className="text-sm text-zinc-500">
           {period} · {statement.payments} payment{statement.payments === 1 ? '' : 's'} received ·{' '}
           <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-200" /> GST rows in red</span>
+          <span className="print:hidden"> · Click a row to open that booking&apos;s financials</span>
         </p>
       </div>
 
@@ -151,7 +152,12 @@ export function StatementView({
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {statement.rows.map((row) => (
-                <tr key={row.key} className={row.kind === 'gst' ? 'bg-red-50 text-red-700 print:bg-red-50' : ''}>
+                <tr
+                  key={row.key}
+                  onClick={() => router.push(`/bookings/${row.bookingId}?tab=financials`)}
+                  title={`Open Flat ${row.flat}'s financials`}
+                  className={`cursor-pointer ${row.kind === 'gst' ? 'bg-red-50 text-red-700 hover:bg-red-100 print:bg-red-50' : 'hover:bg-zinc-50'}`}
+                >
                   <td className="whitespace-nowrap px-3 py-2 tabular-nums">{formatLetterDate(row.date)}</td>
                   <td className="px-3 py-2">{row.party}</td>
                   <td className="px-3 py-2">{row.mode}</td>
@@ -159,7 +165,15 @@ export function StatementView({
                     {row.reference || '—'}
                     {row.bank && <div className={`text-xs ${row.kind === 'gst' ? 'text-red-600' : 'text-zinc-500'}`}>{row.bank}</div>}
                   </td>
-                  <td className="px-3 py-2">{row.flat || '—'}</td>
+                  <td className="px-3 py-2">
+                    <Link
+                      href={`/bookings/${row.bookingId}?tab=financials`}
+                      onClick={(event) => event.stopPropagation()}
+                      className="font-medium underline-offset-2 hover:underline"
+                    >
+                      {row.flat || '—'}
+                    </Link>
+                  </td>
                   <td className="px-3 py-2">
                     {row.slab}
                     {row.kind === 'gst' && <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-red-700">GST</span>}
