@@ -70,9 +70,17 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   return (
     <DashboardLayout profile={profile}>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-semibold text-zinc-900">Payments</h1>
-          <p className="mt-1 text-zinc-600">Money received and still due across all active bookings. Every figure comes from the same receipts the booking pages use.</p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold text-zinc-900">Payments</h1>
+            <p className="mt-1 text-zinc-600">Money received and still due across all active bookings. Every figure comes from the same receipts the booking pages use.</p>
+          </div>
+          <Link
+            href="/accounts/statement"
+            className="inline-flex shrink-0 items-center justify-center rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+          >
+            Cash Statement
+          </Link>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

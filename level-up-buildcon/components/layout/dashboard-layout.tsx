@@ -75,7 +75,7 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <header className="sticky top-0 z-50 border-b border-zinc-200/80 bg-white/95 backdrop-blur-sm">
+      <header className="sticky top-0 z-50 print:hidden border-b border-zinc-200/80 bg-white/95 backdrop-blur-sm">
         <div className="mx-auto flex h-20 w-full max-w-[1600px] items-center justify-between px-4 md:px-6 lg:px-8">
           <Link href="/dashboard" className="transition-opacity hover:opacity-85">
             <AnandamLogo />
@@ -112,7 +112,7 @@ export function DashboardLayout({ children, profile }: DashboardLayoutProps) {
         </div>
       </header>
 
-      <nav className="sticky top-20 z-40 border-b border-zinc-200 bg-white">
+      <nav className="sticky top-20 z-40 print:hidden border-b border-zinc-200 bg-white">
         <div className="mx-auto w-full max-w-[1600px] px-4 md:px-6 lg:px-8">
           <div className="scrollbar-hide -mb-px flex items-center gap-1 overflow-x-auto">
             {navItems.map((item) => {
