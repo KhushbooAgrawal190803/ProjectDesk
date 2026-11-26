@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { Download, Printer } from 'lucide-react'
+import { FileSpreadsheet, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { DateField } from '@/components/ui/date-field'
@@ -32,10 +32,6 @@ export interface StatementViewData {
 
 type OwnerKey = 'levelup' | 'balaji'
 
-function csvCell(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
-}
-
 export function StatementView({
   from,
   to,
@@ -56,34 +52,7 @@ export function StatementView({
   }
   const period = `${formatLetterDate(from)} to ${formatLetterDate(to)}`
 
-  const download = () => {
-    const header = ['Date', 'Party', 'Mode', 'Cheque / UTR No.', 'Bank', 'Flat', 'Serial', 'Amount (excl. GST)', 'GST', 'Total']
-    const lines = statement.rows.map((row) =>
-      [
-        formatLetterDate(row.date) || row.date,
-        row.party,
-        row.mode,
-        row.reference || '',
-        row.bank || '',
-        row.flat,
-        row.serial || '',
-        row.principal,
-        row.gst,
-        row.total,
-      ].map(csvCell).join(',')
-    )
-    const totals = [['', '', '', '', '', '', 'Total', statement.principal, statement.gst, statement.total]].map((cells) => cells.map(csvCell).join(','))
-    const title = [`${statement.title} — Cash Statement`, period].map(csvCell)
-    const csv = [title.join(','), '', header.join(','), ...lines, '', ...totals].join('\r\n')
-    // A byte-order mark so Excel reads ₹ and names correctly.
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${statement.title.replace(/\s+/g, '-')}-cash-statement-${from}-to-${to}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
-  }
+  const download = (format: 'xlsx' | 'pdf') => `/api/accounts/statement?${new URLSearchParams({ from, to, owner, format }).toString()}`
 
   return (
     <div className="space-y-5">
@@ -105,14 +74,24 @@ export function StatementView({
           </Button>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" className="gap-2" onClick={download} disabled={!statement.rows.length}>
-            <Download className="h-4 w-4" />
-            Download (Excel)
-          </Button>
-          <Button variant="outline" className="gap-2" onClick={() => window.print()}>
-            <Printer className="h-4 w-4" />
-            Print
-          </Button>
+          {([
+            ['xlsx', 'Download Excel', FileSpreadsheet],
+            ['pdf', 'Download PDF', FileText],
+          ] as const).map(([format, label, Icon]) =>
+            statement.rows.length ? (
+              <Button key={format} asChild variant="outline" className="gap-2">
+                <a href={download(format)} download>
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </a>
+              </Button>
+            ) : (
+              <Button key={format} variant="outline" className="gap-2" disabled>
+                <Icon className="h-4 w-4" />
+                {label}
+              </Button>
+            )
+          )}
         </div>
       </div>
 

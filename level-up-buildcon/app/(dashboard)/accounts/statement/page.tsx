@@ -3,20 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { OWNER_NAMES, type OwnerType } from '@/lib/data/flat-ownership'
 import { hundredthsToString } from '@/lib/booking/money'
-import { todayInTimeZone } from '@/lib/demands/engine'
-import { loadBookingLedgers } from '@/lib/ledger/load'
-import { buildStatements } from '@/lib/ledger/statement'
+import { loadStatements, statementParams } from '@/lib/ledger/statement-load'
 import { StatementView, type StatementViewData } from './statement-view'
 
 export const dynamic = 'force-dynamic'
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
-
-/** 1 April of the current Indian financial year. */
-function financialYearStart(today: string): string {
-  const [year, month] = today.split('-').map(Number)
-  return `${month >= 4 ? year : year - 1}-04-01`
-}
 
 export default async function CashStatementPage({
   searchParams,
@@ -25,26 +15,13 @@ export default async function CashStatementPage({
 }) {
   const profile = await requireStaffPage()
   const params = await searchParams
-  const today = todayInTimeZone(new Date())
-  const from = ISO_DATE.test(params.from || '') ? params.from! : financialYearStart(today)
-  const to = ISO_DATE.test(params.to || '') ? params.to! : today
-  const owner: OwnerType = params.owner === 'balaji' ? 'LANDOWNER' : 'DEVELOPER'
+  const { from, to, owner } = statementParams(params)
 
   const supabase = await createClient()
   let error: string | null = null
   let data: Record<OwnerType, StatementViewData> | null = null
   try {
-    // Only bookings with money received in the period are loaded.
-    const { data: received, error: receiptError } = await supabase
-      .from('payment_receipts')
-      .select('booking_id')
-      .eq('clearance_status', 'cleared')
-      .gte('payment_date', from)
-      .lte('payment_date', to)
-    if (receiptError) throw new Error(receiptError.message)
-    const ids = [...new Set((received || []).map((row) => String(row.booking_id)))]
-    const ledgers = await loadBookingLedgers(supabase, ids)
-    const statements = buildStatements(ledgers.values(), { from, to })
+    const statements = await loadStatements(supabase, { from, to })
     data = Object.fromEntries(
       Object.entries(statements).map(([key, statement]) => [
         key,
