@@ -1,17 +1,16 @@
 import PizZip from 'pizzip'
+import { formatInr } from '@/lib/booking/money'
 import type { Statement, StatementRow } from './statement'
 
 /**
  * The cash statement as an Excel workbook (.xlsx), written directly as the
- * Office XML parts. Amounts are real numbers in Indian grouping (12,34,567.00)
- * and dates are real dates, so the sheet can be summed and sorted. A payment
+ * Office XML parts. Amounts read 12,34,567.00 in every spreadsheet app, and
+ * dates are real dates, so the sheet sorts by date. A payment
  * that is only GST is a red row; in a payment that includes GST, the GST cell is red.
  */
 
 const escape = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-
-const rupees = (paise: bigint) => Number(paise) / 100
 
 /** Days since 1899-12-30, Excel's date serial. */
 function excelDate(iso: string): number {
@@ -33,21 +32,41 @@ const S = {
   header: 3,
   headerRight: 4,
   date: 5,
-  money: 6,
-  redText: 7,
-  redDate: 8,
-  redMoney: 9,
-  moneyRedFont: 10,
-  totalLabel: 11,
-  totalMoney: 12,
-  totalRedMoney: 13,
+  redText: 6,
+  redDate: 7,
+  totalLabel: 8,
 } as const
 
-const INDIAN_MONEY = '[&gt;=10000000]##\\,##\\,##\\,##0.00;[&gt;=100000]##\\,##\\,##0.00;##,##0.00'
+/**
+ * Amounts are written already formatted in Indian grouping (8,90,000.00) and
+ * right-aligned. No spreadsheet number format shows Indian grouping everywhere:
+ * Excel can, but Apple Numbers misplaces the commas whatever the format, so the
+ * figures are stored as text, exactly as the PDF prints them. The totals row is
+ * calculated here, to the paisa, from the same figures.
+ */
+const MONEY_KINDS = {
+  money: '',
+  redMoney: 'fontId="4" fillId="3" applyFont="1" applyFill="1"',
+  moneyRedFont: 'fontId="4" applyFont="1"',
+  totalMoney: 'fontId="3" borderId="1" applyFont="1" applyBorder="1"',
+  totalRedMoney: 'fontId="4" borderId="1" applyFont="1" applyBorder="1"',
+} as const
+type MoneyKind = keyof typeof MONEY_KINDS
+const MONEY_KIND_NAMES = Object.keys(MONEY_KINDS) as MoneyKind[]
+const FIRST_MONEY_STYLE = 9
+
+function moneyStyle(kind: MoneyKind): number {
+  return FIRST_MONEY_STYLE + MONEY_KIND_NAMES.indexOf(kind)
+}
+
+const MONEY_XFS = MONEY_KIND_NAMES.map((kind) => `<xf ${MONEY_KINDS[kind]} applyAlignment="1"><alignment horizontal="right"/></xf>`)
+
+/** 8,90,000.00: Indian grouping, two decimals, no rupee sign. */
+const indian = (paise: bigint) => formatInr(paise).replace('₹', '')
 
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="2"><numFmt numFmtId="164" formatCode="${INDIAN_MONEY}"/><numFmt numFmtId="165" formatCode="dd\\.mm\\.yyyy"/></numFmts>
+<numFmts count="1"><numFmt numFmtId="165" formatCode="dd\\.mm\\.yyyy"/></numFmts>
 <fonts count="5">
 <font><sz val="11"/><name val="Calibri"/><family val="2"/></font>
 <font><b/><sz val="14"/><name val="Calibri"/><family val="2"/></font>
@@ -63,21 +82,17 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </fills>
 <borders count="2"><border/><border><top style="thin"><color rgb="FF52525B"/></top></border></borders>
 <cellStyleXfs count="1"><xf/></cellStyleXfs>
-<cellXfs count="14">
+<cellXfs count="${FIRST_MONEY_STYLE + MONEY_XFS.length}">
 <xf/>
 <xf fontId="1" applyFont="1"/>
 <xf fontId="2" applyFont="1"/>
 <xf fontId="3" fillId="2" applyFont="1" applyFill="1"/>
 <xf fontId="3" fillId="2" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="right"/></xf>
 <xf numFmtId="165" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="left"/></xf>
-<xf numFmtId="164" applyNumberFormat="1"/>
 <xf fontId="4" fillId="3" applyFont="1" applyFill="1"/>
 <xf numFmtId="165" fontId="4" fillId="3" applyNumberFormat="1" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left"/></xf>
-<xf numFmtId="164" fontId="4" fillId="3" applyNumberFormat="1" applyFont="1" applyFill="1"/>
-<xf numFmtId="164" fontId="4" applyNumberFormat="1" applyFont="1"/>
 <xf fontId="3" borderId="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right"/></xf>
-<xf numFmtId="164" fontId="3" borderId="1" applyNumberFormat="1" applyFont="1" applyBorder="1"/>
-<xf numFmtId="164" fontId="4" borderId="1" applyNumberFormat="1" applyFont="1" applyBorder="1"/>
+${MONEY_XFS.join('\n')}
 </cellXfs>
 </styleSheet>`
 
@@ -95,7 +110,8 @@ const WIDTHS = [12, 30, 13, 30, 22, 7, 11, 16, 14, 16]
 function dataRow(row: StatementRow): Cell[] {
   const gstOnly = row.principalPaise === 0n && row.gstPaise > 0n
   const text = gstOnly ? S.redText : S.text
-  const money = gstOnly ? S.redMoney : S.money
+  const moneyKind: MoneyKind = gstOnly ? 'redMoney' : 'money'
+  const amount = (paise: bigint, kind: MoneyKind): Cell => ({ value: paise > 0n ? indian(paise) : null, style: moneyStyle(kind) })
   return [
     { value: excelDate(row.date), style: gstOnly ? S.redDate : S.date },
     { value: row.party, style: text },
@@ -104,9 +120,9 @@ function dataRow(row: StatementRow): Cell[] {
     { value: row.bank || '', style: text },
     { value: row.flat, style: text },
     { value: row.serial || '', style: text },
-    { value: row.principalPaise > 0n ? rupees(row.principalPaise) : null, style: money },
-    { value: row.gstPaise > 0n ? rupees(row.gstPaise) : null, style: gstOnly ? S.redMoney : row.gstPaise > 0n ? S.moneyRedFont : S.money },
-    { value: rupees(row.totalPaise), style: money },
+    amount(row.principalPaise, moneyKind),
+    amount(row.gstPaise, gstOnly ? 'redMoney' : row.gstPaise > 0n ? 'moneyRedFont' : 'money'),
+    { value: indian(row.totalPaise), style: moneyStyle(moneyKind) },
   ]
 }
 
@@ -119,22 +135,19 @@ export function buildStatementXlsx(statement: Statement, meta: { company: string
     ...statement.rows.map(dataRow),
     [],
   ]
-  const first = 5
-  const last = first + statement.rows.length - 1
-  const sum = (column: string) => (statement.rows.length ? `SUM(${column}${first}:${column}${last})` : '0')
   const totalRow = rows.length + 1
   const sheetRows = rows.map((cells, index) => {
     const r = index + 1
     return `<row r="${r}">${cells.map((cell, column) => cellXml(`${columnName(column)}${r}`, cell)).join('')}</row>`
   })
-  // Totals are live formulas, with the figures cached so they show before Excel recalculates.
-  sheetRows.push(
-    `<row r="${totalRow}">${Array.from({ length: 6 }, (_, column) => `<c r="${columnName(column)}${totalRow}" s="${S.totalLabel}"/>`).join('')}` +
-      `<c r="G${totalRow}" s="${S.totalLabel}" t="inlineStr"><is><t>Total</t></is></c>` +
-      `<c r="H${totalRow}" s="${S.totalMoney}"><f>${sum('H')}</f><v>${rupees(statement.principalPaise)}</v></c>` +
-      `<c r="I${totalRow}" s="${S.totalRedMoney}"><f>${sum('I')}</f><v>${rupees(statement.gstPaise)}</v></c>` +
-      `<c r="J${totalRow}" s="${S.totalMoney}"><f>${sum('J')}</f><v>${rupees(statement.totalPaise)}</v></c></row>`
-  )
+  const totals: Cell[] = [
+    ...Array.from({ length: 6 }, () => ({ value: null, style: S.totalLabel })),
+    { value: 'Total', style: S.totalLabel },
+    { value: indian(statement.principalPaise), style: moneyStyle('totalMoney') },
+    { value: indian(statement.gstPaise), style: moneyStyle('totalRedMoney') },
+    { value: indian(statement.totalPaise), style: moneyStyle('totalMoney') },
+  ]
+  sheetRows.push(`<row r="${totalRow}">${totals.map((cell, column) => cellXml(`${columnName(column)}${totalRow}`, cell)).join('')}</row>`)
 
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">

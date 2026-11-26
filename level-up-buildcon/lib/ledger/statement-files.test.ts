@@ -21,12 +21,15 @@ describe('cash statement files', () => {
     const zip = new PizZip(buildStatementXlsx(statement, meta))
     const sheet = zip.file('xl/worksheets/sheet1.xml')!.asText()
     const rowXml = (r: number) => sheet.match(new RegExp(`<row r="${r}">(.*?)</row>`))![1]
-    // Rows 5–7 are the payments (after title, subtitle, blank and header).
-    expect(rowXml(5)).not.toMatch(/s="(7|8|9|10)"/)
-    expect(rowXml(6).match(/s="(\d+)"/g)!.every((style) => ['s="7"', 's="8"', 's="9"'].includes(style))).toBe(true)
-    expect(rowXml(7)).toContain('<c r="I7" s="10"><v>66120</v></c>')
-    expect(rowXml(7)).toContain('<c r="H7" s="6"><v>1322400</v></c>')
-    expect(sheet).toContain('<f>SUM(J5:J7)</f><v>1913520</v>')
+    // Rows 5–7 are the payments (after title, subtitle, blank and header). Styles: 6–7 red text/date, 9 money,
+    // 10 red money (red row), 11 red GST figure, 12/13 totals.
+    const styles = (r: number) => (rowXml(r).match(/s="(\d+)"/g) || []).map((style) => Number(style.slice(3, -1)))
+    expect(styles(5).some((style) => [6, 7, 10, 11].includes(style))).toBe(false)
+    expect(styles(6).every((style) => [6, 7, 10].includes(style))).toBe(true)
+    expect(rowXml(7)).toContain('<c r="I7" s="11" t="inlineStr"><is><t xml:space="preserve">66,120.00</t></is></c>')
+    // Amounts read in Indian grouping in every spreadsheet app, including Apple Numbers.
+    expect(rowXml(7)).toContain('<t xml:space="preserve">13,22,400.00</t>')
+    expect(sheet).toContain('<t xml:space="preserve">19,13,520.00</t>')
     expect(sheet).toContain('Mrs. A &amp; Co &lt;test&gt;')
     expect(zip.file('xl/styles.xml')!.asText()).toContain('FFFEE2E2')
   })
