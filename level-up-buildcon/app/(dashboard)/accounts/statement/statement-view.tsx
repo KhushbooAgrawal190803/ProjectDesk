@@ -11,7 +11,15 @@ import { formatInr } from '@/lib/booking/money'
 import { formatLetterDate } from '@/lib/documents/inr-words'
 import type { StatementRow } from '@/lib/ledger/statement'
 
-export type StatementViewRow = Omit<StatementRow, 'amountPaise'> & { amount: string }
+export type StatementViewRow = Omit<StatementRow, 'principalPaise' | 'gstPaise' | 'totalPaise'> & {
+  principal: string
+  gst: string
+  total: string
+  /** A payment that is GST only, e.g. a separate GST cheque: the whole row is red. */
+  gstOnly: boolean
+}
+
+const hasGst = (row: StatementViewRow) => Number(row.gst) > 0
 
 export interface StatementViewData {
   title: string
@@ -49,7 +57,7 @@ export function StatementView({
   const period = `${formatLetterDate(from)} to ${formatLetterDate(to)}`
 
   const download = () => {
-    const header = ['Date', 'Party', 'Mode', 'Cheque / UTR No.', 'Bank', 'Flat', 'Serial', 'Slab', 'Type', 'Amount']
+    const header = ['Date', 'Party', 'Mode', 'Cheque / UTR No.', 'Bank', 'Flat', 'Serial', 'Amount (excl. GST)', 'GST', 'Total']
     const lines = statement.rows.map((row) =>
       [
         formatLetterDate(row.date) || row.date,
@@ -59,16 +67,12 @@ export function StatementView({
         row.bank || '',
         row.flat,
         row.serial || '',
-        row.slab,
-        row.kind === 'gst' ? 'GST' : 'Principal',
-        row.amount,
+        row.principal,
+        row.gst,
+        row.total,
       ].map(csvCell).join(',')
     )
-    const totals = [
-      ['', '', '', '', '', '', '', 'Total principal', '', statement.principal],
-      ['', '', '', '', '', '', '', 'Total GST', '', statement.gst],
-      ['', '', '', '', '', '', '', 'Total received', '', statement.total],
-    ].map((cells) => cells.map(csvCell).join(','))
+    const totals = [['', '', '', '', '', '', 'Total', statement.principal, statement.gst, statement.total]].map((cells) => cells.map(csvCell).join(','))
     const title = [`${statement.title} — Cash Statement`, period].map(csvCell)
     const csv = [title.join(','), '', header.join(','), ...lines, '', ...totals].join('\r\n')
     // A byte-order mark so Excel reads ₹ and names correctly.
@@ -129,7 +133,7 @@ export function StatementView({
         <h2 className="text-xl font-semibold text-zinc-900">{statement.title} — Cash Statement</h2>
         <p className="text-sm text-zinc-500">
           {period} · {statement.payments} payment{statement.payments === 1 ? '' : 's'} received ·{' '}
-          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-200" /> GST rows in red</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-200" /> GST in red</span>
           <span className="print:hidden"> · Click a row to open that booking&apos;s financials</span>
         </p>
       </div>
@@ -146,8 +150,9 @@ export function StatementView({
                 <th className="px-3 py-2 font-medium">Mode</th>
                 <th className="px-3 py-2 font-medium">Cheque / UTR No.</th>
                 <th className="px-3 py-2 font-medium">Flat</th>
-                <th className="px-3 py-2 font-medium">Slab</th>
                 <th className="px-3 py-2 text-right font-medium">Amount</th>
+                <th className="px-3 py-2 text-right font-medium">GST</th>
+                <th className="px-3 py-2 text-right font-medium">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -156,14 +161,14 @@ export function StatementView({
                   key={row.key}
                   onClick={() => router.push(`/bookings/${row.bookingId}?tab=financials`)}
                   title={`Open Flat ${row.flat}'s financials`}
-                  className={`cursor-pointer ${row.kind === 'gst' ? 'bg-red-50 text-red-700 hover:bg-red-100 print:bg-red-50' : 'hover:bg-zinc-50'}`}
+                  className={`cursor-pointer ${row.gstOnly ? 'bg-red-50 text-red-700 hover:bg-red-100 print:bg-red-50' : 'hover:bg-zinc-50'}`}
                 >
                   <td className="whitespace-nowrap px-3 py-2 tabular-nums">{formatLetterDate(row.date)}</td>
                   <td className="px-3 py-2">{row.party}</td>
                   <td className="px-3 py-2">{row.mode}</td>
                   <td className="px-3 py-2">
                     {row.reference || '—'}
-                    {row.bank && <div className={`text-xs ${row.kind === 'gst' ? 'text-red-600' : 'text-zinc-500'}`}>{row.bank}</div>}
+                    {row.bank && <div className={`text-xs ${row.gstOnly ? 'text-red-600' : 'text-zinc-500'}`}>{row.bank}</div>}
                   </td>
                   <td className="px-3 py-2">
                     <Link
@@ -174,26 +179,20 @@ export function StatementView({
                       {row.flat || '—'}
                     </Link>
                   </td>
-                  <td className="px-3 py-2">
-                    {row.slab}
-                    {row.kind === 'gst' && <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-red-700">GST</span>}
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{Number(row.principal) > 0 ? formatInr(row.principal) : '—'}</td>
+                  <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${hasGst(row) ? 'font-medium text-red-700' : 'text-zinc-400'}`}>
+                    {hasGst(row) ? formatInr(row.gst) : '—'}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums">{formatInr(row.amount)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums">{formatInr(row.total)}</td>
                 </tr>
               ))}
             </tbody>
-            <tfoot className="border-t-2 border-zinc-200 text-sm">
+            <tfoot className="border-t-2 border-zinc-200 text-sm font-semibold text-zinc-900">
               <tr>
-                <td colSpan={6} className="px-3 py-2 text-right text-zinc-600">Total principal</td>
-                <td className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums">{formatInr(statement.principal)}</td>
-              </tr>
-              <tr className="bg-red-50 text-red-700">
-                <td colSpan={6} className="px-3 py-2 text-right">Total GST</td>
-                <td className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums">{formatInr(statement.gst)}</td>
-              </tr>
-              <tr>
-                <td colSpan={6} className="px-3 py-2 text-right font-semibold text-zinc-900">Total received</td>
-                <td className="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums text-zinc-900">{formatInr(statement.total)}</td>
+                <td colSpan={5} className="px-3 py-2 text-right">Total received</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatInr(statement.principal)}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-red-700">{formatInr(statement.gst)}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatInr(statement.total)}</td>
               </tr>
             </tfoot>
           </table>

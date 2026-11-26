@@ -50,7 +50,13 @@ export default async function CashStatementPage({
         key,
         {
           title: OWNER_NAMES[key as OwnerType],
-          rows: statement.rows.map(({ amountPaise, ...row }) => ({ ...row, amount: hundredthsToString(amountPaise) })),
+          rows: statement.rows.map(({ principalPaise, gstPaise, totalPaise, ...row }) => ({
+            ...row,
+            principal: hundredthsToString(principalPaise),
+            gst: hundredthsToString(gstPaise),
+            total: hundredthsToString(totalPaise),
+            gstOnly: principalPaise === 0n && gstPaise > 0n,
+          })),
           principal: hundredthsToString(statement.principalPaise),
           gst: hundredthsToString(statement.gstPaise),
           total: hundredthsToString(statement.totalPaise),
